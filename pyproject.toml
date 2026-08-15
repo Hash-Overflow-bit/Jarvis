@@ -1,6 +1,9 @@
 [project]
 name = "jarvis"
 version = "0.1.0"
+
+[tool.poetry]
+package-mode = false
 description = "Local AI assistant"
 authors = [
     {name = "Dev"}
