@@ -1,0 +1,196 @@
+"""
+main.py
+=======
+Jarvis entry point.
+
+Modes:
+  --mode text   → Text input from keyboard, text output to console (no mic/speaker needed)
+  --mode audio  → Voice input (mic) and voice output (Piper TTS)
+
+Usage:
+    poetry run python main.py --mode text
+    poetry run python main.py --mode audio
+
+Cross-platform:
+- Text mode works identically on macOS and Windows.
+- Audio mode requires a microphone and either Piper TTS or console fallback.
+"""
+
+import sys
+import argparse
+from pathlib import Path
+
+# Ensure project root is on the path
+sys.path.insert(0, str(Path(__file__).parent))
+
+from rich.console import Console
+from rich.panel import Panel
+from rich.prompt import Prompt
+
+from core.config import settings
+from core.llm.ollama_client import ollama, OllamaError
+from core.state.session_manager import SessionManager
+
+console = Console()
+
+
+def print_banner():
+    console.print(Panel.fit(
+        "[bold cyan]J A R V I S[/bold cyan]\n"
+        "[dim]Local AI Assistant | Powered by Ollama[/dim]\n"
+        f"[dim]Model: {settings.ollama_model} | OS: {settings.os_name}[/dim]",
+        border_style="cyan"
+    ))
+
+
+def run_text_mode():
+    """
+    Interactive text loop — no microphone or speaker required.
+    Perfect for development and testing on macOS.
+    """
+    console.print("\n[bold green]Text mode active.[/bold green] "
+                  "Type your message and press Enter. Type [bold]'quit'[/bold] to exit.\n")
+
+    session = SessionManager()
+
+    while True:
+        try:
+            user_input = Prompt.ask("[bold blue]You[/bold blue]").strip()
+        except (KeyboardInterrupt, EOFError):
+            console.print("\n[dim]Exiting...[/dim]")
+            break
+
+        if not user_input:
+            continue
+
+        if user_input.lower() in ("quit", "exit", "bye"):
+            console.print("[cyan]Jarvis:[/cyan] Goodbye!")
+            break
+
+        if user_input.lower() in ("reset", "/reset"):
+            session.reset()
+            console.print("[dim]Session reset. Starting fresh conversation.[/dim]\n")
+            continue
+
+        if user_input.lower() in ("/turns", "/status"):
+            console.print(
+                f"[dim]Session turns: {session.turn_count} | "
+                f"History length: {len(session.history)} messages[/dim]"
+            )
+            continue
+
+        try:
+            response = session.chat(user_input)
+            console.print(f"\n[cyan]Jarvis:[/cyan] {response}\n")
+        except OllamaError as e:
+            console.print(f"\n[red]Error:[/red] {e}\n")
+            console.print("[dim]Is Ollama running? Try: ollama serve[/dim]\n")
+
+
+def run_audio_mode():
+    """
+    Full voice loop: mic → STT → LLM → TTS → speaker.
+    Requires microphone, Ollama, and optionally Piper TTS.
+    """
+    from core.audio.audio_device import audio_device, AudioDeviceError
+    from core.audio.stt import get_stt, STTError
+    from core.audio.tts import get_tts_singleton
+
+    # Load STT model
+    if settings.log_level == "DEBUG":
+        console.print("[dim]Loading Whisper STT model...[/dim]")
+    try:
+        stt = get_stt()
+    except STTError as e:
+        console.print(f"[red]STT Error:[/red] {e}")
+        sys.exit(1)
+
+    # Load TTS
+    tts = get_tts_singleton()
+    if settings.log_level == "DEBUG":
+        console.print(f"[dim]TTS: {'Piper' if hasattr(tts, 'binary_path') else 'Console fallback'}[/dim]")
+
+    session = SessionManager()
+    console.print("\n[cyan]Jarvis online.[/cyan]\n")
+    tts.speak("Jarvis online. How can I help you?")
+
+    while True:
+        try:
+            # Record audio until silence
+            audio = audio_device.record_until_silence()
+
+            # Check for empty audio
+            import numpy as np
+            if audio.size == 0 or not stt.is_speech(audio):
+                continue
+
+            # Transcribe
+            text = stt.transcribe(audio)
+
+            if not text.strip():
+                continue
+
+            console.print(f"You: {text}")
+
+            # Check for exit command
+            if any(cmd in text.lower() for cmd in ["goodbye", "shut down", "stop jarvis", "exit"]):
+                tts.speak("Goodbye!")
+                break
+
+            # Get LLM response
+            try:
+                response = session.chat(text)
+                console.print(f"Jarvis: {response}\n")
+                tts.speak(response)
+            except OllamaError as e:
+                if settings.log_level == "DEBUG":
+                    console.print(f"[red]Error:[/red] {e}")
+                tts.speak("I encountered an error connecting to Ollama.")
+
+        except KeyboardInterrupt:
+            tts.speak("Shutting down.")
+            break
+        except AudioDeviceError as e:
+            if settings.log_level == "DEBUG":
+                console.print(f"[red]Audio Error:[/red] {e}")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Jarvis — Local AI Assistant",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python main.py --mode text    # Text-only mode (no mic needed)
+  python main.py --mode audio   # Full voice mode
+        """
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["text", "audio"],
+        default="text",
+        help="Input/output mode (default: text)"
+    )
+    args = parser.parse_args()
+
+    print_banner()
+
+    # Check Ollama before starting
+    if not ollama.is_running():
+        console.print(
+            f"\n[red]❌ Ollama is not running at {settings.ollama_base_url}[/red]\n"
+            "[yellow]Start it with: ollama serve[/yellow]\n"
+            "[yellow]Or run the audit: python scripts/audit.py[/yellow]\n"
+        )
+        sys.exit(1)
+
+    console.print(f"[green]✓[/green] Ollama connected | Model: [bold]{settings.ollama_model}[/bold]")
+
+    if args.mode == "text":
+        run_text_mode()
+    else:
+        run_audio_mode()
+
+
+if __name__ == "__main__":
+    main()

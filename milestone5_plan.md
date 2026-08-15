@@ -1,0 +1,381 @@
+# Milestone 5: The Core Challenge — Dynamic Sub-Agent Builder
+> **Pay:** $60 | **Phase:** Agent Orchestration (Highest Complexity)
+
+---
+
+## Objective
+Build the orchestrator hook that enables Jarvis to programmatically generate, write, save, and hot-load new CrewAI or LangGraph sub-agent configurations directly into the workspace upon request. The result: tell Jarvis to build a specialized agent, and it writes the code, registers it to memory, and runs a baseline test — all autonomously.
+
+---
+
+## Deliverables
+- [ ] `AgentBuilder` tool: Generates CrewAI or LangGraph agent code from a template + LLM
+- [ ] Agent template system: Reusable Jinja2 templates for CrewAI agents and LangGraph graphs
+- [ ] Code validator: Syntax-checks generated Python before saving it
+- [ ] Hot-loader: Dynamically imports the new agent module without restarting Jarvis
+- [ ] Agent Registry: Tracks all loaded agents, their capabilities, and status
+- [ ] Baseline test runner: Executes a simple smoke test on the newly built agent
+- [ ] LLM function-calling schema for `agent_builder` tool
+- [ ] Rollback mechanism: Removes a broken agent and reverts to previous state
+- [ ] Integration test: Voice command → agent code written → hot-loaded → baseline test run
+
+---
+
+## What the Client Needs on Windows 11
+
+### Hardware
+| Component | Requirement |
+|---|---|
+| GPU VRAM | Minimum 12GB (VRAM is shared between Ollama + agent code generation) |
+| RAM | Minimum 32GB (agent orchestration is memory-intensive) |
+| Storage | Additional 5GB free for agent code, logs, and models |
+
+### Software to Install (Client PC - inside WSL 2)
+```bash
+# CrewAI
+pip install crewai crewai-tools
+
+# LangGraph
+pip install langgraph langchain langchain-community langchain-ollama
+
+# Jinja2 for templates
+pip install jinja2
+
+# AST parsing for code validation
+# Built into Python stdlib — no install needed
+
+# importlib for hot-loading
+# Built into Python stdlib — no install needed
+```
+
+### Client `.env` additions
+```ini
+AGENT_WORKSPACE=C:\Jarvis\agents
+AGENT_FRAMEWORK=crewai          # crewai | langgraph | auto
+MAX_CODE_GEN_RETRIES=3          # Retry code generation if syntax fails
+AGENT_BASELINE_TIMEOUT=60       # Seconds to wait for baseline test
+```
+
+---
+
+## What Developer Needs on macOS
+
+### Software
+```bash
+# Install via Poetry
+poetry add crewai crewai-tools langgraph langchain langchain-community langchain-ollama jinja2
+
+# Ollama model for code generation (smaller, faster for dev)
+ollama pull codellama    # OR use llama3.1 which is good at code
+```
+
+### macOS `.env` additions
+```ini
+AGENT_WORKSPACE=/Users/m2air/Desktop/Jarvis/agents
+AGENT_FRAMEWORK=crewai
+MAX_CODE_GEN_RETRIES=3
+AGENT_BASELINE_TIMEOUT=60
+```
+
+---
+
+## Project Structure (Changes in Milestone 5)
+```
+/Jarvis/
+├── core/
+│   ├── tools/
+│   │   └── agent_builder.py          # NEW: Main agent builder tool
+│   ├── orchestrator/                 # NEW directory
+│   │   ├── __init__.py
+│   │   ├── agent_registry.py         # Tracks all loaded agents
+│   │   ├── hot_loader.py             # Dynamic module import
+│   │   ├── code_validator.py         # AST-based syntax checker
+│   │   ├── baseline_runner.py        # Runs smoke tests on new agents
+│   │   └── rollback_manager.py       # Reverts bad agents
+├── templates/                        # NEW directory
+│   ├── crewai_agent.py.j2            # Jinja2 template for CrewAI agent
+│   ├── crewai_task.py.j2             # Jinja2 template for CrewAI task
+│   ├── langgraph_graph.py.j2         # Jinja2 template for LangGraph graph
+│   └── baseline_test.py.j2           # Jinja2 template for smoke test
+├── agents/                           # NEW: Generated agents live here
+│   └── .gitkeep
+└── tests/
+    ├── test_agent_builder.py         # NEW
+    ├── test_hot_loader.py            # NEW
+    └── test_code_validator.py        # NEW
+```
+
+---
+
+## Architecture: Dynamic Agent Build Pipeline
+
+```
+[User: "Build me a web research agent using CrewAI"]
+        ↓
+[STT → Text → LLM]
+        ↓
+[LLM emits: agent_builder(name="WebResearchAgent",
+             framework="crewai",
+             capabilities=["web_search", "summarize"])]
+        ↓
+[ConfirmationGate — CRITICAL risk → User confirms]
+        ↓
+[AgentBuilder.generate_code()]
+  → Fills Jinja2 template with LLM-generated agent logic
+  → Calls Ollama to generate the agent's core logic
+        ↓
+[CodeValidator.validate(generated_code)]
+  → AST parse check
+  → Import safety check (no os.system, no eval)
+  → If FAIL → retry up to MAX_CODE_GEN_RETRIES
+        ↓
+[Write to agents/web_research_agent.py]
+        ↓
+[HotLoader.load("agents/web_research_agent.py")]
+  → importlib.util.spec_from_file_location()
+  → Register in AgentRegistry
+        ↓
+[BaselineRunner.test(agent)]
+  → Run agent.run("test input") with timeout
+  → If FAIL → RollbackManager.revert()
+  → If PASS → TTS: "WebResearchAgent is ready and loaded."
+```
+
+---
+
+## Jinja2 Template Examples
+
+### CrewAI Agent Template (`templates/crewai_agent.py.j2`)
+```python
+# AUTO-GENERATED by Jarvis AgentBuilder
+# Agent: {{ agent_name }}
+# Created: {{ timestamp }}
+# DO NOT EDIT MANUALLY
+
+from crewai import Agent, Task, Crew
+from langchain_ollama import OllamaLLM
+
+llm = OllamaLLM(model="{{ ollama_model }}", base_url="http://localhost:11434")
+
+{{ agent_name | to_snake_case }} = Agent(
+    role="{{ role }}",
+    goal="{{ goal }}",
+    backstory="{{ backstory }}",
+    llm=llm,
+    verbose=True,
+    allow_delegation=False,
+    tools=[{{ tools | join(", ") }}]
+)
+
+def run(task_description: str) -> str:
+    task = Task(
+        description=task_description,
+        agent={{ agent_name | to_snake_case }},
+        expected_output="{{ expected_output }}"
+    )
+    crew = Crew(agents=[{{ agent_name | to_snake_case }}], tasks=[task])
+    result = crew.kickoff()
+    return str(result)
+```
+
+---
+
+## Step-by-Step Build Plan
+
+### Step 1: Code Validator (`core/orchestrator/code_validator.py`)
+**This must be built first** — generated code must be validated before any execution.
+```python
+import ast
+import re
+
+DANGEROUS_PATTERNS = [
+    r'\bos\.system\b', r'\bsubprocess\.call\b', r'\beval\b',
+    r'\bexec\b', r'\b__import__\b', r'\bopen\(.+["\']w["\']\)',
+]
+
+class CodeValidator:
+    def validate(self, code: str) -> tuple[bool, str]:
+        # 1. AST parse check
+        try:
+            ast.parse(code)
+        except SyntaxError as e:
+            return False, f"SyntaxError: {e}"
+
+        # 2. Security pattern check
+        for pattern in DANGEROUS_PATTERNS:
+            if re.search(pattern, code):
+                return False, f"Dangerous pattern detected: {pattern}"
+
+        return True, "OK"
+```
+
+### Step 2: Jinja2 Templates
+- Create templates for CrewAI agent, CrewAI task, LangGraph graph, and baseline test
+- Templates are parameterized with: `agent_name`, `role`, `goal`, `backstory`, `tools`, `ollama_model`
+
+### Step 3: Agent Builder (`core/tools/agent_builder.py`)
+```python
+class AgentBuilder(BaseTool):
+    name = "agent_builder"
+    risk_level = RiskLevel.CRITICAL  # Always requires confirmation
+
+    async def build(self, name: str, framework: str, capabilities: list[str]) -> dict:
+        # 1. Generate agent code using LLM
+        prompt = f"Generate a {framework} agent named {name} with capabilities: {capabilities}"
+        generated_code = await ollama_client.generate(prompt, system=CODE_GEN_SYSTEM_PROMPT)
+
+        # 2. Validate code
+        for attempt in range(settings.MAX_CODE_GEN_RETRIES):
+            valid, error = code_validator.validate(generated_code)
+            if valid:
+                break
+            # Ask LLM to fix the error
+            generated_code = await ollama_client.generate(
+                f"Fix this Python error: {error}\n\nCode:\n{generated_code}"
+            )
+        else:
+            return {"success": False, "error": "Code generation failed after max retries"}
+
+        # 3. Write to agents/ directory
+        agent_file = Path(settings.AGENT_WORKSPACE) / f"{name.lower()}.py"
+        agent_file.write_text(generated_code)
+
+        # 4. Hot-load
+        agent_module = hot_loader.load(agent_file)
+
+        # 5. Register
+        agent_registry.register(name, agent_module, capabilities)
+
+        # 6. Baseline test
+        test_result = await baseline_runner.test(agent_module)
+        if not test_result["success"]:
+            rollback_manager.revert(name, agent_file)
+            return {"success": False, "error": "Baseline test failed", "details": test_result}
+
+        return {"success": True, "agent": name, "file": str(agent_file)}
+```
+
+### Step 4: Hot Loader (`core/orchestrator/hot_loader.py`)
+```python
+import importlib.util
+import sys
+
+class HotLoader:
+    def load(self, file_path: Path):
+        module_name = f"jarvis_agents.{file_path.stem}"
+        spec = importlib.util.spec_from_file_location(module_name, file_path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        return module
+```
+
+### Step 5: Agent Registry (`core/orchestrator/agent_registry.py`)
+```python
+class AgentRegistry:
+    def __init__(self):
+        self._agents: dict[str, dict] = {}
+
+    def register(self, name: str, module, capabilities: list[str]):
+        self._agents[name] = {
+            "module": module,
+            "capabilities": capabilities,
+            "loaded_at": datetime.utcnow().isoformat(),
+            "status": "active"
+        }
+
+    def get(self, name: str):
+        return self._agents.get(name)
+
+    def list_all(self) -> list[dict]:
+        return [{"name": k, **v} for k, v in self._agents.items()]
+
+    def deregister(self, name: str):
+        self._agents.pop(name, None)
+        # Remove from sys.modules too
+        sys.modules.pop(f"jarvis_agents.{name}", None)
+```
+
+---
+
+## Cross-Platform Challenges, Solutions & Alternatives
+
+| # | Challenge | Solution | Alternative |
+|---|---|---|---|
+| 1 | **LLM generates broken Python** (syntax errors) | AST validation + retry loop up to `MAX_CODE_GEN_RETRIES` | Use a structured output schema to force valid Python format |
+| 2 | **Circular import** when hot-loading new agent that imports from `core` | Use explicit absolute imports in templates, never relative | Isolate agent modules in a subprocess via `multiprocessing` |
+| 3 | **Context pollution** — hot-loaded module shares globals with main process | Use isolated namespace in `importlib`, clear agent-specific state | Run agents in separate `asyncio` tasks with clean scope |
+| 4 | **CrewAI version drift** — generated code uses deprecated API | Pin CrewAI version in `pyproject.toml`, include version in code gen prompt | Generate both CrewAI and LangGraph versions, use whichever works |
+| 5 | **LangGraph version drift** — breaking changes in primitives | Same: pin LangGraph version, validate against current API | Provide an adapter layer that wraps framework-specific details |
+| 6 | **Generated agent imports unavailable library** | Import validation: check all `import` statements against installed packages | Generate requirements list and auto-install missing packages |
+| 7 | **Agent runs forever** during baseline test | Enforce `AGENT_BASELINE_TIMEOUT` in `baseline_runner` | Run baseline in a separate process that can be `kill()`-ed |
+| 8 | **Windows/WSL path in generated code** | Always use `pathlib.Path` in templates, never hardcoded paths | Agent templates receive paths as runtime parameters |
+
+---
+
+## Testing Strategy
+
+### On macOS (Developer)
+```bash
+# Unit tests
+poetry run pytest tests/test_code_validator.py -v   # Syntax + security checks
+poetry run pytest tests/test_hot_loader.py -v        # Module import tests
+poetry run pytest tests/test_agent_builder.py -v     # Full build pipeline
+
+# Integration test
+python main.py
+# Say: "Build me a simple summarizer agent using CrewAI"
+# Expected: Code written → loaded → baseline passes → spoken confirmation
+```
+
+### Critical Test Cases
+```python
+# test_code_validator.py
+def test_eval_blocked():
+    code = "result = eval(user_input)"
+    valid, _ = validator.validate(code)
+    assert valid is False
+
+def test_valid_agent_passes():
+    code = open("templates/test_valid_agent.py").read()
+    valid, _ = validator.validate(code)
+    assert valid is True
+
+# test_agent_builder.py
+async def test_agent_built_and_loaded():
+    result = await agent_builder.build("TestAgent", "crewai", ["summarize"])
+    assert result["success"] is True
+    assert agent_registry.get("TestAgent") is not None
+```
+
+### On Windows 11 (Client)
+```bash
+pytest tests/test_code_validator.py tests/test_hot_loader.py tests/test_agent_builder.py -v
+```
+
+---
+
+## Definition of Done
+- [ ] Voice command "Build a [type] agent" → agent is written, loaded, and tested within 2 minutes
+- [ ] Code validator blocks 100% of `eval`, `exec`, `os.system` patterns
+- [ ] Hot-loading works without restarting Jarvis
+- [ ] Rollback correctly removes a failed agent from registry and disk
+- [ ] Agent Registry accurately tracks all loaded agents and their status
+- [ ] `CrewAI` and `LangGraph` templates both produce working baseline agents
+- [ ] All tests pass on both macOS and Windows 11
+
+---
+
+## Estimated Time
+| Task | Hours |
+|---|---|
+| Code validator | 3h |
+| Jinja2 templates (CrewAI + LangGraph) | 4h |
+| Agent builder tool | 5h |
+| Hot loader | 2h |
+| Agent registry | 2h |
+| Baseline runner + rollback | 3h |
+| LLM integration + prompt engineering | 4h |
+| Tests | 4h |
+| Windows debugging | 3h |
+| **Total** | **~30h** |

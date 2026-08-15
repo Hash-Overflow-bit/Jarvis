@@ -1,0 +1,66 @@
+# Jarvis .gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environment
+.env
+.venv/
+env/
+venv/
+
+# Poetry
+# poetry.lock IS committed (reproducible builds)
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Logs
+logs/*.log
+logs/*.jsonl
+
+# Sandbox contents (structure is committed, not files)
+sandbox/test_files/*
+!sandbox/test_files/.gitkeep
+
+# Generated agents (code is generated at runtime)
+agents/*
+!agents/.gitkeep
+
+# Cloned repos (workspace is gitignored)
+workspace/*
+!workspace/.gitkeep
+
+# Poetry environments
+.venvs/
+
+# Whisper model cache
+~/.cache/huggingface/
+
+# Piper TTS voice models (large binary files)
+models/*.onnx
+models/*.onnx.json
+
+# Benchmark results
+benchmarks/results/
+
+# Temp files
+*.tmp
+*.wav
+*.mp3

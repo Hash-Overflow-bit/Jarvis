@@ -1,0 +1,29 @@
+[project]
+name = "jarvis"
+version = "0.1.0"
+description = "Local AI assistant"
+authors = [
+    {name = "Dev"}
+]
+requires-python = "^3.11"
+dependencies = [
+    "numpy (>=1.26,<2.0)",
+    "faster-whisper (>=1.2.1,<2.0.0)",
+    "sounddevice (>=0.5.5,<0.6.0)",
+    "python-dotenv (>=1.2.2,<2.0.0)",
+    "requests (>=2.34.2,<3.0.0)",
+    "rich (>=15.0.0,<16.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[dependency-groups]
+dev = [
+    "pytest (>=9.1.1,<10.0.0)",
+    "pytest-asyncio (>=1.4.0,<2.0.0)",
+    "black (>=26.5.1,<27.0.0)",
+    "ruff (>=0.16.3,<0.17.0)"
+]
