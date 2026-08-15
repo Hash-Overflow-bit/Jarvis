@@ -121,17 +121,14 @@ class PiperTTS:
                 "Download from: https://github.com/rhasspy/piper/releases"
             )
 
-        cmd = [
-            str(self.binary_path),
-            "--model", str(self.voice_model),
-            "--output-raw",    # Output raw PCM (no WAV header) → we wrap it
-        ]
+        # Use a temporary file to avoid subprocess pipe buffer deadlocks on Windows
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+            temp_path = Path(temp_file.name)
 
-        # Use --output-file - to get WAV to stdout instead
         cmd = [
             str(self.binary_path),
             "--model", str(self.voice_model),
-            "--output_file", "-",  # Write WAV to stdout
+            "--output_file", str(temp_path),
         ]
 
         try:
@@ -143,15 +140,31 @@ class PiperTTS:
             )
             if result.returncode != 0:
                 stderr = result.stderr.decode("utf-8", errors="replace")
+                if temp_path.exists():
+                    temp_path.unlink()
                 raise TTSError(f"Piper failed (exit {result.returncode}): {stderr}")
-            return result.stdout
+            
+            if temp_path.exists():
+                wav_bytes = temp_path.read_bytes()
+                temp_path.unlink()
+                return wav_bytes
+            else:
+                raise TTSError("Piper finished but output file was not created.")
         except subprocess.TimeoutExpired:
+            if temp_path.exists():
+                temp_path.unlink()
             raise TTSError("Piper TTS timed out after 30 seconds.")
         except FileNotFoundError:
+            if temp_path.exists():
+                temp_path.unlink()
             raise TTSError(
                 f"Piper binary not executable at '{self.binary_path}'. "
                 "Check file permissions and download the correct binary for your OS."
             )
+        except Exception as e:
+            if temp_path.exists():
+                temp_path.unlink()
+            raise TTSError(f"TTS synthesis failed: {e}")
 
     def synthesize_to_file(self, text: str, output_path: Path) -> Path:
         """Synthesize text and save as WAV file."""
