@@ -23,7 +23,7 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 |---|---|---|---|
 | M1 | Stack & State Verification | $10 | ✅ DONE |
 | M2 | Secure File-Management Tool Layer | $20 | ✅ DONE |
-| M3 | GitHub & Poetry Repository Integration | $30 | ⬜ NOT STARTED |
+| M3 | GitHub & Poetry Repository Integration | $30 | ✅ DONE |
 | M4 | Safety, Sandboxing & Confirmation Boundaries | — | ⬜ NOT STARTED |
 | M5 | Dynamic Sub-Agent Builder | $60 | ⬜ NOT STARTED |
 | M6 | Local Model Fine-Tuning & Tool-Calling Optimization | $40 | ⬜ NOT STARTED |
