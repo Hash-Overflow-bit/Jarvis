@@ -32,19 +32,26 @@ from typing import Union
 if platform.system() == "Windows":
     try:
         import nvidia.cublas
-        import nvidia.cudnn
         
-        for pkg in [nvidia.cublas, nvidia.cudnn]:
-            pkg_dir = None
-            if hasattr(pkg, "__path__") and pkg.__path__:
-                pkg_dir = Path(pkg.__path__[0])
-            elif hasattr(pkg, "__file__") and pkg.__file__:
-                pkg_dir = Path(pkg.__file__).parent
-                
-            if pkg_dir:
-                bin_dir = pkg_dir / "bin"
-                if bin_dir.is_dir():
-                    os.add_dll_directory(str(bin_dir))
+        # Resolve the site-packages/nvidia/ directory
+        pkg_dir = None
+        if hasattr(nvidia.cublas, "__path__") and nvidia.cublas.__path__:
+            pkg_dir = Path(nvidia.cublas.__path__[0])
+        elif hasattr(nvidia.cublas, "__file__") and nvidia.cublas.__file__:
+            pkg_dir = Path(nvidia.cublas.__file__).parent
+            
+        if pkg_dir:
+            nvidia_dir = pkg_dir.parent
+            if nvidia_dir.is_dir():
+                # Add bin/ folder of every installed nvidia subpackage (cublas, cudnn, cuda_runtime, etc.)
+                for sub in nvidia_dir.iterdir():
+                    if sub.is_dir():
+                        bin_dir = sub / "bin"
+                        if bin_dir.is_dir():
+                            try:
+                                os.add_dll_directory(str(bin_dir))
+                            except Exception:
+                                pass
     except ImportError:
         pass
     except Exception:

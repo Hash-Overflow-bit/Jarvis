@@ -23,7 +23,7 @@ for p in sys.path:
 
 print("--------------------------------------------------")
 
-# Check nvidia-cublas package
+# Check nvidia package structure
 try:
     import nvidia.cublas
     print("✓ nvidia.cublas IMPORT: SUCCESS")
@@ -33,36 +33,18 @@ try:
     elif hasattr(nvidia.cublas, "__file__") and nvidia.cublas.__file__:
         pkg_dir = Path(nvidia.cublas.__file__).parent
         
-    print("  File location:        ", pkg_dir)
     if pkg_dir:
-        bin_dir = pkg_dir / "bin"
-        print("  Bin folder exists:    ", bin_dir.is_dir())
-        if bin_dir.is_dir():
-            print("  Files in bin:         ", [f.name for f in bin_dir.glob("*")])
+        nvidia_dir = pkg_dir.parent
+        print("  nvidia root folder:   ", nvidia_dir)
+        if nvidia_dir.is_dir():
+            for sub in nvidia_dir.iterdir():
+                if sub.is_dir():
+                    bin_dir = sub / "bin"
+                    print(f"  - Subpackage '{sub.name}': bin exists: {bin_dir.is_dir()}")
+                    if bin_dir.is_dir():
+                        print(f"    DLLs: {[f.name for f in bin_dir.glob('*')]}")
 except ImportError as e:
     print("✗ nvidia.cublas IMPORT: FAILED")
-    print("  Error:", e)
-
-print("--------------------------------------------------")
-
-# Check nvidia-cudnn package
-try:
-    import nvidia.cudnn
-    print("✓ nvidia.cudnn IMPORT:  SUCCESS")
-    pkg_dir = None
-    if hasattr(nvidia.cudnn, "__path__") and nvidia.cudnn.__path__:
-        pkg_dir = Path(nvidia.cudnn.__path__[0])
-    elif hasattr(nvidia.cudnn, "__file__") and nvidia.cudnn.__file__:
-        pkg_dir = Path(nvidia.cudnn.__file__).parent
-        
-    print("  File location:        ", pkg_dir)
-    if pkg_dir:
-        bin_dir = pkg_dir / "bin"
-        print("  Bin folder exists:    ", bin_dir.is_dir())
-        if bin_dir.is_dir():
-            print("  Files in bin:         ", [f.name for f in bin_dir.glob("*")])
-except ImportError as e:
-    print("✗ nvidia.cudnn IMPORT:  FAILED")
     print("  Error:", e)
 
 print("==================================================")
