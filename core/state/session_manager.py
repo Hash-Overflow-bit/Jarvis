@@ -42,14 +42,24 @@ class SessionManager:
         self.use_tools = use_tools
         self._started_at = datetime.datetime.now(datetime.timezone.utc)
 
-        # Inform the LLM of the authorized sandbox directories so it does not use placeholders like "/path/to/sandbox"
-        if self.use_tools and settings.sandbox_roots:
-            roots_str = ", ".join(f"'{r}'" for r in settings.sandbox_roots)
+        # Inform the LLM of the authorized sandbox & workspace directories so it does not use placeholders
+        if self.use_tools:
+            allowed_dirs = list(settings.sandbox_roots)
+            try:
+                workspace = settings.default_workspace_dir
+                if workspace not in allowed_dirs:
+                    allowed_dirs.append(workspace)
+            except Exception:
+                pass
+
+            roots_str = ", ".join(f"'{r}'" for r in allowed_dirs)
+            example_sandbox = settings.sandbox_roots[0] if settings.sandbox_roots else ""
             self.system_prompt += (
-                f"\n\nSecurity Sandbox Configuration:\n"
+                f"\n\nSecurity Sandbox & Workspace Configuration:\n"
                 f"- You only have access to these authorized local directories: {roots_str}.\n"
-                f"- When the user references 'sandbox', 'workspace', or 'approved folder', "
-                f"you MUST map it to one of these paths (e.g., '{settings.sandbox_roots[0]}').\n"
+                f"- When the user references 'sandbox', map it to '{example_sandbox}'.\n"
+                f"- When the user references 'workspace', map it to '{settings.default_workspace_dir}'.\n"
+                f"- You are fully authorized to clone Git repositories and manage Poetry/pip packages inside the workspace directory.\n"
                 f"- Never use placeholder paths like '/path/to/sandbox' or './sandbox'."
             )
 
