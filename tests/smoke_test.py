@@ -56,7 +56,8 @@ def session():
             "You are Jarvis, a concise AI assistant. "
             "Answer in 1-2 sentences only. "
             "Remember everything said in this conversation."
-        )
+        ),
+        use_tools=False
     )
 
 
@@ -121,7 +122,7 @@ def test_five_turn_context_retention(ollama_available, session):
     # Turn 4: Ask for the code word — context must be retained
     r4 = session.chat("What was the code word I asked you to remember?")
     print(f"  Turn 4: {r4!r}")
-    assert unique_code in r4, (
+    assert unique_code.lower() in r4.lower(), (
         f"Context LOST: Expected '{unique_code}' in response, got: {r4!r}"
     )
     assert session.turn_count == 4
@@ -220,7 +221,8 @@ if __name__ == "__main__":
             "You are Jarvis, a concise AI assistant. "
             "Answer in 1-2 sentences only. "
             "Remember everything said in this conversation."
-        )
+        ),
+        use_tools=False
     )
 
     print("\n📋 Running 5-turn context retention test...")

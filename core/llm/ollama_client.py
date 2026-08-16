@@ -14,7 +14,7 @@ The only OS difference is where Ollama is installed; the API is identical.
 """
 
 import json
-from typing import Generator
+from collections.abc import Generator
 
 import requests
 
@@ -23,7 +23,6 @@ from core.config import settings
 
 class OllamaError(Exception):
     """Raised when Ollama returns an error or is unreachable."""
-    pass
 
 
 class OllamaClient:
@@ -32,7 +31,7 @@ class OllamaClient:
     Always use the module-level `ollama` singleton.
     """
 
-    def __init__(self, base_url: str = None, model: str = None):
+    def __init__(self, base_url: str | None = None, model: str | None = None):
         self.base_url = (base_url or settings.ollama_base_url).rstrip("/")
         self.model = model or settings.ollama_model
 
@@ -66,10 +65,10 @@ class OllamaClient:
     def generate_compat(
         self,
         prompt: str,
-        model: str = None,
+        model: str | None = None,
         temperature: float = 0.7,
         stream: bool = False,
-    ) -> str:
+    ) -> str | Generator[str, None, None]:
         """
         Single-shot generation via /api/generate.
         Matches the client's existing call pattern exactly:
@@ -114,11 +113,12 @@ class OllamaClient:
     def chat(
         self,
         messages: list[dict],
-        model: str = None,
+        model: str | None = None,
         stream: bool = False,
         temperature: float = 0.7,
-        format: str = None,
-    ) -> str:
+        format: str | None = None,
+        tools: list[dict] | None = None,
+    ) -> dict | Generator[str, None, None]:
         """
         Send a multi-turn chat request via /api/chat.
         Used by SessionManager for full conversation history.
@@ -133,9 +133,10 @@ class OllamaClient:
             stream:   If True, returns a generator of text chunks.
             temperature: Sampling temperature.
             format:   If "json", forces JSON output (for tool calling in M6).
+            tools:    Optional list of tool schemas for function calling.
 
         Returns:
-            Full response string (or generator if stream=True).
+            The message dict containing 'content' and optional 'tool_calls' (or generator if stream=True).
         """
         payload = {
             "model": model or self.model,
@@ -146,6 +147,8 @@ class OllamaClient:
         }
         if format:
             payload["format"] = format
+        if tools:
+            payload["tools"] = tools
 
         try:
             resp = requests.post(
@@ -169,7 +172,7 @@ class OllamaClient:
             return self._stream_chat(resp)
         else:
             data = resp.json()
-            return data["message"]["content"]
+            return data["message"]
 
     def _stream_chat(self, response: requests.Response) -> "Generator[str, None, None]":
         """Generator that yields text chunks from a streaming /api/chat response."""
@@ -194,8 +197,8 @@ class OllamaClient:
     def generate(
         self,
         prompt: str,
-        system: str = None,
-        model: str = None,
+        system: str | None = None,
+        model: str | None = None,
         temperature: float = 0.7,
     ) -> str:
         """

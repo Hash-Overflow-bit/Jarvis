@@ -14,6 +14,7 @@ build/
 # Environment
 .env
 .venv/
+.venv
 env/
 venv/
 
@@ -36,8 +37,8 @@ logs/*.log
 logs/*.jsonl
 
 # Sandbox contents (structure is committed, not files)
-sandbox/test_files/*
-!sandbox/test_files/.gitkeep
+sandbox/*
+!sandbox/.gitkeep
 
 # Generated agents (code is generated at runtime)
 agents/*

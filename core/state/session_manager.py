@@ -31,14 +31,27 @@ class SessionManager:
 
     def __init__(
         self,
-        model: str = None,
-        system_prompt: str = None,
-        max_turns: int = None,
+        model: str | None = None,
+        system_prompt: str | None = None,
+        max_turns: int | None = None,
+        use_tools: bool = True,
     ):
         self.model = model or settings.ollama_model
         self.system_prompt = system_prompt or settings.jarvis_system_prompt
         self.max_turns = max_turns or settings.session_max_turns
-        self._started_at = datetime.datetime.utcnow()
+        self.use_tools = use_tools
+        self._started_at = datetime.datetime.now(datetime.timezone.utc)
+
+        # Inform the LLM of the authorized sandbox directories so it does not use placeholders like "/path/to/sandbox"
+        if self.use_tools and settings.sandbox_roots:
+            roots_str = ", ".join(f"'{r}'" for r in settings.sandbox_roots)
+            self.system_prompt += (
+                f"\n\nSecurity Sandbox Configuration:\n"
+                f"- You only have access to these authorized local directories: {roots_str}.\n"
+                f"- When the user references 'sandbox', 'workspace', or 'approved folder', "
+                f"you MUST map it to one of these paths (e.g., '{settings.sandbox_roots[0]}').\n"
+                f"- Never use placeholder paths like '/path/to/sandbox' or './sandbox'."
+            )
 
         # History always starts with the system prompt
         self.history: list[dict] = [
@@ -68,20 +81,64 @@ class SessionManager:
         # Append user message
         self.history.append({"role": "user", "content": user_input})
 
-        # Call Ollama
-        response = ollama.chat(
+        # Call Ollama with tools registered if allowed
+        from core.tools.tool_registry import tool_registry
+        from core.llm.function_call_handler import function_call_handler
+        import json
+
+        has_tools = self.use_tools and bool(tool_registry.get_all_schemas())
+        response_msg = ollama.chat(
             messages=self.history,
             model=self.model,
             temperature=temperature,
+            tools=tool_registry.get_all_schemas() if has_tools else None,
         )
 
+        # Fallback if response_msg is a string (e.g. mocked or legacy format)
+        if isinstance(response_msg, str):
+            response_msg = {"role": "assistant", "content": response_msg}
+
+        if not isinstance(response_msg, dict):
+            raise OllamaError("Expected dictionary response from Ollama")
+
         # Append assistant response
-        self.history.append({"role": "assistant", "content": response})
+        self.history.append(response_msg)
 
-        # Trim history to prevent context window overflow
-        self._trim_history()
+        # Check if Ollama requested a tool call
+        tool_calls = response_msg.get("tool_calls")
+        if tool_calls and isinstance(tool_calls, list):
+            for tool_call in tool_calls:
+                if isinstance(tool_call, dict):
+                    tool_result = function_call_handler.handle_tool_call(tool_call)
+                    function_info = tool_call.get("function")
+                    function_name = ""
+                    if isinstance(function_info, dict):
+                        function_name = function_info.get("name", "")
+                    self.history.append({
+                        "role": "tool",
+                        "name": function_name,
+                        "content": json.dumps(tool_result),
+                    })
+            
+            # Submit updated history with tool result back to Ollama for summary
+            followup_msg = ollama.chat(
+                messages=self.history,
+                model=self.model,
+                temperature=temperature,
+            )
+            
+            if isinstance(followup_msg, str):
+                followup_msg = {"role": "assistant", "content": followup_msg}
+                
+            if not isinstance(followup_msg, dict):
+                raise OllamaError("Expected dictionary response from Ollama")
 
-        return response
+            self.history.append(followup_msg)
+            self._trim_history()
+            return followup_msg.get("content", "") or ""
+        else:
+            self._trim_history()
+            return response_msg.get("content", "") or ""
 
     def chat_stream(self, user_input: str, temperature: float = 0.7):
         """
@@ -126,7 +183,7 @@ class SessionManager:
     def reset(self) -> None:
         """Start a completely fresh conversation (keeps system prompt)."""
         self.history = [{"role": "system", "content": self.system_prompt}]
-        self._started_at = datetime.datetime.utcnow()
+        self._started_at = datetime.datetime.now(datetime.timezone.utc)
 
     # ------------------------------------------------------------------
     # Introspection
@@ -140,7 +197,7 @@ class SessionManager:
 
     @property
     def session_duration(self) -> datetime.timedelta:
-        return datetime.datetime.utcnow() - self._started_at
+        return datetime.datetime.now(datetime.timezone.utc) - self._started_at
 
     def last_user_message(self) -> Optional[str]:
         for msg in reversed(self.history):

@@ -22,7 +22,7 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 | # | Name | Pay | Status |
 |---|---|---|---|
 | M1 | Stack & State Verification | $10 | ✅ DONE |
-| M2 | Secure File-Management Tool Layer | $20 | ⬜ NOT STARTED |
+| M2 | Secure File-Management Tool Layer | $20 | ✅ DONE |
 | M3 | GitHub & Poetry Repository Integration | $30 | ⬜ NOT STARTED |
 | M4 | Safety, Sandboxing & Confirmation Boundaries | — | ⬜ NOT STARTED |
 | M5 | Dynamic Sub-Agent Builder | $60 | ⬜ NOT STARTED |
@@ -31,22 +31,22 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 
 ---
 
-## Current Milestone: M2 — Secure File-Management Tool Layer
+## Current Milestone: M3 — GitHub & Poetry Repository Integration
 
 ### M2 Steps
 
 | Step | Description | Status |
 |---|---|---|
-| 1 | Create `core/tools/sandbox_enforcer.py` and implement path validation | ⬜ TODO |
-| 2 | Write Pydantic input/output schemas in `schemas/` folder | ⬜ TODO |
-| 3 | Create `core/tools/base_tool.py` abstract interface | ⬜ TODO |
-| 4 | Implement `FileScanner` tool with directory listing + metadata | ⬜ TODO |
-| 5 | Implement `FileCleanup` tool using `send2trash` | ⬜ TODO |
-| 6 | Implement `DirectoryAudit` tool for tree visualization | ⬜ TODO |
-| 7 | Create `core/tools/tool_registry.py` with Ollama schema exporter | ⬜ TODO |
-| 8 | Implement `core/llm/function_call_handler.py` to parse JSON calls | ⬜ TODO |
-| 9 | Add sandbox security unit tests in `tests/test_sandbox.py` | ⬜ TODO |
-| 10 | Add file tool validation unit tests in `tests/test_file_tools.py` | ⬜ TODO |
+| 1 | Create `core/tools/sandbox_enforcer.py` and implement path validation | ✅ DONE |
+| 2 | Write Pydantic input/output schemas in `schemas/` folder | ✅ DONE |
+| 3 | Create `core/tools/base_tool.py` abstract interface | ✅ DONE |
+| 4 | Implement `FileScanner` tool with directory listing + metadata | ✅ DONE |
+| 5 | Implement `FileCleanup` tool using `send2trash` | ✅ DONE |
+| 6 | Implement `DirectoryAudit` tool for tree visualization | ✅ DONE |
+| 7 | Create `core/tools/tool_registry.py` with Ollama schema exporter | ✅ DONE |
+| 8 | Implement `core/llm/function_call_handler.py` to parse JSON calls | ✅ DONE |
+| 9 | Add sandbox security unit tests in `tests/test_sandbox.py` | ✅ DONE |
+| 10 | Add file tool validation unit tests in `tests/test_file_tools.py` | ✅ DONE |
 
 ---
 
@@ -81,6 +81,18 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 - ✅ Configured Piper binary path (`/Users/m2air/Downloads/piper 2/piper`) and voice model.
 - ✅ Ran `scripts/audit.py` — all checks passed (100% green)!
 - ✅ Created [walkthrough.md](file:///Users/m2air/.gemini/antigravity-ide/brain/db2b2fbb-25a6-4340-a230-0daebcd64019/walkthrough.md) documenting Milestone 1 completion.
+
+### Session 4 — 2026-08-16 (Milestone 2 Secure File Layer)
+- ✅ Installed `pydantic`, `send2trash`, and `watchdog` dependencies.
+- ✅ Implemented `core/tools/sandbox_enforcer.py` path verification enforcer.
+- ✅ Defined Pydantic models inside `schemas/`.
+- ✅ Developed `BaseTool` abstract interface, `ToolRegistry`, and `FunctionCallHandler`.
+- ✅ Developed `FileScanner`, `FileCleanup` (with WSL `.jarvis_trash/` directory fallback), and `DirectoryAudit` tools.
+- ✅ Registered tools globally and wired native function calling into `OllamaClient` and `SessionManager`.
+- ✅ Created safety unit tests `tests/test_sandbox.py` (directory traversal, external symlinks).
+- ✅ Created tool unit tests `tests/test_file_tools.py` (functional validation, mock integration).
+- ✅ Successfully ran full pytest test suite (15 passed, 100% success).
+- ✅ Created [walkthrough.md](file:///Users/m2air/.gemini/antigravity-ide/brain/5fd18e5a-1c62-4370-a490-1415ad58d30b/walkthrough.md) documenting Milestone 2 completion.
 
 ---
 
@@ -179,4 +191,4 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 
 ---
 
-*Last Updated: 2026-08-15 | Session 3 | Completed M1 Verification*
+*Last Updated: 2026-08-16 | Session 4 | Completed M2 Verification*

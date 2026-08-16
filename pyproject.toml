@@ -13,6 +13,10 @@ sounddevice = "^0.5.5"
 python-dotenv = "^1.2.2"
 requests = "^2.34.2"
 rich = "^15.0.0"
+pydantic = "^2.13.4"
+send2trash = "^2.1.0"
+watchdog = "^6.0.0"
+piper-tts = "^1.7.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.1.1"
@@ -23,3 +27,8 @@ ruff = "^0.16.3"
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pyright]
+venvPath = "/Users/m2air/Library/Caches/pypoetry/virtualenvs"
+venv = "jarvis-kKsxznaN-py3.11"
+
