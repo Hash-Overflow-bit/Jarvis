@@ -20,9 +20,27 @@ The client uses "base" so we match that. Language can be pinned to "en" at call 
 """
 
 import io
+import os
+import sys
+import platform
 import numpy as np
 from pathlib import Path
 from typing import Union
+
+# On Windows, we must explicitly add the pip-installed NVIDIA CUDA DLL paths to the DLL search directories.
+# Otherwise, ctranslate2/faster-whisper will fail to load cublas64_12.dll and cudnn_ops_infer64_8.dll.
+if platform.system() == "Windows":
+    for path in sys.path:
+        if "site-packages" in path:
+            nvidia_dir = os.path.join(path, "nvidia")
+            if os.path.isdir(nvidia_dir):
+                for sub in ["cublas", "cudnn"]:
+                    bin_dir = os.path.join(nvidia_dir, sub, "bin")
+                    if os.path.isdir(bin_dir):
+                        try:
+                            os.add_dll_directory(bin_dir)
+                        except Exception:
+                            pass
 
 from faster_whisper import WhisperModel
 
