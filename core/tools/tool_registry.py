@@ -114,3 +114,18 @@ tool_registry.register(FileScanner())
 tool_registry.register(FileCleanup())
 tool_registry.register(DirectoryAudit())
 
+# Register Git and Poetry tools (M3+)
+from core.tools.git_tool import GitClone, GitPull, GitStatus, GitAdd, GitCommit, GitPush
+from core.tools.poetry_tool import PoetryInstall, PoetryAdd, PoetryShow
+
+tool_registry.register(GitClone())
+tool_registry.register(GitPull())
+tool_registry.register(GitStatus())
+tool_registry.register(GitAdd())
+tool_registry.register(GitCommit())
+tool_registry.register(GitPush())
+
+tool_registry.register(PoetryInstall())
+tool_registry.register(PoetryAdd())
+tool_registry.register(PoetryShow())
+

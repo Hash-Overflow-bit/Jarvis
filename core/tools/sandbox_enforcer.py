@@ -19,6 +19,14 @@ class SandboxEnforcer:
         # Fall back to config settings if no custom roots provided
         roots = allowed_roots if allowed_roots is not None else settings.sandbox_roots
         self.allowed_roots = [p.resolve() for p in roots]
+        
+        # Automatically whitelist default workspace directory for M3 git/poetry tools
+        try:
+            workspace = settings.default_workspace_dir
+            if workspace not in self.allowed_roots:
+                self.allowed_roots.append(workspace)
+        except Exception:
+            pass
 
     def validate(self, target_path: Union[str, Path]) -> Path:
         """

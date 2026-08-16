@@ -212,6 +212,33 @@ class _Settings:
         # Split by comma, support both Windows and Unix paths
         return [Path(p.strip()) for p in raw.split(",") if p.strip()]
 
+    # --- GitHub & Poetry (used in M3+) ---
+    @property
+    def git_token(self) -> str:
+        return os.getenv("GIT_TOKEN", "")
+
+    @property
+    def default_workspace_dir(self) -> Path:
+        val = os.getenv("DEFAULT_WORKSPACE_DIR")
+        if val:
+            return Path(val).resolve()
+        return (self._project_root / "workspace").resolve()
+
+    @property
+    def poetry_venv_path(self) -> Path:
+        val = os.getenv("POETRY_VENV_PATH")
+        if val:
+            return Path(val).resolve()
+        return (self._project_root / ".venvs").resolve()
+
+    @property
+    def git_user_email(self) -> str:
+        return os.getenv("GIT_USER_EMAIL", "jarvis@local.ai")
+
+    @property
+    def git_user_name(self) -> str:
+        return os.getenv("GIT_USER_NAME", "Jarvis")
+
     def summary(self) -> str:
         """Human-readable settings summary for audit output."""
         lines = [
