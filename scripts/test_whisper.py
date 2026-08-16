@@ -27,11 +27,18 @@ print("--------------------------------------------------")
 try:
     import nvidia.cublas
     print("✓ nvidia.cublas IMPORT: SUCCESS")
-    print("  File location:        ", nvidia.cublas.__file__)
-    bin_dir = Path(nvidia.cublas.__file__).parent / "bin"
-    print("  Bin folder exists:    ", bin_dir.is_dir())
-    if bin_dir.is_dir():
-        print("  Files in bin:         ", [f.name for f in bin_dir.glob("*")])
+    pkg_dir = None
+    if hasattr(nvidia.cublas, "__path__") and nvidia.cublas.__path__:
+        pkg_dir = Path(nvidia.cublas.__path__[0])
+    elif hasattr(nvidia.cublas, "__file__") and nvidia.cublas.__file__:
+        pkg_dir = Path(nvidia.cublas.__file__).parent
+        
+    print("  File location:        ", pkg_dir)
+    if pkg_dir:
+        bin_dir = pkg_dir / "bin"
+        print("  Bin folder exists:    ", bin_dir.is_dir())
+        if bin_dir.is_dir():
+            print("  Files in bin:         ", [f.name for f in bin_dir.glob("*")])
 except ImportError as e:
     print("✗ nvidia.cublas IMPORT: FAILED")
     print("  Error:", e)
@@ -42,11 +49,18 @@ print("--------------------------------------------------")
 try:
     import nvidia.cudnn
     print("✓ nvidia.cudnn IMPORT:  SUCCESS")
-    print("  File location:        ", nvidia.cudnn.__file__)
-    bin_dir = Path(nvidia.cudnn.__file__).parent / "bin"
-    print("  Bin folder exists:    ", bin_dir.is_dir())
-    if bin_dir.is_dir():
-        print("  Files in bin:         ", [f.name for f in bin_dir.glob("*")])
+    pkg_dir = None
+    if hasattr(nvidia.cudnn, "__path__") and nvidia.cudnn.__path__:
+        pkg_dir = Path(nvidia.cudnn.__path__[0])
+    elif hasattr(nvidia.cudnn, "__file__") and nvidia.cudnn.__file__:
+        pkg_dir = Path(nvidia.cudnn.__file__).parent
+        
+    print("  File location:        ", pkg_dir)
+    if pkg_dir:
+        bin_dir = pkg_dir / "bin"
+        print("  Bin folder exists:    ", bin_dir.is_dir())
+        if bin_dir.is_dir():
+            print("  Files in bin:         ", [f.name for f in bin_dir.glob("*")])
 except ImportError as e:
     print("✗ nvidia.cudnn IMPORT:  FAILED")
     print("  Error:", e)

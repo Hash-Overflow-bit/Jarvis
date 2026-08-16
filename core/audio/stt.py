@@ -34,13 +34,17 @@ if platform.system() == "Windows":
         import nvidia.cublas
         import nvidia.cudnn
         
-        cublas_bin = Path(nvidia.cublas.__file__).parent / "bin"
-        cudnn_bin = Path(nvidia.cudnn.__file__).parent / "bin"
-        
-        if cublas_bin.is_dir():
-            os.add_dll_directory(str(cublas_bin))
-        if cudnn_bin.is_dir():
-            os.add_dll_directory(str(cudnn_bin))
+        for pkg in [nvidia.cublas, nvidia.cudnn]:
+            pkg_dir = None
+            if hasattr(pkg, "__path__") and pkg.__path__:
+                pkg_dir = Path(pkg.__path__[0])
+            elif hasattr(pkg, "__file__") and pkg.__file__:
+                pkg_dir = Path(pkg.__file__).parent
+                
+            if pkg_dir:
+                bin_dir = pkg_dir / "bin"
+                if bin_dir.is_dir():
+                    os.add_dll_directory(str(bin_dir))
     except ImportError:
         pass
     except Exception:
