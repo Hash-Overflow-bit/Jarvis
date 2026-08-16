@@ -27,8 +27,10 @@ import numpy as np
 from pathlib import Path
 from typing import Union
 
-# On Windows, we must explicitly add the pip-installed NVIDIA CUDA DLL paths to the DLL search directories.
-# Otherwise, ctranslate2/faster-whisper will fail to load cublas64_12.dll and cudnn_ops_infer64_8.dll.
+# On Windows, ctranslate2 (the C++ engine inside faster-whisper) loads CUDA DLLs
+# using the native Windows LoadLibrary() API, which does NOT respect Python's
+# os.add_dll_directory(). It ONLY checks the system PATH environment variable.
+# We must prepend all nvidia bin/ directories to PATH before importing faster_whisper.
 if platform.system() == "Windows":
     try:
         import nvidia.cublas
@@ -43,15 +45,21 @@ if platform.system() == "Windows":
         if pkg_dir:
             nvidia_dir = pkg_dir.parent
             if nvidia_dir.is_dir():
-                # Add bin/ folder of every installed nvidia subpackage (cublas, cudnn, cuda_runtime, etc.)
+                # Collect all bin/ directories from nvidia subpackages
+                bin_dirs = []
                 for sub in nvidia_dir.iterdir():
                     if sub.is_dir():
                         bin_dir = sub / "bin"
                         if bin_dir.is_dir():
+                            bin_dirs.append(str(bin_dir))
                             try:
                                 os.add_dll_directory(str(bin_dir))
                             except Exception:
                                 pass
+                
+                # CRITICAL: Prepend to PATH so native C++ LoadLibrary() can find them
+                if bin_dirs:
+                    os.environ["PATH"] = os.pathsep.join(bin_dirs) + os.pathsep + os.environ.get("PATH", "")
     except ImportError:
         pass
     except Exception:
