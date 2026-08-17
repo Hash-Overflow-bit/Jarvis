@@ -63,35 +63,41 @@ class BackgroundRunner:
                 env=full_env,
             )
 
-            # Wait for the process to complete with timeout
+            from core.safety.emergency_stop import emergency_stop
+            emergency_stop.register_process(proc)
+
             try:
-                stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                    proc.communicate(), timeout=timeout
-                )
-            except asyncio.TimeoutError:
-                # Terminate and clean up if it timed out
+                # Wait for the process to complete with timeout
                 try:
-                    proc.terminate()
-                    await proc.wait()
-                except OSError:
-                    pass
+                    stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                        proc.communicate(), timeout=timeout
+                    )
+                except asyncio.TimeoutError:
+                    # Terminate and clean up if it timed out
+                    try:
+                        proc.terminate()
+                        await proc.wait()
+                    except OSError:
+                        pass
+                    return {
+                        "success": False,
+                        "error": f"Process timed out after {timeout} seconds.",
+                        "stdout": "",
+                        "stderr": "",
+                        "returncode": -1,
+                    }
+
+                stdout = stdout_bytes.decode("utf-8", errors="replace")
+                stderr = stderr_bytes.decode("utf-8", errors="replace")
+
                 return {
-                    "success": False,
-                    "error": f"Process timed out after {timeout} seconds.",
-                    "stdout": "",
-                    "stderr": "",
-                    "returncode": -1,
+                    "success": proc.returncode == 0,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "returncode": proc.returncode,
                 }
-
-            stdout = stdout_bytes.decode("utf-8", errors="replace")
-            stderr = stderr_bytes.decode("utf-8", errors="replace")
-
-            return {
-                "success": proc.returncode == 0,
-                "stdout": stdout,
-                "stderr": stderr,
-                "returncode": proc.returncode,
-            }
+            finally:
+                emergency_stop.unregister_process(proc)
 
         except FileNotFoundError as e:
             return {

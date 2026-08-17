@@ -239,6 +239,30 @@ class _Settings:
     def git_user_name(self) -> str:
         return os.getenv("GIT_USER_NAME", "Jarvis")
 
+    # --- Safety & Auditing (used in M4+) ---
+    @property
+    def safe_mode(self) -> str:
+        # strict | permissive | off
+        mode = os.getenv("SAFE_MODE", "strict").lower().strip()
+        if mode not in ["strict", "permissive", "off"]:
+            return "strict"
+        return mode
+
+    @property
+    def emergency_stop_keyword(self) -> str:
+        return os.getenv("EMERGENCY_STOP_KEYWORD", "JARVIS STOP").upper().strip()
+
+    @property
+    def dry_run(self) -> bool:
+        return os.getenv("DRY_RUN", "false").lower().strip() == "true"
+
+    @property
+    def audit_log_path(self) -> Path:
+        val = os.getenv("AUDIT_LOG_PATH")
+        if val:
+            return Path(val).resolve()
+        return (self._project_root / "logs" / "audit.log").resolve()
+
     def summary(self) -> str:
         """Human-readable settings summary for audit output."""
         lines = [

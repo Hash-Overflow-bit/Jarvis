@@ -17,6 +17,7 @@ pydantic = "^2.13.4"
 send2trash = "^2.1.0"
 watchdog = "^6.0.0"
 piper-tts = "^1.7.0"
+nest-asyncio = "^1.6.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.1.1"

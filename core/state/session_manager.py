@@ -72,7 +72,7 @@ class SessionManager:
     # Core chat method
     # ------------------------------------------------------------------
 
-    def chat(self, user_input: str, temperature: float = 0.7) -> str:
+    def chat(self, user_input: str, temperature: float = 0.7, mode: str = "text") -> str:
         """
         Send user input to the LLM and return the assistant's response.
         Automatically appends both the user message and assistant reply
@@ -81,6 +81,7 @@ class SessionManager:
         Args:
             user_input:   The user's message (transcribed speech or typed text).
             temperature:  Sampling temperature passed to Ollama.
+            mode:         Runtime execution mode ('text' or 'audio').
 
         Returns:
             The assistant's response text.
@@ -119,7 +120,7 @@ class SessionManager:
         if tool_calls and isinstance(tool_calls, list):
             for tool_call in tool_calls:
                 if isinstance(tool_call, dict):
-                    tool_result = function_call_handler.handle_tool_call(tool_call)
+                    tool_result = function_call_handler.handle_tool_call(tool_call, mode=mode)
                     function_info = tool_call.get("function")
                     function_name = ""
                     if isinstance(function_info, dict):

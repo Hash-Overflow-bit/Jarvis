@@ -31,14 +31,15 @@ class ToolRegistry:
         """Generates Ollama function schemas for all registered tools."""
         return [tool.to_ollama_schema() for tool in self._tools.values()]
 
-    def execute(self, name: str, raw_args: Dict[str, Any]) -> Dict[str, Any]:
+    def execute(self, name: str, raw_args: Dict[str, Any], mode: str = "text") -> Dict[str, Any]:
         """
         Validates arguments against input schema, runs the tool, validates output,
-        and returns the result.
+        and returns the result. Includes safety confirmation gates and dry-run modes.
 
         Args:
             name: Name of the tool to execute.
             raw_args: Raw arguments (dict) from the LLM function call.
+            mode: Runtime execution mode ('text' or 'audio').
 
         Returns:
             A dict with:
@@ -69,27 +70,84 @@ class ToolRegistry:
                 "error": f"Invalid arguments passed to '{name}': {str(e)}"
             }
 
-        # 2. Execute Tool
-        try:
-            output_data = tool.run(input_data)
-        except PermissionError as e:
-            # Explicitly catch sandbox security violations
-            return {
-                "success": False,
-                "error": f"Security boundary violation: {str(e)}"
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Execution error in tool '{name}': {str(e)}"
-            }
+        # 1.5 Safety Gates (Milestone 4)
+        from core.config import settings
+        from core.safety.risk_classifier import risk_classifier
+        from core.safety.confirmation_gate import confirmation_gate
+        from core.safety.dry_run_wrapper import dry_run_wrapper
+        from core.safety.exception_handler import safe_execute
+        from core.logging.audit_logger import audit_logger
+
+        def run_async(coro):
+            import asyncio
+            import nest_asyncio
+            nest_asyncio.apply()
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            return loop.run_until_complete(coro)
+
+        # Dry Run Simulation Check
+        if settings.dry_run:
+            audit_logger.log_action(
+                tool_name=name,
+                parameters=cleaned_args,
+                status="DRY_RUN",
+                details="Dry run simulation mode active"
+            )
+            # Ask for confirmation in dry-run mode too, if configured
+            if risk_classifier.should_confirm(name):
+                approved = run_async(confirmation_gate.confirm_action(name, cleaned_args, mode=mode))
+                if not approved:
+                    audit_logger.log_action(
+                        tool_name=name,
+                        parameters=cleaned_args,
+                        status="DENIED",
+                        details="User rejected dry-run execution"
+                    )
+                    return {
+                        "success": False,
+                        "error": f"Dry-run execution of '{name}' denied by user."
+                    }
+            return dry_run_wrapper.get_mock_response(name, cleaned_args)
+
+        # Active Confirmation Check
+        if risk_classifier.should_confirm(name):
+            approved = run_async(confirmation_gate.confirm_action(name, cleaned_args, mode=mode))
+            if not approved:
+                audit_logger.log_action(
+                    tool_name=name,
+                    parameters=cleaned_args,
+                    status="DENIED",
+                    details="User rejected execution"
+                )
+                return {
+                    "success": False,
+                    "error": f"Execution of '{name}' denied by user."
+                }
+        else:
+            # Low risk tools bypass the confirmation gate
+            audit_logger.log_action(
+                tool_name=name,
+                parameters=cleaned_args,
+                status="BYPASSED",
+                details="Low risk action executed automatically"
+            )
+
+        # 2. Execute Tool (via exception handler wrapper)
+        result = run_async(safe_execute(name, cleaned_args, lambda: tool.run(input_data)))
+        if not result.get("success"):
+            return result
 
         # 3. Validate Output Data
         try:
+            output_data = result.get("result", {})
             # Ensure output matches output_schema
             if not isinstance(output_data, tool.output_schema):
                 # Attempt to parse/coerce if it's not the exact class
-                output_data = tool.output_schema(**output_data.model_dump())
+                output_data = tool.output_schema(**output_data)
             
             return {
                 "success": True,

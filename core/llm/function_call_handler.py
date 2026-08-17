@@ -13,28 +13,23 @@ class FunctionCallHandler:
     Parses and dispatches tool calls from LLM responses.
     """
 
-    def handle_tool_call(self, tool_call: dict[str, Any]) -> dict[str, Any]:
+    def handle_tool_call(self, tool_call: dict[str, Any], mode: str = "text") -> dict[str, Any]:
         """
         Executes a single tool call.
 
         Args:
-            tool_call: A dictionary representing the tool call, structured as:
-                {
-                    "function": {
-                        "name": "tool_name",
-                        "arguments": { ... }
-                    }
-                }
+            tool_call: A dictionary representing the tool call.
+            mode: Runtime execution mode ('text' or 'audio').
 
         Returns:
-            The tool execution result dict (with 'success', 'result', and 'error').
+            The tool execution result dict.
         """
         function_info = tool_call.get("function", {})
         name = function_info.get("name")
         arguments = function_info.get("arguments", {})
 
         # Execute using the global tool registry
-        return tool_registry.execute(name, arguments)
+        return tool_registry.execute(name, arguments, mode=mode)
 
 
 # Singleton handler

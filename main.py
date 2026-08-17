@@ -72,6 +72,12 @@ def run_text_mode():
             console.print("[dim]Session reset. Starting fresh conversation.[/dim]\n")
             continue
 
+        if user_input.upper().strip() == settings.emergency_stop_keyword:
+            from core.safety.emergency_stop import emergency_stop
+            killed_count = emergency_stop.halt_all()
+            console.print(f"[bold red]🛑 EMERGENCY STOP TRIGGERED! Terminated {killed_count} active background tasks.[/bold red]\n")
+            continue
+
         if user_input.lower() in ("/turns", "/status"):
             console.print(
                 f"[dim]Session turns: {session.turn_count} | "
@@ -80,7 +86,7 @@ def run_text_mode():
             continue
 
         try:
-            response = session.chat(user_input)
+            response = session.chat(user_input, mode="text")
             console.print(f"\n[cyan]Jarvis:[/cyan] {response}\n")
         except OllamaError as e:
             console.print(f"\n[red]Error:[/red] {e}\n")
@@ -132,6 +138,14 @@ def run_audio_mode():
 
             console.print(f"You: {text}")
 
+            # Check emergency stop keyword
+            if text.upper().strip() == settings.emergency_stop_keyword:
+                from core.safety.emergency_stop import emergency_stop
+                killed_count = emergency_stop.halt_all()
+                console.print(f"[bold red]🛑 EMERGENCY STOP TRIGGERED! Terminated {killed_count} active background tasks.[/bold red]\n")
+                tts.speak("Emergency stop. Terminated all active tasks.")
+                continue
+
             # Check for exit command
             if any(cmd in text.lower() for cmd in ["goodbye", "shut down", "stop jarvis", "exit"]):
                 tts.speak("Goodbye!")
@@ -139,7 +153,7 @@ def run_audio_mode():
 
             # Get LLM response
             try:
-                response = session.chat(text)
+                response = session.chat(text, mode="audio")
                 console.print(f"Jarvis: {response}\n")
                 tts.speak(response)
             except OllamaError as e:
@@ -148,6 +162,9 @@ def run_audio_mode():
                 tts.speak("I encountered an error connecting to Ollama.")
 
         except KeyboardInterrupt:
+            from core.safety.emergency_stop import emergency_stop
+            killed_count = emergency_stop.halt_all()
+            console.print(f"[bold red]🛑 EMERGENCY STOP TRIGGERED! Terminated {killed_count} active background tasks.[/bold red]\n")
             tts.speak("Shutting down.")
             break
         except AudioDeviceError as e:
