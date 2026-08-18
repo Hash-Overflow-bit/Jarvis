@@ -132,11 +132,29 @@ class SessionManager:
         if not isinstance(response_msg, dict):
             raise OllamaError("Expected dictionary response from Ollama")
 
+        # Check if Ollama requested a tool call
+        tool_calls = response_msg.get("tool_calls")
+
+        # Robust fallback: if no tool_calls but content is a JSON string containing name/parameters
+        content_text = response_msg.get("content", "").strip()
+        if not tool_calls and content_text.startswith("{") and content_text.endswith("}"):
+            try:
+                parsed = json.loads(content_text)
+                if isinstance(parsed, dict) and "name" in parsed and "parameters" in parsed:
+                    tool_calls = [{
+                        "function": {
+                            "name": parsed["name"],
+                            "arguments": parsed["parameters"]
+                        }
+                    }]
+                    response_msg["content"] = ""
+                    response_msg["tool_calls"] = tool_calls
+            except Exception:
+                pass
+
         # Append assistant response
         self.history.append(response_msg)
 
-        # Check if Ollama requested a tool call
-        tool_calls = response_msg.get("tool_calls")
         if tool_calls and isinstance(tool_calls, list):
             for tool_call in tool_calls:
                 if isinstance(tool_call, dict):
