@@ -259,3 +259,50 @@ def test_session_manager_tool_execution(temp_sandbox_env):
             assert "info.log" in session.history[3]["content"]
             assert session.history[4]["role"] == "assistant"
 
+
+def test_create_directory_and_write_file(temp_sandbox_env):
+    sandbox_path, _, _, _, _ = temp_sandbox_env
+    
+    from core.tools.create_directory import CreateDirectory
+    from core.tools.write_file import WriteFile
+    from schemas.create_directory_schema import CreateDirectoryInput
+    from schemas.write_file_schema import WriteFileInput
+    
+    # 1. Test CreateDirectory inside sandbox
+    creator = CreateDirectory()
+    new_dir = sandbox_path / "subfolder"
+    inp_create = CreateDirectoryInput(directory=str(new_dir))
+    
+    with patch("core.tools.create_directory.enforcer", SandboxEnforcer([sandbox_path])):
+        res_create = creator.run(inp_create)
+        assert res_create.success is True
+        assert new_dir.is_dir()
+
+        # Test block outside sandbox
+        inp_bad = CreateDirectoryInput(directory="/tmp/bad_folder")
+        try:
+            creator.run(inp_bad)
+            assert False, "Should have raised PermissionError"
+        except PermissionError:
+            pass
+
+    # 2. Test WriteFile inside sandbox
+    writer = WriteFile()
+    target_file = new_dir / "notes.txt"
+    inp_write = WriteFileInput(filepath=str(target_file), content="Hello Sandbox!")
+    
+    with patch("core.tools.write_file.enforcer", SandboxEnforcer([sandbox_path])):
+        res_write = writer.run(inp_write)
+        assert res_write.success is True
+        assert target_file.is_file()
+        assert target_file.read_text(encoding="utf-8") == "Hello Sandbox!"
+
+        # Test block outside sandbox
+        inp_bad_write = WriteFileInput(filepath="/tmp/notes.txt", content="hack")
+        try:
+            writer.run(inp_bad_write)
+            assert False, "Should have raised PermissionError"
+        except PermissionError:
+            pass
+
+

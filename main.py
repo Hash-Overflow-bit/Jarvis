@@ -36,8 +36,8 @@ console = Console()
 
 def print_banner():
     console.print(Panel.fit(
-        "[bold cyan]J A R V I S[/bold cyan]\n"
-        "[dim]Local AI Assistant | Powered by Ollama[/dim]\n"
+        "[bold cyan] W I L S O N ' S J A R V I S[/bold cyan]\n"
+        "[dim]Local AI Assistant[/dim]\n"
         f"[dim]Model: {settings.ollama_model} | OS: {settings.os_name}[/dim]",
         border_style="cyan"
     ))

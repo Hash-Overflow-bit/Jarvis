@@ -29,6 +29,10 @@ TOOL_RISK_MAP = {
     "poetry_add": RiskLevel.MEDIUM,
     "poetry_show": RiskLevel.LOW,
     
+    # File Manipulation (M4.5+)
+    "create_directory": RiskLevel.MEDIUM,
+    "write_file": RiskLevel.MEDIUM,
+    
     # Memory Knowledge Graph (M4.5+)
     "graph_status": RiskLevel.LOW,
     "rebuild_knowledge_graph": RiskLevel.HIGH,

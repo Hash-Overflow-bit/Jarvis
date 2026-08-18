@@ -193,3 +193,9 @@ tool_registry.register(GraphStatus())
 tool_registry.register(RebuildKnowledgeGraph())
 tool_registry.register(ForgetDocument())
 
+# Register File Manipulation Tools (M4.5+)
+from core.tools.create_directory import CreateDirectory
+from core.tools.write_file import WriteFile
+tool_registry.register(CreateDirectory())
+tool_registry.register(WriteFile())
+
