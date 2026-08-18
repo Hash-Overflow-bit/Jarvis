@@ -263,6 +263,41 @@ class _Settings:
             return Path(val).resolve()
         return (self._project_root / "logs" / "audit.log").resolve()
 
+    # --- Knowledge Graph (M4.5) ---
+    @property
+    def knowledge_graph_path(self) -> Path:
+        val = os.getenv("KNOWLEDGE_GRAPH_PATH")
+        if val:
+            return Path(val).resolve()
+        return (self._project_root / "core" / "memory" / "graph.db").resolve()
+
+    @property
+    def knowledge_corpus_dirs(self) -> list[str]:
+        val = os.getenv("KNOWLEDGE_CORPUS_DIRS", "knowledge,workspace")
+        return [d.strip() for d in val.split(",") if d.strip()]
+
+    @property
+    def graph_watch(self) -> bool:
+        return os.getenv("GRAPH_WATCH", "false").lower().strip() == "true"
+
+    @property
+    def max_graph_hops(self) -> int:
+        try:
+            return min(int(os.getenv("MAX_GRAPH_HOPS", "3")), 4)
+        except Exception:
+            return 3
+
+    @property
+    def graph_top_k(self) -> int:
+        try:
+            return int(os.getenv("GRAPH_TOP_K", "8"))
+        except Exception:
+            return 8
+
+    @property
+    def graph_enabled(self) -> bool:
+        return os.getenv("GRAPH_ENABLED", "true").lower().strip() == "true"
+
     def summary(self) -> str:
         """Human-readable settings summary for audit output."""
         lines = [

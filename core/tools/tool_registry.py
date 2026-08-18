@@ -187,3 +187,9 @@ tool_registry.register(PoetryInstall())
 tool_registry.register(PoetryAdd())
 tool_registry.register(PoetryShow())
 
+# Register Memory Knowledge Graph tools (M4.5+)
+from core.memory.graph_manager import GraphStatus, RebuildKnowledgeGraph, ForgetDocument
+tool_registry.register(GraphStatus())
+tool_registry.register(RebuildKnowledgeGraph())
+tool_registry.register(ForgetDocument())
+

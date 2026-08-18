@@ -28,6 +28,11 @@ TOOL_RISK_MAP = {
     "poetry_install": RiskLevel.MEDIUM,
     "poetry_add": RiskLevel.MEDIUM,
     "poetry_show": RiskLevel.LOW,
+    
+    # Memory Knowledge Graph (M4.5+)
+    "graph_status": RiskLevel.LOW,
+    "rebuild_knowledge_graph": RiskLevel.HIGH,
+    "forget_document": RiskLevel.HIGH,
 }
 
 

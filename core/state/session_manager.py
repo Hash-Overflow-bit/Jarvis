@@ -92,6 +92,26 @@ class SessionManager:
         # Append user message
         self.history.append({"role": "user", "content": user_input})
 
+        # Query local knowledge memory before executing Ollama chat
+        chat_messages = list(self.history)
+        injected_context = ""
+        has_facts = False
+        
+        if settings.graph_enabled:
+            try:
+                from core.memory.recall import recall
+                recall_result = recall(user_input, hops=settings.max_graph_hops, top_k=settings.graph_top_k)
+                if recall_result.facts:
+                    injected_context = recall_result.as_text()
+                    # Inject at index 1 (right after the system prompt at history[0])
+                    chat_messages.insert(1, {"role": "system", "content": injected_context})
+                    has_facts = True
+                    print(f"\n[🧠 Memory] Recalled {len(recall_result.facts)} facts in {recall_result.latency_ms:.1f}ms")
+                else:
+                    print("\n[🧠 Memory] No memory matches found.")
+            except Exception as e:
+                print(f"\n[🧠 Memory Error] Failed recall: {e}")
+
         # Call Ollama with tools registered if allowed
         from core.tools.tool_registry import tool_registry
         from core.llm.function_call_handler import function_call_handler
@@ -99,7 +119,7 @@ class SessionManager:
 
         has_tools = self.use_tools and bool(tool_registry.get_all_schemas())
         response_msg = ollama.chat(
-            messages=self.history,
+            messages=chat_messages,
             model=self.model,
             temperature=temperature,
             tools=tool_registry.get_all_schemas() if has_tools else None,
@@ -131,9 +151,14 @@ class SessionManager:
                         "content": json.dumps(tool_result),
                     })
             
+            # Re-assemble follow up messages with the injected context to maintain consistency
+            followup_messages = list(self.history)
+            if settings.graph_enabled and has_facts:
+                followup_messages.insert(1, {"role": "system", "content": injected_context})
+
             # Submit updated history with tool result back to Ollama for summary
             followup_msg = ollama.chat(
-                messages=self.history,
+                messages=followup_messages,
                 model=self.model,
                 temperature=temperature,
             )

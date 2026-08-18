@@ -24,75 +24,54 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 | M1 | Stack & State Verification | $10 | ✅ DONE |
 | M2 | Secure File-Management Tool Layer | $20 | ✅ DONE |
 | M3 | GitHub & Poetry Repository Integration | $30 | ✅ DONE |
-| M4 | Safety, Sandboxing & Confirmation Boundaries | — | ⬜ NOT STARTED |
+| M4 | Safety, Sandboxing & Confirmation Boundaries | — | ✅ DONE |
+| M4.5 | Local Knowledge Graph Memory | — | ✅ DONE |
 | M5 | Dynamic Sub-Agent Builder | $60 | ⬜ NOT STARTED |
 | M6 | Local Model Fine-Tuning & Tool-Calling Optimization | $40 | ⬜ NOT STARTED |
 | M7 | End-to-End System Integration & Stress Test | $20 | ⬜ NOT STARTED |
 
 ---
 
-## Current Milestone: M3 — GitHub & Poetry Repository Integration
-
-### M2 Steps
-
-| Step | Description | Status |
-|---|---|---|
-| 1 | Create `core/tools/sandbox_enforcer.py` and implement path validation | ✅ DONE |
-| 2 | Write Pydantic input/output schemas in `schemas/` folder | ✅ DONE |
-| 3 | Create `core/tools/base_tool.py` abstract interface | ✅ DONE |
-| 4 | Implement `FileScanner` tool with directory listing + metadata | ✅ DONE |
-| 5 | Implement `FileCleanup` tool using `send2trash` | ✅ DONE |
-| 6 | Implement `DirectoryAudit` tool for tree visualization | ✅ DONE |
-| 7 | Create `core/tools/tool_registry.py` with Ollama schema exporter | ✅ DONE |
-| 8 | Implement `core/llm/function_call_handler.py` to parse JSON calls | ✅ DONE |
-| 9 | Add sandbox security unit tests in `tests/test_sandbox.py` | ✅ DONE |
-| 10 | Add file tool validation unit tests in `tests/test_file_tools.py` | ✅ DONE |
-
----
-
-## Completed Steps Log
+## Completed Milestones Log
 
 ### Session 1 — 2026-08-15
-- ✅ Installed Poetry 2.4.1 using Python 3.11 (system Python 3.9 has venv bug)
-- ✅ Created Poetry project with Python ^3.11
-- ✅ Installed all M1 deps: faster-whisper, sounddevice, numpy 1.26, python-dotenv, requests, rich
-- ✅ Installed dev deps: pytest, pytest-asyncio, black, ruff
-- ✅ **numpy pinned to `>=1.26,<2.0`** — numpy 2.x requires Python 3.12, we're on 3.11
-- ✅ Created full project skeleton (all dirs + `__init__.py` files)
-- ✅ Wrote all 10 core M1 files
-- ✅ Ran `scripts/audit.py` — Python, .env, faster-whisper, audio devices all PASS
-- ⚠️ Audit: Ollama FAIL (not running) — needs `ollama serve` before testing
-- ⚠️ Audit: Piper TTS FAIL (not configured) — console fallback is active
+- Installed Poetry 2.4.1 using Python 3.11
+- Installed all M1 deps: faster-whisper, sounddevice, numpy 1.26, python-dotenv, requests, rich
+- Created full project skeleton
+- Ran audit.log checks
 
 ### Session 2 — 2026-08-15 (Client Config Alignment)
-- ✅ Aligned ALL config values to match client's existing setup exactly:
-  - `WHISPER_MODEL`: `base.en` → `base` (client uses multilingual `base`)
-  - `OLLAMA_URL`: Added `ollama_generate_url` property = `http://localhost:11434/api/generate`
-  - `PIPER_VOICE_MODEL`: Now accepts filename only (`en_US-lessac-medium.onnx`) — resolves to `models/` dir
-  - `SAMPLE_RATE = 16000`, `CHANNELS = 1` — verified match
-- ✅ Added `generate_compat()` to `ollama_client.py` — mirrors client's `/api/generate` call exactly
-- ✅ Added `_stream_generate()` for streaming `/api/generate` responses
-- ✅ Updated `chat()` to use `settings.ollama_chat_url` (not hardcoded string)
-- ✅ Import verification passed — all values print correctly
+- Aligned configuration variables with client machine
+- Implemented Ollama generate backward compatibility wrapper
 
 ### Session 3 — 2026-08-15 (Model Pull & Smoke Tests)
-- ✅ Finished pulling `llama3.1` model in Ollama.
-- ✅ Successfully ran `pytest tests/smoke_test.py -v` — 6 tests passed (100% success)!
-- ✅ Configured Piper binary path (`/Users/m2air/Downloads/piper 2/piper`) and voice model.
-- ✅ Ran `scripts/audit.py` — all checks passed (100% green)!
-- ✅ Created [walkthrough.md](file:///Users/m2air/.gemini/antigravity-ide/brain/db2b2fbb-25a6-4340-a230-0daebcd64019/walkthrough.md) documenting Milestone 1 completion.
+- Finished pulling `llama3.1` model in Ollama.
+- Verified all M1 smoke tests (100% green).
 
 ### Session 4 — 2026-08-16 (Milestone 2 Secure File Layer)
-- ✅ Installed `pydantic`, `send2trash`, and `watchdog` dependencies.
-- ✅ Implemented `core/tools/sandbox_enforcer.py` path verification enforcer.
-- ✅ Defined Pydantic models inside `schemas/`.
-- ✅ Developed `BaseTool` abstract interface, `ToolRegistry`, and `FunctionCallHandler`.
-- ✅ Developed `FileScanner`, `FileCleanup` (with WSL `.jarvis_trash/` directory fallback), and `DirectoryAudit` tools.
-- ✅ Registered tools globally and wired native function calling into `OllamaClient` and `SessionManager`.
-- ✅ Created safety unit tests `tests/test_sandbox.py` (directory traversal, external symlinks).
-- ✅ Created tool unit tests `tests/test_file_tools.py` (functional validation, mock integration).
-- ✅ Successfully ran full pytest test suite (15 passed, 100% success).
-- ✅ Created [walkthrough.md](file:///Users/m2air/.gemini/antigravity-ide/brain/5fd18e5a-1c62-4370-a490-1415ad58d30b/walkthrough.md) documenting Milestone 2 completion.
+- Developed `SandboxEnforcer`, `BaseTool`, and `ToolRegistry`.
+- Implemented `FileScanner`, `FileCleanup`, and `DirectoryAudit` tools.
+- Wrote safety and file tool unit tests (15 passed).
+
+### Session 5 — 2026-08-16 (Milestone 3 Git & Poetry Integration)
+- Implemented Git and Poetry execution commands inside isolated subprocesses.
+- Added Pip fallback mechanisms for standard non-Poetry requirements.
+- Wrote git and package execution tests (22 passed).
+
+### Session 6 — 2026-08-17 (Milestone 4 Safety & Confirmation Boundaries)
+- Built `RiskClassifier` mapping tools to LOW/MEDIUM/HIGH/CRITICAL risk profiles.
+- Built `ConfirmationGate` for text (console) and voice (TTS/STT confirmation) approval checks.
+- Hooked `EmergencyStop` process registry to terminate active subprocesses instantly.
+- Built JSON rotating `AuditLogger` at `logs/audit.log` and `DryRunWrapper`.
+- Integrated safety checks dynamically in `tool_registry.py` and `main.py` (28 passed).
+
+### Session 7 — 2026-08-17 (Milestone 4.5 Knowledge Graph Memory)
+- Created SQLite memory schema and indexes in `schema.sql`.
+- Developed `build_graph.py` parser using Ollama fact extraction and UUID5 hashing.
+- Developed `recall.py` walk engine utilizing recursive SQL queries (max 3 hops limit).
+- Built CLI hook script `recall_hook.py`.
+- Integrated recall context injection cleanly inside `session_manager.py`.
+- Wrote automated test suite verifying recall boundaries (33 passed, 100% success).
 
 ---
 
@@ -109,86 +88,93 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 ├── .gitignore
 ├── core/
 │   ├── __init__.py
-│   ├── config.py                   ← OS detection + settings singleton
+│   ├── config.py                   ← Settings singleton
 │   ├── audio/
 │   │   ├── __init__.py
-│   │   ├── audio_device.py         ← Cross-platform mic/speaker (sounddevice)
-│   │   ├── stt.py                  ← faster-whisper STT wrapper
-│   │   └── tts.py                  ← Piper TTS + ConsoleTTS fallback
+│   │   ├── audio_device.py         ← Mic/speaker interface
+│   │   ├── stt.py                  ← faster-whisper STT + DLL paths
+│   │   └── tts.py                  ← Piper TTS + console fallback
 │   ├── llm/
 │   │   ├── __init__.py
+│   │   ├── function_call_handler.py← LLM tool calling dispatcher
 │   │   └── ollama_client.py        ← Ollama REST API wrapper
-│   └── state/
+│   ├── logging/
+│   │   └── audit_logger.py         ← Rotating JSON audit trail logger
+│   ├── memory/
+│   │   ├── __init__.py
+│   │   ├── schema.sql              ← 3-table SQLite schema
+│   │   ├── extract_prompt.md       ← Ingestion prompt template
+│   │   ├── build_graph.py          ← Ingestion pipeline
+│   │   ├── recall.py               ← Recursive walking engine
+│   │   ├── recall_hook.py          ← JSON prompt interceptor hook
+│   │   └── graph_manager.py        ← Management tools
+│   ├── safety/
+│   │   ├── confirmation_gate.py    ← Voice/text approval loop
+│   │   ├── dry_run_wrapper.py      ← Mock simulator wrapper
+│   │   ├── emergency_stop.py       ← Subprocess halt coordinator
+│   │   ├── exception_handler.py    ← Safe execute wrapper
+│   │   └── risk_classifier.py      ← Tool risk profiles mapping
+│   ├── state/
+│   │   ├── __init__.py
+│   │   └── session_manager.py      ← Conversational state machine
+│   └── tools/
 │       ├── __init__.py
-│       └── session_manager.py      ← Conversational state machine
+│       ├── background_runner.py    ← Subprocess exec manager
+│       ├── base_tool.py            ← Abstract tool interface
+│       ├── directory_audit.py      ← Tree structure audit
+│       ├── file_cleanup.py         ← Sandbox file deletion tool
+│       ├── file_scanner.py         ← Sandbox scanner tool
+│       ├── git_tool.py             ← Git client tool
+│       ├── poetry_tool.py          ← Poetry environment manager
+│       ├── sandbox_enforcer.py     ← Sandbox path boundaries
+│       └── tool_registry.py        ← Tool call interceptor
 ├── tests/
-│   ├── __init__.py
-│   └── smoke_test.py               ← M1: 6 tests (5-turn context + extras)
+│   ├── smoke_test.py
+│   ├── test_confirmation_gate.py
+│   ├── test_emergency_stop.py
+│   ├── test_file_tools.py
+│   ├── test_git_tool.py
+│   ├── test_knowledge_graph.py
+│   ├── test_poetry_tool.py
+│   └── test_sandbox.py
 ├── scripts/
-│   ├── __init__.py
-│   ├── audit.py                    ← Full system health check
-│   └── list_audio_devices.py       ← Helper: find audio device indices
+│   ├── audit.py
+│   ├── list_audio_devices.py
+│   └── test_whisper.py
 ├── sandbox/
-│   └── test_files/
-│       └── .gitkeep
+├── workspace/
 ├── logs/
-│   └── .gitkeep
-├── models/                         ← Place Piper voice .onnx files here
-├── milestone1_plan.md
-├── milestone2_plan.md
-├── milestone3_plan.md
-├── milestone4_plan.md
-├── milestone5_plan.md
-├── milestone6_plan.md
-└── milestone7_plan.md
+└── models/
 ```
 
 ---
 
 ## Key Decisions & Notes
-- **Audio strategy:** Use `sounddevice` on both Mac and Windows (same API, different device index per `.env`)
-- **STT device:** Use `cpu` on macOS, `cuda` on Windows (configurable via `.env`)
-- **TTS:** Piper TTS binary called via subprocess (binary path in `.env`)
-- **Ollama API:** REST call to `http://localhost:11434` — same on both platforms
-- **No hardcoded paths** — everything via `pathlib.Path` and `.env`
-- **No `shell=True`** in any subprocess call
+- **Windows DLL loading:** ctranslate2 native C++ loader ignores `os.add_dll_directory()`. We dynamically resolve `nvidia.cublas` and `nvidia.cudnn` absolute paths and prepend them directly to `os.environ["PATH"]` on Windows startup.
+- **Nested Event Loops:** Used `nest-asyncio` dependency to execute async prompt hooks and voice confirmation gates synchronously inside the conversational LLM loop.
+- **Safe Execution Format:** Standardised `safe_execute` to return `{"success": True, "result": ...}` to prevent attribute errors on pydantic model returns.
 
 ---
 
-## Environment Variables Reference
+## Environment Variables Reference (M4.5 Additions)
 
 | Variable | macOS Example | Windows Example | Used In |
 |---|---|---|---|
-| `ENVIRONMENT` | `development` | `production` | config.py |
-| `OLLAMA_MODEL` | `llama3.1` | `llama3.1` | ollama_client.py |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | `http://localhost:11434` | ollama_client.py |
-| `WHISPER_MODEL` | `base` | `base` | stt.py |
-| `WHISPER_DEVICE` | `cpu` | `cuda` | stt.py |
-| `PIPER_BINARY_PATH` | `/Users/m2air/Downloads/piper 2/piper` | `/home/user/.local/bin/piper` | tts.py |
-| `PIPER_VOICE_MODEL` | `en_US-lessac-medium.onnx` | `en_US-lessac-medium.onnx` | tts.py |
-| `AUDIO_INPUT_DEVICE` | `-1` (default) | `1` (USB mic index) | audio_device.py |
-| `AUDIO_OUTPUT_DEVICE` | `-1` (default) | `-1` (default) | audio_device.py |
-| `AUDIO_SAMPLE_RATE` | `16000` | `16000` | audio_device.py |
-| `SESSION_MAX_TURNS` | `20` | `20` | session_manager.py |
-| `SANDBOX_ROOTS` | `/Users/m2air/Desktop/Jarvis/sandbox` | `C:\Jarvis\sandbox` | (M2) |
-| `LOG_LEVEL` | `DEBUG` | `INFO` | all |
-
----
-
-## Blocking Issues / Open Questions
-- [ ] Confirm client's GPU model (affects WHISPER_DEVICE and model choices)
-- [ ] Confirm Piper TTS binary location on client's WSL 2
-- [ ] Confirm if client wants wake-word (M7) or push-to-talk for initial testing
+| `SAFE_MODE` | `strict` | `strict` | risk_classifier.py |
+| `EMERGENCY_STOP_KEYWORD` | `JARVIS STOP` | `JARVIS STOP` | main.py |
+| `DRY_RUN` | `false` | `false` | tool_registry.py |
+| `KNOWLEDGE_GRAPH_PATH` | `/Users/m2air/Desktop/Jarvis/core/memory/graph.db` | `C:\Users\wmjar\OneDrive\Desktop\Jarvis\core\memory\graph.db` | config.py |
+| `KNOWLEDGE_CORPUS_DIRS` | `knowledge,workspace` | `knowledge,workspace` | config.py |
+| `GRAPH_ENABLED` | `true` | `true` | session_manager.py |
 
 ---
 
 ## How to Resume a Session
 1. Read `agent.md` (this file) top to bottom
-2. Check **Current Milestone** section and find the first `⬜ TODO` step
-3. Read the relevant `milestone{N}_plan.md` for that step
-4. Continue building from that step
-5. Update this file after completing each step
+2. Check **Milestone Roadmap** table and find the first `⬜ NOT STARTED` milestone
+3. Read the relevant `milestone{N}_plan.md` plan
+4. Continue building from that milestone
 
 ---
 
-*Last Updated: 2026-08-16 | Session 4 | Completed M2 Verification*
+*Last Updated: 2026-08-18 | Session 7 | Completed M4.5 Verification*

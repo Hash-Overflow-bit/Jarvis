@@ -142,6 +142,33 @@ JARVIS_SYSTEM_PROMPT=You are Jarvis, a helpful local AI assistant. Be concise an
 
 # --- Sandbox (M2+) ---
 SANDBOX_ROOTS=/mnt/c/Jarvis/sandbox
+
+# --- GitHub & Poetry (M3+) ---
+DEFAULT_WORKSPACE_DIR=/mnt/c/Jarvis/workspace
+POETRY_VENV_PATH=/mnt/c/Jarvis/.venvs
+
+# --- Safety & Auditing (M4+) ---
+SAFE_MODE=strict
+EMERGENCY_STOP_KEYWORD=JARVIS STOP
+DRY_RUN=false
+AUDIT_LOG_PATH=/mnt/c/Jarvis/logs/audit.log
+
+# --- Knowledge Graph (M4.5) ---
+KNOWLEDGE_GRAPH_PATH=/mnt/c/Jarvis/core/memory/graph.db
+KNOWLEDGE_CORPUS_DIRS=knowledge,workspace
+GRAPH_WATCH=false
+MAX_GRAPH_HOPS=3
+GRAPH_TOP_K=8
+GRAPH_ENABLED=true
+```
+
+---
+
+## 📂 6.5. Create Directory Folders
+
+Inside your WSL `/mnt/c/Jarvis` terminal, create the directories required for data, workspaces, and auditing:
+```bash
+mkdir -p sandbox workspace logs knowledge
 ```
 
 ---
@@ -155,18 +182,22 @@ poetry run python scripts/audit.py
 ```
 *All checks should show `✅ PASS`.*
 
-### Step 7.2: Run the Smoke Test
+### Step 7.2: Run the Unit Tests
+Verify all 33 unit tests pass:
 ```bash
-poetry run pytest tests/smoke_test.py -v
+poetry run pytest -v
 ```
-*All tests should pass.*
+*All tests should pass successfully.*
 
-### Step 7.3: Run Jarvis
-* **Text Mode:**
-  ```bash
-  poetry run python main.py --mode text
-  ```
-* **Audio Mode:**
-  ```bash
-  poetry run python main.py --mode audio
-  ```
+### Step 7.3: Run Jarvis and Rebuild Memory
+1. Start Jarvis:
+   ```bash
+   poetry run python main.py --mode text
+   ```
+2. Rebuild the memory graph from the knowledge folder:
+   Type:
+   > *"Jarvis, rebuild your knowledge graph"*
+   *(Type `yes` when prompted to approve the tool execution).*
+
+Jarvis is now fully configured with secure sandboxing, tool confirmation gates, emergency stop, and persistent memory!
+
