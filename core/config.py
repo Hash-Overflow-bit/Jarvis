@@ -198,9 +198,14 @@ class _Settings:
 
     @property
     def jarvis_system_prompt(self) -> str:
-        return os.getenv(
+        base = os.getenv(
             "JARVIS_SYSTEM_PROMPT",
             "You are Jarvis, a helpful local AI assistant. Be concise and precise."
+        )
+        return (
+            f"{base.strip()} You have access to tools, but you should ONLY call a tool if you need to perform a write action or run code. "
+            "If the user's question can be answered using the conversation history or the provided system/recalled facts, "
+            "you MUST answer the user directly and you MUST NOT call any tools."
         )
 
     # --- Sandbox (used in M2+) ---
