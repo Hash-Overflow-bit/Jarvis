@@ -18,6 +18,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 import os
+import re
 
 # ---------------------------------------------------------------------------
 # Load .env from the project root (parent of this file's directory)
@@ -26,7 +27,47 @@ _ENV_FILE = Path(__file__).parent.parent / ".env"
 load_dotenv(dotenv_path=_ENV_FILE, override=False)
 
 
+def normalize_path(path_str: str) -> Path:
+    """
+    Translates and normalizes paths between Windows (C:\\path) and WSL/Linux (/mnt/c/path) styles
+    depending on the current host OS.
+    """
+    if not path_str:
+        return Path()
+
+    path_str = path_str.strip()
+    # Check if running under Linux (e.g. WSL 2) or macOS vs native Windows
+    is_windows = (platform.system() == "Windows")
+
+    if not is_windows:
+        # We are on Linux/WSL/macOS
+        # Convert all backslashes to forward slashes
+        path_str = path_str.replace("\\", "/")
+        # Convert drive letter prefixes like "C:/" to "/mnt/c/"
+        match = re.match(r"^([a-zA-Z]):/(.*)", path_str)
+        if match:
+            drive = match.group(1).lower()
+            rest = match.group(2)
+            path_str = f"/mnt/{drive}/{rest}"
+        elif re.match(r"^([a-zA-Z]):", path_str):
+            drive = path_str[0].lower()
+            path_str = f"/mnt/{drive}/{path_str[2:]}"
+    else:
+        # We are on native Windows
+        # Convert forward slashes to backslashes
+        path_str = path_str.replace("/", "\\")
+        # Convert /mnt/c/ style paths to C:\\ style
+        match = re.match(r"^/mnt/([a-zA-Z])/(.*)", path_str.replace("\\", "/"))
+        if match:
+            drive = match.group(1).upper()
+            rest = match.group(2).replace("/", "\\")
+            path_str = f"{drive}:\\{rest}"
+
+    return Path(path_str).resolve()
+
+
 class _Settings:
+
     """
     Single settings object. Import and use `settings` from this module.
     All values come from environment variables (loaded from .env).
@@ -143,7 +184,7 @@ class _Settings:
     @property
     def piper_binary_path(self) -> Optional[Path]:
         val = os.getenv("PIPER_BINARY_PATH")
-        return Path(val) if val else None
+        return normalize_path(val) if val else None
 
     @property
     def piper_voice_model(self) -> Optional[Path]:
@@ -156,11 +197,10 @@ class _Settings:
         val = os.getenv("PIPER_VOICE_MODEL")
         if not val:
             return None
-        p = Path(val)
         # If it's just a filename with no directory component, resolve to models/ dir
-        if p.parent == Path("."):
-            return self._project_root / "models" / p
-        return p
+        if "/" not in val and "\\" not in val:
+            return self._project_root / "models" / Path(val)
+        return normalize_path(val)
 
     # --- Kokoro TTS ---
     @property
@@ -172,20 +212,18 @@ class _Settings:
         val = os.getenv("KOKORO_VOICE_MODEL", "kokoro-v1.0.onnx")
         if not val:
             return None
-        p = Path(val)
-        if p.parent == Path("."):
-            return self._project_root / "models" / p
-        return p
+        if "/" not in val and "\\" not in val:
+            return self._project_root / "models" / Path(val)
+        return normalize_path(val)
 
     @property
     def kokoro_voices_file(self) -> Optional[Path]:
         val = os.getenv("KOKORO_VOICES_FILE", "voices-v1.0.bin")
         if not val:
             return None
-        p = Path(val)
-        if p.parent == Path("."):
-            return self._project_root / "models" / p
-        return p
+        if "/" not in val and "\\" not in val:
+            return self._project_root / "models" / Path(val)
+        return normalize_path(val)
 
     @property
     def kokoro_voice_id(self) -> str:
@@ -248,7 +286,7 @@ class _Settings:
         if not raw:
             return []
         # Split by comma, support both Windows and Unix paths
-        return [Path(p.strip()) for p in raw.split(",") if p.strip()]
+        return [normalize_path(p) for p in raw.split(",") if p.strip()]
 
     @property
     def sandbox_mode(self) -> bool:
@@ -270,14 +308,14 @@ class _Settings:
     def default_workspace_dir(self) -> Path:
         val = os.getenv("DEFAULT_WORKSPACE_DIR")
         if val:
-            return Path(val).resolve()
+            return normalize_path(val)
         return (self._project_root / "workspace").resolve()
 
     @property
     def poetry_venv_path(self) -> Path:
         val = os.getenv("POETRY_VENV_PATH")
         if val:
-            return Path(val).resolve()
+            return normalize_path(val)
         return (self._project_root / ".venvs").resolve()
 
     @property
@@ -309,7 +347,7 @@ class _Settings:
     def audit_log_path(self) -> Path:
         val = os.getenv("AUDIT_LOG_PATH")
         if val:
-            return Path(val).resolve()
+            return normalize_path(val)
         return (self._project_root / "logs" / "audit.log").resolve()
 
     # --- Knowledge Graph (M4.5) ---
@@ -317,7 +355,7 @@ class _Settings:
     def knowledge_graph_path(self) -> Path:
         val = os.getenv("KNOWLEDGE_GRAPH_PATH")
         if val:
-            return Path(val).resolve()
+            return normalize_path(val)
         return (self._project_root / "core" / "memory" / "graph.db").resolve()
 
     @property
