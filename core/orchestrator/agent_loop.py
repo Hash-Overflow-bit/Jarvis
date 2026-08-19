@@ -156,7 +156,7 @@ Your task is to break down a user's request into a series of serialized steps us
 You must output a JSON object containing a "plan" key, which is a list of steps.
 If the user's request is purely conversational or doesn't require tools, return an empty plan: {{"plan": []}}
 
-Each step must have:
+Each step in the plan must have:
 - "step": integer index (starting from 1)
 - "tool": name of the tool to execute
 - "arguments": parameter dictionary for the tool
@@ -164,7 +164,8 @@ Each step must have:
 Available tools and their schemas:
 {self._get_tool_schemas_str()}
 
-Ensure simplicity, serial execution, and security. Output ONLY a valid JSON object.
+Format requirement:
+Output ONLY a raw JSON object. Do not wrap in markdown code blocks. Do not add any introductory text or explanation. Start your response directly with the open curly brace '{{'.
 """
 
         try:
@@ -178,9 +179,6 @@ Ensure simplicity, serial execution, and security. Output ONLY a valid JSON obje
                 format="json"
             )
             
-            if not isinstance(resp, dict):
-                return []
-                
             # Fallback for native tool calls (compatibility with existing mock tests)
             if resp.get("tool_calls"):
                 plan = []
@@ -225,15 +223,17 @@ Your task is to inspect the error, reflect on what went wrong, and generate a re
 You must output a JSON object containing a "plan" key with the new list of steps.
 If the error is unrecoverable, return an empty plan: {{"plan": []}}
 
-Original Goal: {user_goal}
-Failed Step: {json.dumps(failed_step)}
-Error Message: {error_message}
-Completed Steps so far: {json.dumps(completed_steps)}
-
-Available tools:
+Available tools and their schemas:
 {self._get_tool_schemas_str()}
 
-Generate a revised plan of action. Output ONLY a valid JSON object.
+Format requirement:
+Output ONLY a raw JSON object. Do not wrap in markdown code blocks. Do not add any introductory text or explanation. Start your response directly with the open curly brace '{{'.
+
+Context of failure:
+- User Goal: {user_goal}
+- Failed Step: {json.dumps(failed_step)}
+- Error Message: {error_message}
+- Completed Steps: {json.dumps(completed_steps)}
 """
         try:
             resp = ollama.chat(
