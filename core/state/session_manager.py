@@ -52,21 +52,33 @@ class SessionManager:
             except Exception:
                 pass
 
-            roots_str = ", ".join(f"'{r}'" for r in allowed_dirs)
-            example_sandbox = settings.sandbox_roots[0] if settings.sandbox_roots else ""
-            
-            # Extract actual desktop path if present in allowed roots
+            # Dynamically resolve and add Desktop to whitelisted directories
+            # (Only if not running in strict sandbox mode, or if Desktop is already nested under a sandbox root)
             desktop_path = ""
-            for r in allowed_dirs:
-                r_str = str(r)
-                if "desktop" in r_str.lower() and not r_str.lower().endswith("sandbox"):
-                    desktop_path = r_str
-                    break
+            try:
+                desktop = settings.desktop_dir
+                if not settings.sandbox_mode or any(desktop.relative_to(r) for r in settings.sandbox_roots if r.exists()):
+                    if desktop not in allowed_dirs:
+                        allowed_dirs.append(desktop)
+                    desktop_path = str(desktop)
+            except Exception:
+                pass
+
+            # Extract fallback desktop path from config roots if dynamic check failed
             if not desktop_path:
                 for r in allowed_dirs:
-                    if "desktop" in str(r).lower():
-                        desktop_path = str(r)
+                    r_str = str(r)
+                    if "desktop" in r_str.lower() and not r_str.lower().endswith("sandbox"):
+                        desktop_path = r_str
                         break
+                if not desktop_path:
+                    for r in allowed_dirs:
+                        if "desktop" in str(r).lower():
+                            desktop_path = str(r)
+                            break
+
+            roots_str = ", ".join(f"'{r}'" for r in allowed_dirs)
+            example_sandbox = settings.sandbox_roots[0] if settings.sandbox_roots else ""
 
             self.system_prompt += (
                 f"\n\nSecurity Sandbox & Workspace Configuration:\n"
@@ -81,6 +93,7 @@ class SessionManager:
                 f"- You are fully authorized to clone Git repositories and manage Poetry/pip packages inside the workspace directory.\n"
                 f"- Never use placeholder paths like '/path/to/sandbox' or './sandbox' or '/path/to/desktop'."
             )
+
 
 
         # History always starts with the system prompt

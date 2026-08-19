@@ -385,7 +385,42 @@ class _Settings:
     def graph_enabled(self) -> bool:
         return os.getenv("GRAPH_ENABLED", "true").lower().strip() == "true"
 
+    @property
+    def desktop_dir(self) -> Path:
+        """Dynamically detects the user's real Desktop directory path."""
+        home = Path.home()
+        paths_to_check = [
+            home / "Desktop",
+            home / "OneDrive" / "Desktop",
+            home / "onedrive" / "Desktop",
+        ]
+        
+        # WSL detection helper
+        if self.is_wsl or self.os_name.lower() == "linux":
+            import getpass
+            try:
+                # Try to map Windows users
+                mnt_c_users = Path("/mnt/c/Users")
+                if mnt_c_users.exists():
+                    for user_dir in mnt_c_users.iterdir():
+                        if user_dir.is_dir() and user_dir.name.lower() not in ("public", "all users", "default", "defaultuser0"):
+                            paths_to_check.append(user_dir / "Desktop")
+                            paths_to_check.append(user_dir / "OneDrive" / "Desktop")
+            except Exception:
+                pass
+
+        for p in paths_to_check:
+            # Check existence
+            try:
+                if p.exists() and p.is_dir():
+                    return p.resolve()
+            except Exception:
+                pass
+                
+        return (home / "Desktop").resolve()
+
     def summary(self) -> str:
+
         """Human-readable settings summary for audit output."""
         lines = [
             f"  OS:               {self.os_name} (WSL: {self.is_wsl})",
