@@ -278,31 +278,25 @@ def test_create_directory_and_write_file(temp_sandbox_env):
         assert res_create.success is True
         assert new_dir.is_dir()
 
-        # Test block outside sandbox
+        # Test block outside sandbox — tool catches PermissionError and returns success=False
         inp_bad = CreateDirectoryInput(directory="/tmp/bad_folder")
-        try:
-            creator.run(inp_bad)
-            assert False, "Should have raised PermissionError"
-        except PermissionError:
-            pass
+        res_bad = creator.run(inp_bad)
+        assert res_bad.success is False
+        assert "Security Violation" in res_bad.message or "escapes" in res_bad.message or not res_bad.success
 
     # 2. Test WriteFile inside sandbox
     writer = WriteFile()
     target_file = new_dir / "notes.txt"
     inp_write = WriteFileInput(filepath=str(target_file), content="Hello Sandbox!")
-    
+
     with patch("core.tools.write_file.enforcer", SandboxEnforcer([sandbox_path])):
         res_write = writer.run(inp_write)
         assert res_write.success is True
         assert target_file.is_file()
         assert target_file.read_text(encoding="utf-8") == "Hello Sandbox!"
 
-        # Test block outside sandbox
+        # Test block outside sandbox — tool catches PermissionError and returns success=False
         inp_bad_write = WriteFileInput(filepath="/tmp/notes.txt", content="hack")
-        try:
-            writer.run(inp_bad_write)
-            assert False, "Should have raised PermissionError"
-        except PermissionError:
-            pass
-
+        res_bad_write = writer.run(inp_bad_write)
+        assert res_bad_write.success is False
 

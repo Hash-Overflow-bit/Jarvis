@@ -250,6 +250,17 @@ class _Settings:
         # Split by comma, support both Windows and Unix paths
         return [Path(p.strip()) for p in raw.split(",") if p.strip()]
 
+    @property
+    def sandbox_mode(self) -> bool:
+        """
+        Controls path restriction enforcement.
+        SANDBOX_MODE=true  → Jarvis can only operate inside SANDBOX_ROOTS (locked down).
+        SANDBOX_MODE=false → Jarvis can read/write/delete anywhere on the filesystem
+                             that the OS user has permission to access (unrestricted).
+        Defaults to false (unrestricted) for maximum usefulness.
+        """
+        return os.getenv("SANDBOX_MODE", "false").lower().strip() == "true"
+
     # --- GitHub & Poetry (used in M3+) ---
     @property
     def git_token(self) -> str:

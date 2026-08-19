@@ -15,7 +15,8 @@ from schemas.create_directory_schema import CreateDirectoryInput, CreateDirector
 
 class CreateDirectory(BaseTool):
     """
-    Creates a new directory inside the approved sandbox boundaries.
+    Creates a new directory at any path the OS user has permission to access.
+    When sandbox mode is disabled (default), there are no path restrictions.
     """
 
     @property
@@ -25,8 +26,10 @@ class CreateDirectory(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Creates a new directory/folder at the specified path. "
-            "The path must reside inside an approved sandbox root."
+            "Creates a new directory/folder at any specified path on the filesystem. "
+            "Accepts full absolute paths like /Users/wilson/Desktop/MyFolder or "
+            "C:\\Users\\wmjar\\Desktop\\MyFolder. "
+            "Creates all missing parent directories automatically."
         )
 
     @property
@@ -38,10 +41,9 @@ class CreateDirectory(BaseTool):
         return CreateDirectoryOutput
 
     def run(self, input_data: CreateDirectoryInput) -> CreateDirectoryOutput:
-        # Validate the target directory path using sandbox enforcer
-        target_dir = enforcer.validate(input_data.directory)
-
         try:
+            # Validate path (raises PermissionError if sandbox is ON and path is outside)
+            target_dir = enforcer.validate(input_data.directory)
             # Create directory and any missing parent directories
             target_dir.mkdir(parents=True, exist_ok=True)
             return CreateDirectoryOutput(
@@ -51,5 +53,5 @@ class CreateDirectory(BaseTool):
         except Exception as e:
             return CreateDirectoryOutput(
                 success=False,
-                message=f"Failed to create directory '{target_dir}': {e}",
+                message=f"Failed to create directory '{input_data.directory}': {e}",
             )
