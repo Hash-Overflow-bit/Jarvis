@@ -12,6 +12,7 @@ from core.config import settings
 from core.llm.ollama_client import ollama
 from core.tools.tool_registry import tool_registry
 from core.memory.recall import recall
+from core.memory.action_memory import record_action
 
 logger = logging.getLogger("jarvis_agent_loop")
 
@@ -97,6 +98,16 @@ class AgentExecutionLoop:
                     "tool": tool_name,
                     "result": result.get("result")
                 })
+                # ── Persist action to knowledge graph for cross-session recall ──
+                try:
+                    record_action(
+                        tool_name=tool_name,
+                        args=args,
+                        result=result.get("result", {})
+                    )
+                    print(f"[💾 Memory] Action saved: {tool_name}")
+                except Exception as mem_err:
+                    logger.warning(f"Action memory write failed: {mem_err}")
                 step_idx += 1
             else:
                 error_msg = result.get("error", "Unknown error")

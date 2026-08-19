@@ -53,8 +53,8 @@ STOPWORDS = {
     "should", "so", "some", "such", "than", "that", "the", "their", "theirs", "them", "themselves", "then",
     "there", "these", "they", "this", "those", "through", "to", "too", "under", "until", "up", "very", "was",
     "we", "were", "what", "when", "where", "which", "while", "who", "whom", "why", "will", "with", "you",
-    "your", "yours", "yourself", "yourselves", "also", "know", "node", "system", "policy", "process", "role", 
-    "person", "file", "document"
+    "your", "yours", "yourself", "yourselves", "also", "know", "node", "system", "policy", "process", "role",
+    "person"
 }
 
 
