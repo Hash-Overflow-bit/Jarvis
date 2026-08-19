@@ -204,13 +204,18 @@ def test_build_graph_pipeline_mock(temp_db, tmp_path):
 
 
 def test_sandbox_path_validation_in_build(temp_db):
-    """Verify GraphManager rebuild raises PermissionError on paths outside sandbox."""
+    """Verify GraphManager rebuild raises PermissionError on paths outside sandbox when SANDBOX_MODE=true."""
     from core.memory.graph_manager import RebuildKnowledgeGraph, RebuildGraphInput
-    
+
     rebuilder = RebuildKnowledgeGraph()
     # Try to rebuild from a system folder outside sandbox whitelists
     input_data = RebuildGraphInput(directory="/System/Library")
-    
-    with patch.dict(os.environ, {"KNOWLEDGE_GRAPH_PATH": str(temp_db)}):
+
+    # Explicitly enable sandbox mode + point to temp db so this test is self-contained
+    with patch.dict(os.environ, {
+        "KNOWLEDGE_GRAPH_PATH": str(temp_db),
+        "SANDBOX_MODE": "true",
+        "SANDBOX_ROOTS": "/tmp/jarvis_test_sandbox",
+    }):
         with pytest.raises(PermissionError):
             rebuilder.run(input_data)
