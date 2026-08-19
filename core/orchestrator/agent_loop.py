@@ -9,7 +9,8 @@ import json
 import logging
 from typing import List, Dict, Any, Optional
 from core.config import settings
-from core.llm.ollama_client import ollama
+from core.llm.ollama_client import ollama, OllamaError
+
 from core.tools.tool_registry import tool_registry
 from core.memory.recall import recall
 from core.memory.action_memory import record_action
@@ -91,7 +92,8 @@ class AgentExecutionLoop:
             })
             
             # 4. Self-Verification & Reflection
-            if result.get("success"):
+            tool_success = result.get("success") and result.get("result", {}).get("success", True)
+            if tool_success:
                 print(f"[✅ Success] Step {step.get('step')} completed.")
                 completed_steps.append({
                     "step": step.get("step"),
@@ -110,8 +112,9 @@ class AgentExecutionLoop:
                     logger.warning(f"Action memory write failed: {mem_err}")
                 step_idx += 1
             else:
-                error_msg = result.get("error", "Unknown error")
+                error_msg = result.get("error") or result.get("result", {}).get("message") or "Unknown error"
                 print(f"[❌ Failure] Step {step.get('step')} failed: {error_msg}")
+
                 
                 # Reflection & Self-Correction
                 revised_plan = self._reflect_and_replan(
