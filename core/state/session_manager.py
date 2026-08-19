@@ -54,14 +54,34 @@ class SessionManager:
 
             roots_str = ", ".join(f"'{r}'" for r in allowed_dirs)
             example_sandbox = settings.sandbox_roots[0] if settings.sandbox_roots else ""
+            
+            # Extract actual desktop path if present in allowed roots
+            desktop_path = ""
+            for r in allowed_dirs:
+                r_str = str(r)
+                if "desktop" in r_str.lower() and not r_str.lower().endswith("sandbox"):
+                    desktop_path = r_str
+                    break
+            if not desktop_path:
+                for r in allowed_dirs:
+                    if "desktop" in str(r).lower():
+                        desktop_path = str(r)
+                        break
+
             self.system_prompt += (
                 f"\n\nSecurity Sandbox & Workspace Configuration:\n"
                 f"- You only have access to these authorized local directories: {roots_str}.\n"
                 f"- When the user references 'sandbox', map it to '{example_sandbox}'.\n"
                 f"- When the user references 'workspace', map it to '{settings.default_workspace_dir}'.\n"
-                f"- You are fully authorized to clone Git repositories and manage Poetry/pip packages inside the workspace directory.\n"
-                f"- Never use placeholder paths like '/path/to/sandbox' or './sandbox'."
             )
+            if desktop_path:
+                self.system_prompt += f"- When the user references 'desktop', map it to '{desktop_path}'.\n"
+                
+            self.system_prompt += (
+                f"- You are fully authorized to clone Git repositories and manage Poetry/pip packages inside the workspace directory.\n"
+                f"- Never use placeholder paths like '/path/to/sandbox' or './sandbox' or '/path/to/desktop'."
+            )
+
 
         # History always starts with the system prompt
         self.history: list[dict] = [
