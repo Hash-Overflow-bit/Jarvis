@@ -27,10 +27,11 @@ class WriteFile(BaseTool):
     def description(self) -> str:
         return (
             "Writes text content to a file at any specified path on the filesystem. "
-            "Accepts full absolute paths like /Users/wilson/Desktop/notes.txt or "
-            "C:\\Users\\wmjar\\Desktop\\notes.txt. "
+            "Accepts full absolute paths like C:\\Users\\your_username\\Desktop\\notes.txt or "
+            "/Users/your_username/Desktop/notes.txt. "
             "Creates the file if it does not exist, or overwrites it if it does. "
             "Also creates any missing parent directories automatically."
+
         )
 
     @property

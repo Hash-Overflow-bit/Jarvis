@@ -27,9 +27,10 @@ class CreateDirectory(BaseTool):
     def description(self) -> str:
         return (
             "Creates a new directory/folder at any specified path on the filesystem. "
-            "Accepts full absolute paths like /Users/wilson/Desktop/MyFolder or "
-            "C:\\Users\\wmjar\\Desktop\\MyFolder. "
+            "Accepts full absolute paths like C:\\Users\\your_username\\Desktop\\MyFolder or "
+            "/Users/your_username/Desktop/MyFolder. "
             "Creates all missing parent directories automatically."
+
         )
 
     @property
