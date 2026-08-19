@@ -92,7 +92,16 @@ class SessionManager:
         # Append user message
         self.history.append({"role": "user", "content": user_input})
 
+        # Asynchronously extract and save conversational facts to the knowledge graph
+        import threading
+        try:
+            from core.memory.chat_memory import learn_from_message
+            threading.Thread(target=learn_from_message, args=(user_input,), daemon=True).start()
+        except Exception:
+            pass
+
         if self.use_tools:
+
             from core.orchestrator.agent_loop import AgentExecutionLoop
             loop = AgentExecutionLoop(use_tools=True, history=self.history)
             response = loop.run(user_input, mode=mode)
