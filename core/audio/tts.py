@@ -174,6 +174,75 @@ class PiperTTS:
         output_path.write_bytes(wav_bytes)
         return output_path
 
+class KokoroTTS:
+    """
+    Wrapper around kokoro-onnx for local, high-quality, streaming TTS.
+    """
+
+    def __init__(self):
+        self.model_path = settings.kokoro_voice_model
+        self.voices_path = settings.kokoro_voices_file
+        self.voice_id = settings.kokoro_voice_id
+        self.lang_code = settings.kokoro_lang_code
+        self._available = self._check_availability()
+        self.kokoro = None
+
+    def _check_availability(self) -> bool:
+        if self.model_path is None or self.voices_path is None:
+            return False
+        return Path(self.model_path).exists() and Path(self.voices_path).exists()
+
+    def _ensure_loaded(self):
+        if self.kokoro is None:
+            from kokoro_onnx import Kokoro
+            self.kokoro = Kokoro(str(self.model_path), str(self.voices_path))
+
+    def speak(self, text: str) -> None:
+        if not text or not text.strip():
+            return
+
+        if not self._available:
+            if settings.log_level == "DEBUG":
+                print(f"[JARVIS]: {text}")
+            return
+
+        try:
+            self._ensure_loaded()
+            import sounddevice as sd
+            
+            # Create stream of chunks
+            stream = self.kokoro.create_stream(
+                text,
+                voice=self.voice_id,
+                speed=1.0,
+                lang=self.lang_code
+            )
+            
+            for audio, sr in stream:
+                sd.play(audio, sr)
+                sd.wait()
+        except Exception as e:
+            if settings.log_level == "DEBUG":
+                print(f"[TTS] Kokoro speak failed: {e}")
+                print(f"[JARVIS]: {text}")
+
+    def synthesize(self, text: str) -> bytes:
+        """Synthesizes text and returns WAV bytes (required for API compatibility)."""
+        self._ensure_loaded()
+        import io
+        import soundfile as sf
+        
+        samples, sr = self.kokoro.create(
+            text,
+            voice=self.voice_id,
+            speed=1.0,
+            lang=self.lang_code
+        )
+        
+        buffer = io.BytesIO()
+        sf.write(buffer, samples, sr, format="WAV")
+        return buffer.getvalue()
+
     @property
     def is_available(self) -> bool:
         return self._available
@@ -198,16 +267,23 @@ class ConsoleTTS:
         return True
 
 
-def get_tts() -> PiperTTS | ConsoleTTS:
+def get_tts():
     """
     Returns the best available TTS:
-    - PiperTTS if the binary and model are configured and found.
-    - ConsoleTTS as fallback (text-only mode).
+    - KokoroTTS if configured and voice model files exist.
+    - PiperTTS if configured and binary/voice model files exist.
+    - ConsoleTTS as fallback.
     """
+    if settings.tts_engine == "kokoro":
+        kokoro = KokoroTTS()
+        if kokoro.is_available:
+            return kokoro
+        print("[TTS] Kokoro configuration requested, but voice assets are missing. Falling back...")
+
     piper = PiperTTS()
     if piper.is_available:
         return piper
-    print("[TTS] Piper not available — using console fallback (text-only mode).")
+    print("[TTS] Piper and Kokoro not available — using console fallback (text-only mode).")
     return ConsoleTTS()
 
 

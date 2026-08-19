@@ -54,9 +54,10 @@ workspace/*
 # Whisper model cache
 ~/.cache/huggingface/
 
-# Piper TTS voice models (large binary files)
+# Piper & Kokoro TTS voice models (large binary files)
 models/*.onnx
 models/*.onnx.json
+models/*.bin
 
 # Benchmark results
 benchmarks/results/

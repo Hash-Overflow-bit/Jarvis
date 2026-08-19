@@ -92,105 +92,41 @@ class SessionManager:
         # Append user message
         self.history.append({"role": "user", "content": user_input})
 
-        # Query local knowledge memory before executing Ollama chat
-        chat_messages = list(self.history)
-        injected_context = ""
-        has_facts = False
-        
-        if settings.graph_enabled:
-            try:
-                from core.memory.recall import recall
-                recall_result = recall(user_input, hops=settings.max_graph_hops, top_k=settings.graph_top_k)
-                if recall_result.facts:
-                    injected_context = recall_result.as_text()
-                    # Inject at index 1 (right after the system prompt at history[0])
-                    chat_messages.insert(1, {"role": "system", "content": injected_context})
-                    has_facts = True
-                    print(f"\n[🧠 Memory] Recalled {len(recall_result.facts)} facts in {recall_result.latency_ms:.1f}ms")
-                else:
-                    print("\n[🧠 Memory] No memory matches found.")
-            except Exception as e:
-                print(f"\n[🧠 Memory Error] Failed recall: {e}")
+        if self.use_tools:
+            from core.orchestrator.agent_loop import AgentExecutionLoop
+            loop = AgentExecutionLoop(use_tools=True, history=self.history)
+            response = loop.run(user_input, mode=mode)
+            # Add final response as assistant role to history for next turns
+            self.history.append({"role": "assistant", "content": response})
+            self._trim_history()
+            return response
+        else:
+            # Direct conversational response without tools
+            chat_messages = list(self.history)
+            injected_context = ""
+            if settings.graph_enabled:
+                try:
+                    from core.memory.recall import recall
+                    recall_result = recall(user_input, hops=settings.max_graph_hops, top_k=settings.graph_top_k)
+                    if recall_result.facts:
+                        injected_context = recall_result.as_text()
+                        chat_messages.insert(1, {"role": "system", "content": injected_context})
+                except Exception as e:
+                    print(f"\n[🧠 Memory Error] Failed recall: {e}")
 
-        # Call Ollama with tools registered if allowed
-        from core.tools.tool_registry import tool_registry
-        from core.llm.function_call_handler import function_call_handler
-        import json
-
-        has_tools = self.use_tools and bool(tool_registry.get_all_schemas())
-        response_msg = ollama.chat(
-            messages=chat_messages,
-            model=self.model,
-            temperature=temperature,
-            tools=tool_registry.get_all_schemas() if has_tools else None,
-        )
-
-        # Fallback if response_msg is a string (e.g. mocked or legacy format)
-        if isinstance(response_msg, str):
-            response_msg = {"role": "assistant", "content": response_msg}
-
-        if not isinstance(response_msg, dict):
-            raise OllamaError("Expected dictionary response from Ollama")
-
-        # Check if Ollama requested a tool call
-        tool_calls = response_msg.get("tool_calls")
-
-        # Robust fallback: if no tool_calls but content is a JSON string containing name/parameters
-        content_text = response_msg.get("content", "").strip()
-        if not tool_calls and content_text.startswith("{") and content_text.endswith("}"):
-            try:
-                parsed = json.loads(content_text)
-                if isinstance(parsed, dict) and "name" in parsed and "parameters" in parsed:
-                    tool_calls = [{
-                        "function": {
-                            "name": parsed["name"],
-                            "arguments": parsed["parameters"]
-                        }
-                    }]
-                    response_msg["content"] = ""
-                    response_msg["tool_calls"] = tool_calls
-            except Exception:
-                pass
-
-        # Append assistant response
-        self.history.append(response_msg)
-
-        if tool_calls and isinstance(tool_calls, list):
-            for tool_call in tool_calls:
-                if isinstance(tool_call, dict):
-                    tool_result = function_call_handler.handle_tool_call(tool_call, mode=mode)
-                    function_info = tool_call.get("function")
-                    function_name = ""
-                    if isinstance(function_info, dict):
-                        function_name = function_info.get("name", "")
-                    self.history.append({
-                        "role": "tool",
-                        "name": function_name,
-                        "content": json.dumps(tool_result),
-                    })
-            
-            # Re-assemble follow up messages with the injected context to maintain consistency
-            followup_messages = list(self.history)
-            if settings.graph_enabled and has_facts:
-                followup_messages.insert(1, {"role": "system", "content": injected_context})
-
-            # Submit updated history with tool result back to Ollama for summary
-            followup_msg = ollama.chat(
-                messages=followup_messages,
+            response_msg = ollama.chat(
+                messages=chat_messages,
                 model=self.model,
                 temperature=temperature,
             )
-            
-            if isinstance(followup_msg, str):
-                followup_msg = {"role": "assistant", "content": followup_msg}
-                
-            if not isinstance(followup_msg, dict):
+
+            if isinstance(response_msg, str):
+                response_msg = {"role": "assistant", "content": response_msg}
+
+            if not isinstance(response_msg, dict):
                 raise OllamaError("Expected dictionary response from Ollama")
 
-            self.history.append(followup_msg)
-            self._trim_history()
-            return followup_msg.get("content", "") or ""
-        else:
+            self.history.append(response_msg)
             self._trim_history()
             return response_msg.get("content", "") or ""
 

@@ -162,6 +162,39 @@ class _Settings:
             return self._project_root / "models" / p
         return p
 
+    # --- Kokoro TTS ---
+    @property
+    def tts_engine(self) -> str:
+        return os.getenv("TTS_ENGINE", "piper").lower().strip()
+
+    @property
+    def kokoro_voice_model(self) -> Optional[Path]:
+        val = os.getenv("KOKORO_VOICE_MODEL", "kokoro-v1.0.onnx")
+        if not val:
+            return None
+        p = Path(val)
+        if p.parent == Path("."):
+            return self._project_root / "models" / p
+        return p
+
+    @property
+    def kokoro_voices_file(self) -> Optional[Path]:
+        val = os.getenv("KOKORO_VOICES_FILE", "voices-v1.0.bin")
+        if not val:
+            return None
+        p = Path(val)
+        if p.parent == Path("."):
+            return self._project_root / "models" / p
+        return p
+
+    @property
+    def kokoro_voice_id(self) -> str:
+        return os.getenv("KOKORO_VOICE_ID", "bf_emma").strip()
+
+    @property
+    def kokoro_lang_code(self) -> str:
+        return os.getenv("KOKORO_LANG_CODE", "b").strip()
+
     # --- Audio ---
     @property
     def audio_input_device(self) -> int:

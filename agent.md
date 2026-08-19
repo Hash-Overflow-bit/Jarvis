@@ -26,7 +26,7 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 | M3 | GitHub & Poetry Repository Integration | $30 | ✅ DONE |
 | M4 | Safety, Sandboxing & Confirmation Boundaries | — | ✅ DONE |
 | M4.5 | Local Knowledge Graph Memory | — | ✅ DONE |
-| M5 | Dynamic Sub-Agent Builder | $60 | ⬜ NOT STARTED |
+| M5 | Core Agent Execution Loop & Kokoro TTS | $60 | ✅ DONE |
 | M6 | Local Model Fine-Tuning & Tool-Calling Optimization | $40 | ⬜ NOT STARTED |
 | M7 | End-to-End System Integration & Stress Test | $20 | ⬜ NOT STARTED |
 
@@ -73,6 +73,21 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 - Integrated recall context injection cleanly inside `session_manager.py`.
 - Wrote automated test suite verifying recall boundaries (33 passed, 100% success).
 
+### Session 8 — 2026-08-18 (M4.5 Polish, Fallback Tool Call, and Manipulations)
+- Implemented stopword token-based matching to prevent keyword mismatch.
+- Developed database-driven name resolution in `build_graph.py` to merge entities across documents regardless of type classification.
+- Added self-healing fallback parser for text-based JSON tool calls.
+- Built and registered `CreateDirectory` and `WriteFile` tools (34 unit tests green).
+- Updated client deployment guide and pushed M4.5 codebase.
+
+### Session 9 — 2026-08-19 (Milestone 5 - Agent Loop & Kokoro TTS Upgrade)
+- Created `AgentExecutionLoop` class in `core/orchestrator/agent_loop.py` for task decomposition, verification, and reflection replanning on failure.
+- Hooked loop execution directly inside `session_manager.py` with backward compatibility support for native function `tool_calls`.
+- Built `KokoroTTS` wrapper class in `core/audio/tts.py` implementing 24kHz low-latency streaming audio.
+- Created models downloader script `scripts/download_kokoro_models.py` to cache Kokoro ONNX assets.
+- Added new Kokoro parameters to `config.py`, `.env.example`, and `.env`.
+- Wrote test suites in `tests/test_agent_loop.py` and `tests/test_kokoro_tts.py` (42/42 tests passing).
+
 ---
 
 ## Current File Structure
@@ -93,7 +108,7 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 │   │   ├── __init__.py
 │   │   ├── audio_device.py         ← Mic/speaker interface
 │   │   ├── stt.py                  ← faster-whisper STT + DLL paths
-│   │   └── tts.py                  ← Piper TTS + console fallback
+│   │   └── tts.py                  ← Piper + Kokoro TTS streaming
 │   ├── llm/
 │   │   ├── __init__.py
 │   │   ├── function_call_handler.py← LLM tool calling dispatcher
@@ -108,6 +123,9 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 │   │   ├── recall.py               ← Recursive walking engine
 │   │   ├── recall_hook.py          ← JSON prompt interceptor hook
 │   │   └── graph_manager.py        ← Management tools
+│   ├── orchestrator/
+│   │   ├── __init__.py
+│   │   └── agent_loop.py           ← Serialized steps planning, execution & reflection loop
 │   ├── safety/
 │   │   ├── confirmation_gate.py    ← Voice/text approval loop
 │   │   ├── dry_run_wrapper.py      ← Mock simulator wrapper
@@ -121,6 +139,8 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 │       ├── __init__.py
 │       ├── background_runner.py    ← Subprocess exec manager
 │       ├── base_tool.py            ← Abstract tool interface
+│       ├── create_directory.py     ← Create folder tool
+│       ├── write_file.py           ← Write file content tool
 │       ├── directory_audit.py      ← Tree structure audit
 │       ├── file_cleanup.py         ← Sandbox file deletion tool
 │       ├── file_scanner.py         ← Sandbox scanner tool
@@ -130,11 +150,13 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 │       └── tool_registry.py        ← Tool call interceptor
 ├── tests/
 │   ├── smoke_test.py
+│   ├── test_agent_loop.py
 │   ├── test_confirmation_gate.py
 │   ├── test_emergency_stop.py
 │   ├── test_file_tools.py
 │   ├── test_git_tool.py
 │   ├── test_knowledge_graph.py
+│   ├── test_kokoro_tts.py
 │   ├── test_poetry_tool.py
 │   └── test_sandbox.py
 ├── scripts/
@@ -177,4 +199,4 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 
 ---
 
-*Last Updated: 2026-08-18 | Session 7 | Completed M4.5 Verification*
+*Last Updated: 2026-08-19 | Session 9 | Milestone 5 Completed*
