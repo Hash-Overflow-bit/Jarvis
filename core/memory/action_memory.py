@@ -35,7 +35,9 @@ _ACTION_TEMPLATES: dict[str, str] = {
     "git_add":          "Jarvis ran git add in {repo_path}",
     "git_commit":       "Jarvis ran git commit with message: {message}",
     "git_push":         "Jarvis ran git push in {repo_path}",
+    "git_pull":         "Jarvis pulled latest changes in {repo_path}",
     "git_clone":        "Jarvis cloned repository {url} to {destination}",
+
     "poetry_install":   "Jarvis ran poetry install in {project_path}",
     "poetry_add":       "Jarvis added package {package} via poetry",
     "poetry_show":      "Jarvis listed poetry packages",
@@ -94,8 +96,9 @@ def _get_keyword_aliases(tool_name: str, args: dict) -> list[str]:
         except Exception:
             pass
 
-    elif tool_name in ("git_clone", "git_commit", "git_push", "git_status", "git_add"):
+    elif tool_name in ("git_clone", "git_pull", "git_commit", "git_push", "git_status", "git_add"):
         aliases += ["git", tool_name.replace("_", " ")]
+
 
     elif tool_name in ("poetry_install", "poetry_add", "poetry_show"):
         aliases += ["poetry", "package", tool_name.replace("_", " ")]
