@@ -15,6 +15,7 @@ The only OS difference is where Ollama is installed; the API is identical.
 
 import json
 from collections.abc import Generator
+from typing import overload, Literal, Any
 
 import requests
 
@@ -61,6 +62,24 @@ class OllamaClient:
     # Uses /api/generate with a plain prompt string (no message history)
     # Client config: OLLAMA_URL = "http://localhost:11434/api/generate"
     # ------------------------------------------------------------------
+
+    @overload
+    def generate_compat(
+        self,
+        prompt: str,
+        model: str | None = None,
+        temperature: float = 0.7,
+        stream: Literal[False] = False,
+    ) -> str: ...
+
+    @overload
+    def generate_compat(
+        self,
+        prompt: str,
+        model: str | None = None,
+        temperature: float = 0.7,
+        stream: Literal[True] = ...,
+    ) -> Generator[str, None, None]: ...
 
     def generate_compat(
         self,
@@ -110,6 +129,28 @@ class OllamaClient:
     # Chat (multi-turn, uses conversation history)
     # ------------------------------------------------------------------
 
+    @overload
+    def chat(
+        self,
+        messages: list[dict],
+        model: str | None = None,
+        stream: Literal[False] = False,
+        temperature: float = 0.7,
+        format: str | None = None,
+        tools: list[dict] | None = None,
+    ) -> dict[str, Any]: ...
+
+    @overload
+    def chat(
+        self,
+        messages: list[dict],
+        model: str | None = None,
+        stream: Literal[True] = ...,
+        temperature: float = 0.7,
+        format: str | None = None,
+        tools: list[dict] | None = None,
+    ) -> Generator[str, None, None]: ...
+
     def chat(
         self,
         messages: list[dict],
@@ -118,7 +159,7 @@ class OllamaClient:
         temperature: float = 0.7,
         format: str | None = None,
         tools: list[dict] | None = None,
-    ) -> dict | Generator[str, None, None]:
+    ) -> dict[str, Any] | Generator[str, None, None]:
         """
         Send a multi-turn chat request via /api/chat.
         Used by SessionManager for full conversation history.

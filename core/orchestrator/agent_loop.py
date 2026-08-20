@@ -70,6 +70,11 @@ class AgentExecutionLoop:
             tool_name = step.get("tool")
             args = step.get("arguments", {})
 
+            if not isinstance(tool_name, str) or not tool_name:
+                print(f"[❌ Failure] Step {step.get('step')} has an invalid or missing tool name.")
+                step_idx += 1
+                continue
+
             print(f"\n[⚙️ Execution] Running Step {step.get('step')}: {tool_name} ...")
             
             # Record tool call in history for session context & tests
@@ -201,6 +206,9 @@ Output ONLY a raw JSON object. Do not wrap in markdown code blocks. Do not add a
                 format="json"
             )
             
+            if not isinstance(resp, dict):
+                return []
+
             # Fallback for native tool calls (compatibility with existing mock tests)
             if resp.get("tool_calls"):
                 plan = []
@@ -283,6 +291,8 @@ Context of failure:
                 temperature=0.0,
                 format="json"
             )
+            if not isinstance(resp, dict):
+                return []
             content = resp.get("content", "").strip()
             if not content:
                 return []
@@ -326,6 +336,8 @@ Executed Steps & Results:
                 ],
                 temperature=0.7
             )
+            if not isinstance(resp, dict):
+                return f"Completed tasks: {json.dumps(completed_steps)}"
             return resp.get("content", "").strip()
         except Exception as e:
             return f"Completed tasks: {json.dumps(completed_steps)}"
@@ -353,6 +365,8 @@ Executed Steps & Results:
                 messages=messages,
                 temperature=0.7
             )
+            if not isinstance(resp, dict):
+                raise OllamaError("Ollama chat returned an invalid response type.")
             return resp.get("content", "").strip()
         except Exception as e:
             raise OllamaError(f"Ollama chat failed: {e}")
