@@ -336,8 +336,16 @@ Executed Steps & Results:
             {"role": "system", "content": settings.jarvis_system_prompt}
         ]
         if recalled_facts:
-            messages.append({"role": "system", "content": recalled_facts})
-        messages.append({"role": "user", "content": user_input})
+            messages.append({"role": "system", "content": f"Recalled Long-Term Memory:\n{recalled_facts}"})
+
+        # Include prior conversation turns from current session history
+        for msg in self.history:
+            if msg.get("role") != "system":
+                messages.append(msg)
+
+        # Ensure user_input is appended if not already last message
+        if not messages or messages[-1].get("content") != user_input:
+            messages.append({"role": "user", "content": user_input})
         
         try:
             resp = ollama.chat(
