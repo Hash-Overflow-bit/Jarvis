@@ -153,14 +153,18 @@ class AgentExecutionLoop:
     def _is_conversational_or_informative(self, user_input: str) -> bool:
         """
         Determines if the user input is purely conversational, a greeting, 
-        a memory check, or a statement of fact/preference (which does not 
-        require any tools to be executed).
+        a memory check, or a statement of fact/preference/explanation 
+        (which does not require any tools to be executed).
         """
         import re
         cleaned = user_input.lower().strip().rstrip(".!?")
         
-        # 1. Simple greetings
-        greetings = {"hello", "hi", "hey", "good morning", "good afternoon", "good evening", "yo", "jarvis", "hello jarvis", "hi jarvis", "are you online", "are you there", "goodbye", "exit"}
+        # 1. Simple greetings & conversational acknowledgments
+        greetings = {
+            "hello", "hi", "hey", "good morning", "good afternoon", "good evening", 
+            "yo", "jarvis", "hello jarvis", "hi jarvis", "are you online", "are you there", 
+            "goodbye", "exit", "yes", "no", "yeah", "sure", "ok", "okay", "thanks", "thank you"
+        }
         if cleaned in greetings:
             return True
             
@@ -182,7 +186,7 @@ class AgentExecutionLoop:
             if re.search(pattern, cleaned):
                 return True
                 
-        # 3. Statements of personal facts or preferences (introductions, name declarations, preferred framework/tools)
+        # 3. Statements of personal facts or preferences
         statements = [
             r"^(now\s*,\s*)?my name is\s+\w+",
             r"^i (prefer|like|use)\s+\w+",
@@ -191,6 +195,36 @@ class AgentExecutionLoop:
         ]
         for pattern in statements:
             if re.search(pattern, cleaned):
+                return True
+                
+        # 4. Requesting explanations, questions, code help, or teaching
+        action_indicators = [
+            r"write (it |this |code |)to (a )?file",
+            r"save (it |this |code |)to",
+            r"create (a )?(file|directory|folder)",
+            r"make (a )?(file|directory|folder)",
+            r"run (the |a )?(command|code|script)",
+            r"execute",
+            r"git (commit|push|pull|clone|status)",
+            r"poetry (add|install|run|show)",
+            r"rebuild (the |)knowledge graph",
+            r"rebuild (the |)memory"
+        ]
+        has_action = any(re.search(pat, cleaned) for pat in action_indicators)
+        
+        if not has_action:
+            conversational_indicators = [
+                r"explain",
+                r"teach me",
+                r"how (is|does|do|to)",
+                r"why (is|does|do|to)",
+                r"what (is|does|are|was)",
+                r"can you (explain|teach|tell me about)",
+                r"could you (explain|teach|tell me about)",
+                r"tell me (about|a |more |)",
+                r"write (a |some |)(python|javascript|c|cpp|java|html|css|bash|sql|code|function|class|program|script)"
+            ]
+            if any(re.search(pat, cleaned) for pat in conversational_indicators):
                 return True
                 
         return False
