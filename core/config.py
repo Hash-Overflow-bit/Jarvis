@@ -275,8 +275,8 @@ class _Settings:
         )
         return (
             f"{base.strip()} You are equipped with a persistent long-term memory system (a local Knowledge Graph) "
-            "that remembers the user and their preferences across sessions. If you recall the user's name or other details "
-            "from the recalled facts, address them by name, confirm you remember them across sessions, and answer accordingly. "
+            "that remembers the user and their preferences across sessions. Only mention details from the recalled facts "
+            "if they are directly relevant to the user's current query or if the user explicitly asks about them. "
             "CRITICAL DATE HANDLING: The current year is 2026. Do NOT change, alter, or hallucinate the year in timestamps or facts. "
             "Always use the exact dates and years provided in the system context or recalled memory (never convert 2026 to 2023). "
             "You have access to tools, but you should ONLY call a tool if you need to perform a write action or run code. "
