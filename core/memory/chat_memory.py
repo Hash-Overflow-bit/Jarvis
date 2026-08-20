@@ -18,7 +18,26 @@ from core.config import settings
 from core.llm.ollama_client import ollama
 
 
+import re
+import atexit
+import threading
+
 logger = logging.getLogger("jarvis_chat_memory")
+
+# Active background memory threads queue for atexit flushing
+_MEMORY_THREADS: list[threading.Thread] = []
+
+
+def flush_memory_queue() -> None:
+    """Waits for all pending background memory worker threads before process exit."""
+    global _MEMORY_THREADS
+    for t in _MEMORY_THREADS:
+        if t.is_alive():
+            t.join(timeout=3.0)
+    _MEMORY_THREADS.clear()
+
+
+atexit.register(flush_memory_queue)
 
 
 def _stable_id(ent_type: str, name: str) -> str:
@@ -56,6 +75,9 @@ def save_conversational_fact(source_name: str, source_type: str, predicate: str,
     """
     Saves a single extracted fact as entities, relations, and aliases in the SQLite graph.
     """
+    if not settings.graph_enabled:
+        return
+
     try:
         db_path = Path(settings.knowledge_graph_path).resolve()
         conn = sqlite3.connect(str(db_path))
@@ -88,11 +110,11 @@ def save_conversational_fact(source_name: str, source_type: str, predicate: str,
         )
         
         # Add special keywords to target aliases to improve recall matches
-        # E.g. if the fact is about "name", make sure "name", "my name" are aliases
         lower_desc = description.lower()
         if "name" in lower_desc:
             conn.execute("""INSERT OR IGNORE INTO aliases (entity_id, alias) VALUES (?, ?)""", (tgt_id, "name"))
             conn.execute("""INSERT OR IGNORE INTO aliases (entity_id, alias) VALUES (?, ?)""", (tgt_id, "my name"))
+            conn.execute("""INSERT OR IGNORE INTO aliases (entity_id, alias) VALUES (?, ?)""", (tgt_id, "user name"))
         if "deadline" in lower_desc or "date" in lower_desc:
             conn.execute("""INSERT OR IGNORE INTO aliases (entity_id, alias) VALUES (?, ?)""", (tgt_id, "deadline"))
             conn.execute("""INSERT OR IGNORE INTO aliases (entity_id, alias) VALUES (?, ?)""", (tgt_id, "project deadline"))
@@ -112,28 +134,146 @@ def save_conversational_fact(source_name: str, source_type: str, predicate: str,
         logger.warning(f"[Chat Memory] Failed to save fact: {e}")
 
 
+def record_conversation_turn(user_input: str, agent_response: str) -> None:
+    """
+    Persists an entire conversation turn (User prompt + Jarvis answer) into graph.db.
+    Ensures every conversation from every session is stored and recallable.
+    """
+    if not settings.graph_enabled:
+        return
+
+    cleaned_user = user_input.strip()
+    cleaned_resp = agent_response.strip()
+    if not cleaned_user or len(cleaned_user) < 3:
+        return
+
+    try:
+        db_path = Path(settings.knowledge_graph_path).resolve()
+        conn = sqlite3.connect(str(db_path))
+        _ensure_schema(conn)
+
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        source_doc = "chat_history:turns"
+
+        # Turn entity ID
+        turn_id = _stable_id("TURN", f"{timestamp}:{cleaned_user[:30]}")
+        turn_name = f"Conversation Turn ({timestamp})"
+        turn_desc = f"User said: '{cleaned_user}' | Jarvis replied: '{cleaned_resp[:200]}'"
+
+        # 1. Create Turn Entity
+        conn.execute(
+            """INSERT OR REPLACE INTO entities (id, name, type, description, source_doc)
+               VALUES (?, ?, ?, ?, ?)""",
+            (turn_id, turn_name, "CONVERSATION_TURN", turn_desc, source_doc)
+        )
+
+        # 2. Aliases for recall matching
+        aliases = [
+            "previous conversation", "last conversation", "past conversation",
+            "previous session", "last session", "chat history", "convo",
+            "what did we talk about", "previous turn"
+        ]
+        # Add key non-stopword tokens from user input as aliases
+        for token in cleaned_user.lower().split():
+            if len(token) > 3 and token not in ("what", "that", "this", "have", "with", "from", "your", "they"):
+                aliases.append(token)
+
+        for a in set(aliases):
+            conn.execute(
+                """INSERT OR IGNORE INTO aliases (entity_id, alias) VALUES (?, ?)""",
+                (turn_id, a)
+            )
+
+        # 3. Create relation: User --[had_turn]--> Turn
+        user_id = _stable_id("PERSON", "User")
+        conn.execute(
+            """INSERT OR IGNORE INTO entities (id, name, type, description, source_doc)
+               VALUES (?, ?, ?, ?, ?)""",
+            (user_id, "User", "PERSON", "The human user", source_doc)
+        )
+        conn.execute(
+            """INSERT OR IGNORE INTO relations (source_id, target_id, predicate, source_doc)
+               VALUES (?, ?, ?, ?)""",
+            (user_id, turn_id, "had_turn", source_doc)
+        )
+
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.warning(f"[Chat Memory] Failed to record conversation turn: {e}")
+
+
+def _rule_based_fact_extraction(text: str) -> list[dict]:
+    """Instant pattern extraction for common personal and project facts."""
+    facts = []
+    cleaned = text.strip()
+
+    # Pattern 1: "my name is <Name>" / "call me <Name>" / "i am <Name>"
+    m_name = re.search(r"(?:my name is|call me|i am)\s+([A-Z][a-z]+|[a-zA-Z0-9_-]{2,20})", cleaned, re.IGNORECASE)
+    if m_name:
+        name = m_name.group(1).capitalize()
+        facts.append({
+            "source_name": "User", "source_type": "PERSON",
+            "predicate": "has_name", "target_name": name, "target_type": "PERSON",
+            "description": f"The user's name is {name}"
+        })
+
+    # Pattern 2: "our deadline is <Date>" / "project deadline is <Date>"
+    m_deadline = re.search(r"(?:deadline is|deadline:)\s+([^.\n]+)", cleaned, re.IGNORECASE)
+    if m_deadline:
+        dl = m_deadline.group(1).strip()
+        facts.append({
+            "source_name": "Project", "source_type": "DOCUMENT",
+            "predicate": "has_deadline", "target_name": dl, "target_type": "DOCUMENT",
+            "description": f"The project deadline is {dl}"
+        })
+
+    # Pattern 3: "<Person> is our <Role>" (e.g., "Chloe is our DevOps manager")
+    m_role = re.search(r"([A-Z][a-z]+)\s+is\s+our\s+([^.\n]+)", cleaned, re.IGNORECASE)
+    if m_role:
+        person = m_role.group(1).capitalize()
+        role = m_role.group(2).strip()
+        facts.append({
+            "source_name": person, "source_type": "PERSON",
+            "predicate": "has_role", "target_name": role, "target_type": "ROLE",
+            "description": f"{person} is the {role}"
+        })
+
+    return facts
+
+
 def learn_from_message(user_message: str) -> None:
     """
-    Uses Ollama to extract user or project facts on the fly and saves them.
-    Runs fast and silently.
+    Extracts user or project facts on the fly using both fast regex and Ollama.
     """
-    # Disable learning in unit tests to prevent test pollution/race conditions
     if "PYTEST_CURRENT_TEST" in os.environ:
         return
 
     if not settings.graph_enabled:
         return
 
-
-    # Filter out empty or extremely short messages
     cleaned = user_message.strip()
-    if len(cleaned) < 6:
+    if len(cleaned) < 4:
         return
 
-    # Filter out common CLI commands so we don't try to parse them as facts
     if cleaned.lower() in ("quit", "exit", "reset", "clear", "yes", "no", "confirm") or cleaned.startswith("/"):
         return
 
+    # 1. Instant deterministic rule-based extraction (0ms)
+    rule_facts = _rule_based_fact_extraction(cleaned)
+    for f in rule_facts:
+        save_conversational_fact(
+            source_name=f.get("source_name", "User"),
+            source_type=f.get("source_type", "PERSON"),
+            predicate=f.get("predicate", "related_to"),
+            target_name=f.get("target_name", ""),
+            target_type=f.get("target_type", "PERSON"),
+            description=f.get("description", "")
+        )
+        print(f"[🧠 Memory] Learned fact: {f.get('description')}")
+
+    # 2. Asynchronous LLM extraction for complex facts
     system_prompt = """You are the Fact Extractor Agent for Jarvis.
 Your job is to read the user's message and extract any persistent personal facts (e.g. name, preferences, job, boss) or project facts (e.g. deadlines, server names, ports, repository URLs) that should be remembered across sessions.
 
@@ -147,61 +287,44 @@ Each fact object in the list MUST contain:
 4. "target_name": the value or target object (e.g. "Hashir", "December 15, 2026", "Developer")
 5. "target_type": type of target ("PERSON" or "DOCUMENT" or "ROLE" or "POLICY")
 6. "description": A short one-sentence explanation of this fact.
-
-Example user message: "my name is Hashir and our deadline is Dec 15"
-Example output:
-{
-  "facts": [
-    {
-      "source_name": "User",
-      "source_type": "PERSON",
-      "predicate": "has_name",
-      "target_name": "Hashir",
-      "target_type": "PERSON",
-      "description": "The user's name is Hashir"
-    },
-    {
-      "source_name": "User",
-      "source_type": "PERSON",
-      "predicate": "has_project_deadline",
-      "target_name": "Dec 15",
-      "target_type": "DOCUMENT",
-      "description": "The project deadline is Dec 15"
-    }
-  ]
-}
 """
 
-    try:
-        resp = ollama.chat(
-            model=settings.ollama_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"User message: \"{cleaned}\""}
-            ],
-            temperature=0.0,
-            format="json"
-        )
-
-        if not isinstance(resp, dict):
-            return
-
-        content = resp.get("content", "").strip()
-        if not content:
-            return
-
-        data = json.loads(content)
-        facts = data.get("facts", [])
-        for f in facts:
-            save_conversational_fact(
-                source_name=f.get("source_name", "User"),
-                source_type=f.get("source_type", "PERSON"),
-                predicate=f.get("predicate", "related_to"),
-                target_name=f.get("target_name", ""),
-                target_type=f.get("target_type", "PERSON"),
-                description=f.get("description", "")
+    def _worker():
+        try:
+            resp = ollama.chat(
+                model=settings.ollama_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"User message: \"{cleaned}\""}
+                ],
+                temperature=0.0,
+                format="json"
             )
-            print(f"[🧠 Memory] Learned fact: {f.get('description')}")
 
-    except Exception as e:
-        logger.warning(f"[Chat Memory] Fact extraction failed: {e}")
+            if not isinstance(resp, dict):
+                return
+
+            content = resp.get("content", "").strip()
+            if not content:
+                return
+
+            data = json.loads(content)
+            facts = data.get("facts", [])
+            for f in facts:
+                save_conversational_fact(
+                    source_name=f.get("source_name", "User"),
+                    source_type=f.get("source_type", "PERSON"),
+                    predicate=f.get("predicate", "related_to"),
+                    target_name=f.get("target_name", ""),
+                    target_type=f.get("target_type", "PERSON"),
+                    description=f.get("description", "")
+                )
+                print(f"[🧠 Memory] Learned fact: {f.get('description')}")
+
+        except Exception as e:
+            logger.warning(f"[Chat Memory] Fact extraction failed: {e}")
+
+    t = threading.Thread(target=_worker, daemon=False)
+    t.start()
+    _MEMORY_THREADS.append(t)
+

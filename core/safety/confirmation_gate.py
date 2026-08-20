@@ -46,18 +46,16 @@ class ConfirmationGate:
 
     async def _confirm_text(self, warning_msg: str) -> bool:
         """Prompts the user via the terminal console."""
-        print(warning_msg)
-        # Run input() in an executor since it is blocking
-        loop = asyncio.get_running_loop()
+        print(warning_msg, flush=True)
         try:
-            user_input = await loop.run_in_executor(
-                None,
-                lambda: input("Do you want to proceed? (yes/no): ").strip().lower()
-            )
+            # Direct prompt on CLI without thread pool executor overhead to prevent Windows IOCP deadlock
+            user_input = input("Do you want to proceed? (yes/no): ").strip().lower()
             approved = user_input in ["yes", "y", "confirm", "proceed"]
             return approved
         except Exception:
             return False
+
+
 
     async def _confirm_audio(self, tool_name: str, warning_msg: str) -> bool:
         """Prompts the user via TTS and listens for voice approval (STT)."""

@@ -107,3 +107,19 @@ def test_recall_learned_fact(temp_db):
         assert res.facts[0]["target"] == "Hashir"
         assert "Hashir" in res.as_text()
 
+
+def test_record_conversation_turn(temp_db):
+    """Verify that full conversation turns are persisted and recalled across sessions."""
+    from core.memory.chat_memory import record_conversation_turn
+    with patch.dict(os.environ, {"KNOWLEDGE_GRAPH_PATH": str(temp_db)}):
+        record_conversation_turn(
+            user_input="create a folder named test_folder on desktop",
+            agent_response="I created the folder test_folder on your desktop."
+        )
+
+        res = recall("what did we talk about previous session?")
+        assert len(res.entities) >= 1
+        turn_names = [e["name"] for e in res.entities]
+        assert any("Conversation Turn" in n for n in turn_names)
+
+

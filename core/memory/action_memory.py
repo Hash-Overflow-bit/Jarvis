@@ -77,24 +77,26 @@ def _get_keyword_aliases(tool_name: str, args: dict) -> list[str]:
     if tool_name == "create_directory":
         aliases += ["folder", "directory", "created folder", "made folder", "new folder"]
         # Extract the folder name from the path (last component)
+        aliases += ["folder", "directory", "created folder", "new folder", "recent folder", "last folder", "recent created"]
         try:
             folder_name = Path(key_arg).name
             if folder_name:
-                aliases += [folder_name, f"folder {folder_name}", f"{folder_name} folder"]
+                aliases += [folder_name, f"folder {folder_name}", f"{folder_name} folder", folder_name.lower()]
         except Exception:
             pass
         # Add "desktop" if path contains desktop
-        if "desktop" in key_arg:
-            aliases += ["desktop folder", "folder on desktop", "desktop directory"]
+        if "desktop" in key_arg.lower():
+            aliases += ["desktop folder", "folder on desktop", "desktop directory", "recent folder on desktop"]
 
     elif tool_name == "write_file":
-        aliases += ["file", "wrote file", "created file", "written file", "text file"]
+        aliases += ["file", "wrote file", "created file", "written file", "text file", "recent file", "last file"]
         try:
             file_name = Path(key_arg).name
             if file_name:
-                aliases += [file_name, f"file {file_name}"]
+                aliases += [file_name, f"file {file_name}", file_name.lower()]
         except Exception:
             pass
+
 
     elif tool_name in ("git_clone", "git_pull", "git_commit", "git_push", "git_status", "git_add"):
         aliases += ["git", tool_name.replace("_", " ")]

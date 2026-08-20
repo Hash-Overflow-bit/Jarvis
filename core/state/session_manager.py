@@ -125,11 +125,10 @@ class SessionManager:
         # Append user message
         self.history.append({"role": "user", "content": user_input})
 
-        # Asynchronously extract and save conversational facts to the knowledge graph
-        import threading
+        # Extract and save conversational facts to the knowledge graph
         try:
-            from core.memory.chat_memory import learn_from_message
-            threading.Thread(target=learn_from_message, args=(user_input,), daemon=True).start()
+            from core.memory.chat_memory import learn_from_message, record_conversation_turn
+            learn_from_message(user_input)
         except Exception:
             pass
 
@@ -141,6 +140,10 @@ class SessionManager:
             # Add final response as assistant role to history for next turns
             self.history.append({"role": "assistant", "content": response})
             self._trim_history()
+            try:
+                record_conversation_turn(user_input, response)
+            except Exception:
+                pass
             return response
         else:
             # Direct conversational response without tools
@@ -153,6 +156,7 @@ class SessionManager:
                     if recall_result.facts:
                         injected_context = recall_result.as_text()
                         chat_messages.insert(1, {"role": "system", "content": injected_context})
+
                 except Exception as e:
                     print(f"\n[🧠 Memory Error] Failed recall: {e}")
 
@@ -170,7 +174,13 @@ class SessionManager:
 
             self.history.append(response_msg)
             self._trim_history()
-            return response_msg.get("content", "") or ""
+            ans = response_msg.get("content", "") or ""
+            try:
+                record_conversation_turn(user_input, ans)
+            except Exception:
+                pass
+            return ans
+
 
     def chat_stream(self, user_input: str, temperature: float = 0.7):
         """
