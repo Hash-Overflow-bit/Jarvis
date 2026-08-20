@@ -379,7 +379,11 @@ Recalled Facts from Memory:
 Executed Steps & Results:
 {json.dumps(completed_steps, indent=2)}
 """
-        system_prompt = "You are Jarvis. Synthesize a concise, friendly final response summarizing what was completed and answering any questions based on the executed step results."
+        system_prompt = (
+            "You are Jarvis. Synthesize a concise, friendly final response summarizing what was completed and answering any questions. "
+            "Note that you are equipped with a persistent long-term memory system (Knowledge Graph) that persists user facts across sessions. "
+            "If you recall the user's name or other details from the Recalled Facts from Memory, confirm you remember them across sessions."
+        )
         try:
             resp = ollama.chat(
                 model=settings.ollama_model,
