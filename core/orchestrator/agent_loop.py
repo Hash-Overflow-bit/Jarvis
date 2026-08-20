@@ -127,15 +127,17 @@ class AgentExecutionLoop:
                     completed_steps=completed_steps
                 )
                 
-                if revised_plan:
+                if revised_plan and isinstance(revised_plan, list) and len(revised_plan) > 0:
                     print(f"\n[🔄 Re-planning] Self-corrected! Revised remaining steps:")
                     # Replace remaining steps in the plan
                     plan = plan[:step_idx] + revised_plan
                     # Adjust step indices in the revised plan for clean logging
                     for idx, s in enumerate(plan[step_idx:]):
-                        s["step"] = step_idx + idx + 1
+                        if isinstance(s, dict):
+                            s["step"] = step_idx + idx + 1
                     for s in plan[step_idx:]:
-                        print(f"  - Step {s.get('step')}: {s.get('tool')} with args: {s.get('arguments')}")
+                        if isinstance(s, dict):
+                            print(f"  - Step {s.get('step')}: {s.get('tool')} with args: {s.get('arguments')}")
                 else:
                     print("[❌ Reflection] Could not self-correct further. Halting execution.")
                     return f"Execution halted at Step {step.get('step')} ({tool_name}) due to: {error_msg}"
@@ -282,8 +284,19 @@ Context of failure:
                 format="json"
             )
             content = resp.get("content", "").strip()
+            if not content:
+                return []
             data = json.loads(content)
-            return data.get("plan", [])
+            if isinstance(data, dict):
+                res = data.get("plan", [])
+            elif isinstance(data, list):
+                res = data
+            else:
+                res = []
+
+            if isinstance(res, list):
+                return [s for s in res if isinstance(s, dict) and "tool" in s]
+            return []
         except Exception as e:
             logger.error(f"Reflection failed: {e}")
             return []
