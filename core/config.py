@@ -161,7 +161,7 @@ class _Settings:
             return "cpu"
         # On Linux/Windows, try cuda, fall back to cpu
         try:
-            import torch
+            import torch  # type: ignore[import-not-found] # pyright: ignore[reportMissingImports]
             if torch.cuda.is_available():
                 return "cuda"
         except ImportError:

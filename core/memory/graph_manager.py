@@ -5,6 +5,7 @@ Management tools for query status, rebuilding, and cleaning up knowledge graph f
 """
 
 import sqlite3
+from typing import Type
 from pathlib import Path
 from pydantic import BaseModel, Field
 from core.config import settings
@@ -58,7 +59,7 @@ class ForgetDocumentOutput(BaseModel):
 
 # --- Tool Implementations ---
 
-class GraphStatus(BaseTool):
+class GraphStatus(BaseTool[GraphStatusInput, GraphStatusOutput]):
     """Retrieves status stats of the knowledge graph database."""
     
     @property
@@ -70,11 +71,11 @@ class GraphStatus(BaseTool):
         return "Check the status, total entity count, and relation count of Jarvis's long-term memory."
 
     @property
-    def input_schema(self):
+    def input_schema(self) -> Type[GraphStatusInput]:
         return GraphStatusInput
 
     @property
-    def output_schema(self):
+    def output_schema(self) -> Type[GraphStatusOutput]:
         return GraphStatusOutput
 
     def run(self, input_data: GraphStatusInput) -> GraphStatusOutput:
@@ -122,7 +123,7 @@ class GraphStatus(BaseTool):
             )
 
 
-class RebuildKnowledgeGraph(BaseTool):
+class RebuildKnowledgeGraph(BaseTool[RebuildGraphInput, RebuildGraphOutput]):
     """Rebuilds the knowledge graph from documents in the sandbox or workspace."""
 
     @property
@@ -134,11 +135,11 @@ class RebuildKnowledgeGraph(BaseTool):
         return "Rebuild or update the knowledge graph memory by scanning files in a directory."
 
     @property
-    def input_schema(self):
+    def input_schema(self) -> Type[RebuildGraphInput]:
         return RebuildGraphInput
 
     @property
-    def output_schema(self):
+    def output_schema(self) -> Type[RebuildGraphOutput]:
         return RebuildGraphOutput
 
     def run(self, input_data: RebuildGraphInput) -> RebuildGraphOutput:
@@ -219,7 +220,7 @@ class RebuildKnowledgeGraph(BaseTool):
             )
 
 
-class ForgetDocument(BaseTool):
+class ForgetDocument(BaseTool[ForgetDocumentInput, ForgetDocumentOutput]):
     """Removes all facts extracted from a specific file path."""
 
     @property
@@ -231,11 +232,11 @@ class ForgetDocument(BaseTool):
         return "Remove all extracted memory facts associated with a specific file path from Jarvis's memory."
 
     @property
-    def input_schema(self):
+    def input_schema(self) -> Type[ForgetDocumentInput]:
         return ForgetDocumentInput
 
     @property
-    def output_schema(self):
+    def output_schema(self) -> Type[ForgetDocumentOutput]:
         return ForgetDocumentOutput
 
     def run(self, input_data: ForgetDocumentInput) -> ForgetDocumentOutput:

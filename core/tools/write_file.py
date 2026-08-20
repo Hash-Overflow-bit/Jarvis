@@ -7,13 +7,13 @@ Writes text content to a file inside the approved sandbox boundaries.
 
 import os
 from pathlib import Path
-from pydantic import BaseModel
+from typing import Type
 from core.tools.base_tool import BaseTool
 from core.tools.sandbox_enforcer import enforcer
 from schemas.write_file_schema import WriteFileInput, WriteFileOutput
 
 
-class WriteFile(BaseTool):
+class WriteFile(BaseTool[WriteFileInput, WriteFileOutput]):
     """
     Writes content to a file at any path the OS user has permission to access.
     When sandbox mode is disabled (default), there are no path restrictions.
@@ -35,11 +35,11 @@ class WriteFile(BaseTool):
         )
 
     @property
-    def input_schema(self) -> type[BaseModel]:
+    def input_schema(self) -> Type[WriteFileInput]:
         return WriteFileInput
 
     @property
-    def output_schema(self) -> type[BaseModel]:
+    def output_schema(self) -> Type[WriteFileOutput]:
         return WriteFileOutput
 
 

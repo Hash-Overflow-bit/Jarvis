@@ -5,14 +5,14 @@ DirectoryAudit tool implementation.
 Generates a structured text tree representing folders and files.
 """
 
+from typing import Type
 from pathlib import Path
-from pydantic import BaseModel
 from core.tools.base_tool import BaseTool
 from core.tools.sandbox_enforcer import enforcer
 from schemas.directory_audit_schema import DirectoryAuditInput, DirectoryAuditOutput
 
 
-class DirectoryAudit(BaseTool):
+class DirectoryAudit(BaseTool[DirectoryAuditInput, DirectoryAuditOutput]):
     """
     Generates a tree-view report of files and folders recursively inside sandbox limits.
     """
@@ -29,11 +29,11 @@ class DirectoryAudit(BaseTool):
         )
 
     @property
-    def input_schema(self) -> type[BaseModel]:
+    def input_schema(self) -> Type[DirectoryAuditInput]:
         return DirectoryAuditInput
 
     @property
-    def output_schema(self) -> type[BaseModel]:
+    def output_schema(self) -> Type[DirectoryAuditOutput]:
         return DirectoryAuditOutput
 
     def run(self, input_data: DirectoryAuditInput) -> DirectoryAuditOutput:

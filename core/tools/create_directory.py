@@ -7,13 +7,13 @@ Creates a new folder inside the approved sandbox boundaries.
 
 import os
 from pathlib import Path
-from pydantic import BaseModel
+from typing import Type
 from core.tools.base_tool import BaseTool
 from core.tools.sandbox_enforcer import enforcer
 from schemas.create_directory_schema import CreateDirectoryInput, CreateDirectoryOutput
 
 
-class CreateDirectory(BaseTool):
+class CreateDirectory(BaseTool[CreateDirectoryInput, CreateDirectoryOutput]):
     """
     Creates a new directory at any path the OS user has permission to access.
     When sandbox mode is disabled (default), there are no path restrictions.
@@ -34,11 +34,11 @@ class CreateDirectory(BaseTool):
         )
 
     @property
-    def input_schema(self) -> type[BaseModel]:
+    def input_schema(self) -> Type[CreateDirectoryInput]:
         return CreateDirectoryInput
 
     @property
-    def output_schema(self) -> type[BaseModel]:
+    def output_schema(self) -> Type[CreateDirectoryOutput]:
         return CreateDirectoryOutput
 
     def run(self, input_data: CreateDirectoryInput) -> CreateDirectoryOutput:

@@ -7,6 +7,7 @@ Includes fallback support for pip requirements.txt in non-Poetry repos.
 
 import os
 import platform
+from typing import Type
 from pathlib import Path
 from pydantic import BaseModel
 from core.config import settings
@@ -24,7 +25,7 @@ from schemas.poetry_tool_schema import (
 )
 
 
-class PoetryInstall(BaseTool):
+class PoetryInstall(BaseTool[PoetryInstallInput, PoetryInstallOutput]):
     """Installs project dependencies using Poetry or falls back to pip venv."""
 
     @property
@@ -39,11 +40,11 @@ class PoetryInstall(BaseTool):
         )
 
     @property
-    def input_schema(self) -> type[BaseModel]:
+    def input_schema(self) -> Type[PoetryInstallInput]:
         return PoetryInstallInput
 
     @property
-    def output_schema(self) -> type[BaseModel]:
+    def output_schema(self) -> Type[PoetryInstallOutput]:
         return PoetryInstallOutput
 
     def run(self, input_data: PoetryInstallInput) -> PoetryInstallOutput:
@@ -131,7 +132,7 @@ class PoetryInstall(BaseTool):
             )
 
 
-class PoetryAdd(BaseTool):
+class PoetryAdd(BaseTool[PoetryAddInput, PoetryAddOutput]):
     """Adds a package dependency to pyproject.toml."""
 
     @property
@@ -143,11 +144,11 @@ class PoetryAdd(BaseTool):
         return "Add a package dependency to the Poetry project configuration."
 
     @property
-    def input_schema(self) -> type[BaseModel]:
+    def input_schema(self) -> Type[PoetryAddInput]:
         return PoetryAddInput
 
     @property
-    def output_schema(self) -> type[BaseModel]:
+    def output_schema(self) -> Type[PoetryAddOutput]:
         return PoetryAddOutput
 
     def run(self, input_data: PoetryAddInput) -> PoetryAddOutput:
@@ -178,7 +179,7 @@ class PoetryAdd(BaseTool):
             )
 
 
-class PoetryShow(BaseTool):
+class PoetryShow(BaseTool[PoetryShowInput, PoetryShowOutput]):
     """Shows the dependencies of the Poetry project."""
 
     @property
@@ -190,11 +191,11 @@ class PoetryShow(BaseTool):
         return "Show the installed dependencies of the Poetry project as a tree."
 
     @property
-    def input_schema(self) -> type[BaseModel]:
+    def input_schema(self) -> Type[PoetryShowInput]:
         return PoetryShowInput
 
     @property
-    def output_schema(self) -> type[BaseModel]:
+    def output_schema(self) -> Type[PoetryShowOutput]:
         return PoetryShowOutput
 
     def run(self, input_data: PoetryShowInput) -> PoetryShowOutput:

@@ -5,6 +5,7 @@ Git tools implementing clone, pull, status, add, commit, and push operations.
 """
 
 import asyncio
+from typing import Type
 from pathlib import Path
 from pydantic import BaseModel
 from core.config import settings
@@ -42,7 +43,7 @@ def run_async(coro):
     return loop.run_until_complete(coro)
 
 
-class GitClone(BaseTool):
+class GitClone(BaseTool[GitCloneInput, GitCloneOutput]):
     """Clones a remote git repository into the workspace."""
 
     @property
@@ -54,11 +55,11 @@ class GitClone(BaseTool):
         return "Clone a remote Git repository into the workspace using an HTTPS URL."
 
     @property
-    def input_schema(self) -> type[BaseModel]:
+    def input_schema(self) -> Type[GitCloneInput]:
         return GitCloneInput
 
     @property
-    def output_schema(self) -> type[BaseModel]:
+    def output_schema(self) -> Type[GitCloneOutput]:
         return GitCloneOutput
 
     def run(self, input_data: GitCloneInput) -> GitCloneOutput:
@@ -118,7 +119,7 @@ class GitClone(BaseTool):
             )
 
 
-class GitPull(BaseTool):
+class GitPull(BaseTool[GitPullInput, GitPullOutput]):
     """Pulls the latest changes from the remote repository."""
 
     @property
@@ -130,11 +131,11 @@ class GitPull(BaseTool):
         return "Pull the latest commits from the remote repository branch (fast-forward only)."
 
     @property
-    def input_schema(self) -> type[BaseModel]:
+    def input_schema(self) -> Type[GitPullInput]:
         return GitPullInput
 
     @property
-    def output_schema(self) -> type[BaseModel]:
+    def output_schema(self) -> Type[GitPullOutput]:
         return GitPullOutput
 
     def run(self, input_data: GitPullInput) -> GitPullOutput:
@@ -169,7 +170,7 @@ class GitPull(BaseTool):
             )
 
 
-class GitStatus(BaseTool):
+class GitStatus(BaseTool[GitStatusInput, GitStatusOutput]):
     """Gets the status of the repository."""
 
     @property
@@ -181,11 +182,11 @@ class GitStatus(BaseTool):
         return "Check the status of the local repository (untracked, modified, or staged files)."
 
     @property
-    def input_schema(self) -> type[BaseModel]:
+    def input_schema(self) -> Type[GitStatusInput]:
         return GitStatusInput
 
     @property
-    def output_schema(self) -> type[BaseModel]:
+    def output_schema(self) -> Type[GitStatusOutput]:
         return GitStatusOutput
 
     def run(self, input_data: GitStatusInput) -> GitStatusOutput:
@@ -211,7 +212,7 @@ class GitStatus(BaseTool):
             return GitStatusOutput(success=False, status_summary=error_msg)
 
 
-class GitAdd(BaseTool):
+class GitAdd(BaseTool[GitAddInput, GitAddOutput]):
     """Stages files in the repository."""
 
     @property
@@ -223,11 +224,11 @@ class GitAdd(BaseTool):
         return "Stage modified or untracked files in the repository to prepare for a commit."
 
     @property
-    def input_schema(self) -> type[BaseModel]:
+    def input_schema(self) -> Type[GitAddInput]:
         return GitAddInput
 
     @property
-    def output_schema(self) -> type[BaseModel]:
+    def output_schema(self) -> Type[GitAddOutput]:
         return GitAddOutput
 
     def run(self, input_data: GitAddInput) -> GitAddOutput:
@@ -259,7 +260,7 @@ class GitAdd(BaseTool):
             )
 
 
-class GitCommit(BaseTool):
+class GitCommit(BaseTool[GitCommitInput, GitCommitOutput]):
     """Commits staged changes."""
 
     @property
@@ -271,11 +272,11 @@ class GitCommit(BaseTool):
         return "Commit staged changes in the local repository with a commit message."
 
     @property
-    def input_schema(self) -> type[BaseModel]:
+    def input_schema(self) -> Type[GitCommitInput]:
         return GitCommitInput
 
     @property
-    def output_schema(self) -> type[BaseModel]:
+    def output_schema(self) -> Type[GitCommitOutput]:
         return GitCommitOutput
 
     def run(self, input_data: GitCommitInput) -> GitCommitOutput:
@@ -320,7 +321,7 @@ class GitCommit(BaseTool):
             )
 
 
-class GitPush(BaseTool):
+class GitPush(BaseTool[GitPushInput, GitPushOutput]):
     """Pushes committed changes."""
 
     @property
@@ -332,11 +333,11 @@ class GitPush(BaseTool):
         return "Push committed local changes to the remote branch."
 
     @property
-    def input_schema(self) -> type[BaseModel]:
+    def input_schema(self) -> Type[GitPushInput]:
         return GitPushInput
 
     @property
-    def output_schema(self) -> type[BaseModel]:
+    def output_schema(self) -> Type[GitPushOutput]:
         return GitPushOutput
 
     def run(self, input_data: GitPushInput) -> GitPushOutput:

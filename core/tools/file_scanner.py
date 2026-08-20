@@ -8,13 +8,13 @@ Scans folders and lists files with metadata inside sandbox roots.
 import os
 from pathlib import Path
 from datetime import datetime
-from pydantic import BaseModel
+from typing import Type
 from core.tools.base_tool import BaseTool
 from core.tools.sandbox_enforcer import enforcer
 from schemas.file_scanner_schema import FileScannerInput, FileScannerOutput
 
 
-class FileScanner(BaseTool):
+class FileScanner(BaseTool[FileScannerInput, FileScannerOutput]):
     """
     Scans a sandbox-approved directory, filters by size and extension,
     and returns a summary of matching files.
@@ -33,11 +33,11 @@ class FileScanner(BaseTool):
         )
 
     @property
-    def input_schema(self) -> type[BaseModel]:
+    def input_schema(self) -> Type[FileScannerInput]:
         return FileScannerInput
 
     @property
-    def output_schema(self) -> type[BaseModel]:
+    def output_schema(self) -> Type[FileScannerOutput]:
         return FileScannerOutput
 
     def run(self, input_data: FileScannerInput) -> FileScannerOutput:

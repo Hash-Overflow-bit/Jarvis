@@ -10,14 +10,14 @@ import time
 import shutil
 from pathlib import Path
 from datetime import datetime
-from pydantic import BaseModel
+from typing import Type
 from send2trash import send2trash
 from core.tools.base_tool import BaseTool
 from core.tools.sandbox_enforcer import enforcer
 from schemas.file_cleanup_schema import FileCleanupInput, FileCleanupOutput
 
 
-class FileCleanup(BaseTool):
+class FileCleanup(BaseTool[FileCleanupInput, FileCleanupOutput]):
     """
     Cleans up files matching specific filters (age, size, extension)
     by moving them to the recycle bin/trash, or fallbacks to `.jarvis_trash/`.
@@ -35,11 +35,11 @@ class FileCleanup(BaseTool):
         )
 
     @property
-    def input_schema(self) -> type[BaseModel]:
+    def input_schema(self) -> Type[FileCleanupInput]:
         return FileCleanupInput
 
     @property
-    def output_schema(self) -> type[BaseModel]:
+    def output_schema(self) -> Type[FileCleanupOutput]:
         return FileCleanupOutput
 
     def run(self, input_data: FileCleanupInput) -> FileCleanupOutput:

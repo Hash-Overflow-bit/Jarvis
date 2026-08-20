@@ -6,11 +6,14 @@ Exposes metadata and schema structure used for LLM function registration.
 """
 
 from abc import ABC, abstractmethod
-from typing import Type
+from typing import Generic, Type, TypeVar
 from pydantic import BaseModel
 
+InputT = TypeVar("InputT", bound=BaseModel)
+OutputT = TypeVar("OutputT", bound=BaseModel)
 
-class BaseTool(ABC):
+
+class BaseTool(ABC, Generic[InputT, OutputT]):
     """
     Abstract interface for all Jarvis tools.
     Provides standard attributes and helper methods to export tool
@@ -31,18 +34,18 @@ class BaseTool(ABC):
 
     @property
     @abstractmethod
-    def input_schema(self) -> Type[BaseModel]:
+    def input_schema(self) -> Type[InputT]:
         """Pydantic model representing the input arguments for the tool."""
         pass
 
     @property
     @abstractmethod
-    def output_schema(self) -> Type[BaseModel]:
+    def output_schema(self) -> Type[OutputT]:
         """Pydantic model representing the result returned by the tool."""
         pass
 
     @abstractmethod
-    def run(self, input_data: BaseModel) -> BaseModel:
+    def run(self, input_data: InputT) -> OutputT:
         """
         Executes the tool with the validated input schema data.
         Must return an instance of output_schema.
