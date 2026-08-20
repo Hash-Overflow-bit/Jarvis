@@ -23,11 +23,44 @@ Fallback:
 import subprocess
 import shutil
 import tempfile
+import re
 from pathlib import Path
 from typing import Optional
 
 from core.config import settings
 from core.audio.audio_device import audio_device, AudioDeviceError
+
+
+def clean_text_for_speech(text: str) -> str:
+    """
+    Cleans markdown formatting and removes code blocks to make the text
+    sound natural and human-like when read by a TTS speech engine.
+    """
+    # 1. Remove code blocks (triple backticks) completely from speech
+    cleaned = re.sub(r"```[\s\S]*?```", " [code block omitted] ", text)
+    
+    # 2. Remove inline code backticks
+    cleaned = re.sub(r"`([^`]+)`", r"\1", cleaned)
+    
+    # 3. Remove bold/italic markdown formatting (asterisks, underscores)
+    cleaned = re.sub(r"\*\*([^*]+)\*\*", r"\1", cleaned)
+    cleaned = re.sub(r"\*([^*]+)\*", r"\1", cleaned)
+    cleaned = re.sub(r"__([^_]+)__", r"\1", cleaned)
+    cleaned = re.sub(r"_([^_]+)_", r"\1", cleaned)
+    
+    # 4. Remove list markers/bullet points at start of lines
+    cleaned = re.sub(r"^\s*[-*+]\s+", "", cleaned, flags=re.MULTILINE)
+    cleaned = re.sub(r"^\s*\d+\.\s+", "", cleaned, flags=re.MULTILINE)
+    
+    # 5. Remove headers (hash symbols at start of lines)
+    cleaned = re.sub(r"^\s*#+\s+", "", cleaned, flags=re.MULTILINE)
+    
+    # 6. Replace markdown links [text](url) -> text
+    cleaned = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", cleaned)
+    
+    # 7. Clean up extra spacing and newlines
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip()
 
 
 class TTSError(Exception):
@@ -86,6 +119,10 @@ class PiperTTS:
         if not text or not text.strip():
             return
 
+        cleaned_text = clean_text_for_speech(text)
+        if not cleaned_text:
+            return
+
         if not self._available:
             # Graceful fallback: print to console
             if settings.log_level == "DEBUG":
@@ -93,7 +130,7 @@ class PiperTTS:
             return
 
         try:
-            wav_bytes = self.synthesize(text)
+            wav_bytes = self.synthesize(cleaned_text)
             audio_device.play_wav_bytes(wav_bytes)
         except (TTSError, AudioDeviceError) as e:
             # Log but don't crash — fallback to print
@@ -121,6 +158,15 @@ class PiperTTS:
                 "Download from: https://github.com/rhasspy/piper/releases"
             )
 
+        cleaned_text = clean_text_for_speech(text)
+        if not cleaned_text:
+            import io
+            import soundfile as sf
+            import numpy as np
+            buffer = io.BytesIO()
+            sf.write(buffer, np.zeros(16000), 16000, format="WAV")
+            return buffer.getvalue()
+
         # Use a temporary file to avoid subprocess pipe buffer deadlocks on Windows
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
             temp_path = Path(temp_file.name)
@@ -134,7 +180,7 @@ class PiperTTS:
         try:
             result = subprocess.run(
                 cmd,
-                input=text.encode("utf-8"),
+                input=cleaned_text.encode("utf-8"),
                 capture_output=True,
                 timeout=30,
             )
@@ -213,6 +259,10 @@ class KokoroTTS:
         if not text or not text.strip():
             return
 
+        cleaned_text = clean_text_for_speech(text)
+        if not cleaned_text:
+            return
+
         if not self._available:
             if settings.log_level == "DEBUG":
                 print(f"[JARVIS]: {text}")
@@ -224,7 +274,7 @@ class KokoroTTS:
 
             # Use synchronous create() — simpler and avoids all async/nest_asyncio issues
             samples, sr = self.kokoro.create(
-                text,
+                cleaned_text,
                 voice=self.voice_id,
                 speed=1.0,
                 lang=self.lang_code
@@ -241,8 +291,12 @@ class KokoroTTS:
         import io
         import soundfile as sf
         
+        cleaned_text = clean_text_for_speech(text)
+        if not cleaned_text:
+            cleaned_text = "pause"
+            
         samples, sr = self.kokoro.create(
-            text,
+            cleaned_text,
             voice=self.voice_id,
             speed=1.0,
             lang=self.lang_code
