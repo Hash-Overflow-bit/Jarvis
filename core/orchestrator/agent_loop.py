@@ -180,7 +180,8 @@ System Environment Context:
 CRITICAL PATH & TOOL INSTRUCTIONS:
 - Always use real, fully qualified absolute paths matching the system environment context above.
 - When the user asks for 'desktop', map it to '{desktop_path}'.
-- NEVER use placeholder strings like 'your_username', '/path/to/...', or '<username>'.
+- NEVER use placeholder strings like 'your_username', '/path/to/...', or '<username>', or invent fake user home directories like '/home/username/'.
+- CRITICAL CONVERSATIONAL RULE: When the user is stating personal facts, introductions, or preferences (e.g., "My name is Hashir", "I use ReactJS"), or asking general questions, DO NOT generate any tool calls! Return an empty plan: {{"plan": []}}. ONLY generate tool steps when the user gives an explicit command to execute an action (e.g., "Create a file", "Scan folder", "Write a document").
 - DO NOT invoke 'rebuild_knowledge_graph' when answering questions. Memory facts are provided automatically.
 - For 'poetry_add', 'package_name' is REQUIRED and MUST be a non-empty package name (e.g. 'requests', 'fastapi'). NEVER pass an empty package_name string or omit it.
 - DO NOT run 'poetry_add' or 'poetry_install' on a directory unless 'pyproject.toml' or 'requirements.txt' exists in that folder.

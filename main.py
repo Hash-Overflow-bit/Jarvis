@@ -165,7 +165,10 @@ def run_audio_mode():
             from core.safety.emergency_stop import emergency_stop
             killed_count = emergency_stop.halt_all()
             console.print(f"[bold red]🛑 EMERGENCY STOP TRIGGERED! Terminated {killed_count} active background tasks.[/bold red]\n")
-            tts.speak("Shutting down.")
+            try:
+                tts.speak("Shutting down.")
+            except (KeyboardInterrupt, Exception):
+                console.print("[JARVIS]: Shutting down.")
             break
         except AudioDeviceError as e:
             if settings.log_level == "DEBUG":

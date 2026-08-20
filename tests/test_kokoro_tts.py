@@ -37,33 +37,28 @@ def test_kokoro_tts_speak(tmp_path):
         mock_settings.kokoro_voice_model = model_file
         mock_settings.kokoro_voices_file = voices_file
         mock_settings.kokoro_voice_id = "bf_emma"
-        mock_settings.kokoro_lang_code = "b"
+        mock_settings.kokoro_lang_code = "en-us"
 
         tts = KokoroTTS()
-        
-        # Mock Kokoro create_stream generator
-        mock_stream = [
-            (MagicMock(), 24000),
-            (MagicMock(), 24000)
-        ]
-        
+
+        import numpy as np
         mock_kokoro_inst = MagicMock()
-        mock_kokoro_inst.create_stream.return_value = mock_stream
+        mock_kokoro_inst.create.return_value = (np.zeros(24000), 24000)
 
         with patch("kokoro_onnx.Kokoro", return_value=mock_kokoro_inst):
             with patch("sounddevice.play") as mock_play, patch("sounddevice.wait") as mock_wait:
                 tts.speak("Hello British Emma")
-                
-                # Check that Kokoro was loaded and called
-                mock_kokoro_inst.create_stream.assert_called_once_with(
+
+                # Check that Kokoro was loaded and called with create()
+                mock_kokoro_inst.create.assert_called_once_with(
                     "Hello British Emma",
                     voice="bf_emma",
                     speed=1.0,
-                    lang="b"
+                    lang="en-us"
                 )
-                # Check sd.play and sd.wait were called twice
-                assert mock_play.call_count == 2
-                assert mock_wait.call_count == 2
+                # Check sd.play and sd.wait were called once (single create call)
+                assert mock_play.call_count == 1
+                assert mock_wait.call_count == 1
 
 
 def test_kokoro_tts_synthesize(tmp_path):
@@ -76,7 +71,7 @@ def test_kokoro_tts_synthesize(tmp_path):
         mock_settings.kokoro_voice_model = model_file
         mock_settings.kokoro_voices_file = voices_file
         mock_settings.kokoro_voice_id = "bf_emma"
-        mock_settings.kokoro_lang_code = "b"
+        mock_settings.kokoro_lang_code = "en-us"
 
         tts = KokoroTTS()
         
@@ -93,5 +88,5 @@ def test_kokoro_tts_synthesize(tmp_path):
                 "Test synthesize",
                 voice="bf_emma",
                 speed=1.0,
-                lang="b"
+                lang="en-us"
             )

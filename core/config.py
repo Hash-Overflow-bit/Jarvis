@@ -231,7 +231,7 @@ class _Settings:
 
     @property
     def kokoro_lang_code(self) -> str:
-        return os.getenv("KOKORO_LANG_CODE", "b").strip()
+        return os.getenv("KOKORO_LANG_CODE", "en-us").strip()
 
     # --- Audio ---
     @property

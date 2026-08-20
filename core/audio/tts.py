@@ -194,6 +194,18 @@ class KokoroTTS:
 
     def _ensure_loaded(self):
         if self.kokoro is None:
+            import os
+            if "PHONEMIZER_ESPEAK_LIBRARY" not in os.environ:
+                for candidate in [
+                    "/opt/homebrew/lib/libespeak-ng.dylib",
+                    "/opt/homebrew/lib/libespeak.dylib",
+                    "/usr/local/lib/libespeak-ng.dylib",
+                    "/usr/local/lib/libespeak.dylib",
+                ]:
+                    if Path(candidate).exists():
+                        os.environ["PHONEMIZER_ESPEAK_LIBRARY"] = candidate
+                        break
+
             from kokoro_onnx import Kokoro
             self.kokoro = Kokoro(str(self.model_path), str(self.voices_path))
 
@@ -209,22 +221,19 @@ class KokoroTTS:
         try:
             self._ensure_loaded()
             import sounddevice as sd
-            
-            # Create stream of chunks
-            stream = self.kokoro.create_stream(
+
+            # Use synchronous create() — simpler and avoids all async/nest_asyncio issues
+            samples, sr = self.kokoro.create(
                 text,
                 voice=self.voice_id,
                 speed=1.0,
                 lang=self.lang_code
             )
-            
-            for audio, sr in stream:
-                sd.play(audio, sr)
-                sd.wait()
+            sd.play(samples, sr)
+            sd.wait()
         except Exception as e:
-            if settings.log_level == "DEBUG":
-                print(f"[TTS] Kokoro speak failed: {e}")
-                print(f"[JARVIS]: {text}")
+            print(f"[TTS] Kokoro speak failed: {e}")
+            print(f"[JARVIS]: {text}")
 
     def synthesize(self, text: str) -> bytes:
         """Synthesizes text and returns WAV bytes (required for API compatibility)."""
