@@ -154,7 +154,7 @@ Recalled Facts from Memory:
 {recalled_facts if recalled_facts else 'None'}
 """
         
-        desktop_path = str(Path.home() / "Desktop")
+        desktop_path = str(settings.desktop_dir)
         home_path = str(Path.home())
         workspace_path = str(settings.default_workspace_dir)
 
@@ -236,7 +236,7 @@ Output ONLY a raw JSON object. Do not wrap in markdown code blocks. Do not add a
         completed_steps: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """Asks Qwen/LLM to inspect the failure and generate a revised sub-plan."""
-        desktop_path = str(Path.home() / "Desktop")
+        desktop_path = str(settings.desktop_dir)
         home_path = str(Path.home())
         workspace_path = str(settings.default_workspace_dir)
 
