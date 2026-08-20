@@ -152,6 +152,12 @@ class PoetryAdd(BaseTool[PoetryAddInput, PoetryAddOutput]):
         return PoetryAddOutput
 
     def run(self, input_data: PoetryAddInput) -> PoetryAddOutput:
+        if not input_data.package_name or not input_data.package_name.strip():
+            return PoetryAddOutput(
+                success=False,
+                message="Package name cannot be empty. Please specify a valid Python package name (e.g., 'requests', 'fastapi')."
+            )
+
         try:
             validated_path = enforcer.validate(input_data.project_path)
         except PermissionError as e:

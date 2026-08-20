@@ -182,6 +182,8 @@ CRITICAL PATH & TOOL INSTRUCTIONS:
 - When the user asks for 'desktop', map it to '{desktop_path}'.
 - NEVER use placeholder strings like 'your_username', '/path/to/...', or '<username>'.
 - DO NOT invoke 'rebuild_knowledge_graph' when answering questions. Memory facts are provided automatically.
+- For 'poetry_add', 'package_name' is REQUIRED and MUST be a non-empty package name (e.g. 'requests', 'fastapi'). NEVER pass an empty package_name string or omit it.
+- DO NOT run 'poetry_add' or 'poetry_install' on a directory unless 'pyproject.toml' or 'requirements.txt' exists in that folder.
 
 Each step in the plan must have:
 - "step": integer index (starting from 1)
@@ -268,6 +270,8 @@ CRITICAL PATH INSTRUCTIONS:
 - Always use real, fully qualified absolute paths matching the system environment context above.
 - When the user asks for 'desktop', map it to '{desktop_path}'.
 - NEVER use placeholder strings like 'your_username', '/path/to/...', or '<username>'.
+- For 'poetry_add', 'package_name' is REQUIRED and MUST be a non-empty package name (e.g. 'requests', 'fastapi'). NEVER pass an empty package_name string or omit it.
+- DO NOT run 'poetry_add' or 'poetry_install' on a directory unless 'pyproject.toml' or 'requirements.txt' exists in that folder.
 
 Available tools and their schemas:
 {self._get_tool_schemas_str()}

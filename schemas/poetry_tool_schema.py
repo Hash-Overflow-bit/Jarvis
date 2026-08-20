@@ -23,7 +23,7 @@ class PoetryInstallOutput(BaseModel):
 # --- Poetry Add ---
 class PoetryAddInput(BaseModel):
     project_path: str = Field(..., description="The absolute path to the directory containing pyproject.toml.")
-    package_name: str = Field(..., description="The name of the package to add (e.g. 'requests').")
+    package_name: str = Field(..., min_length=1, description="The name of the package to add (e.g. 'requests', 'fastapi'). Required and cannot be empty.")
 
 
 class PoetryAddOutput(BaseModel):
