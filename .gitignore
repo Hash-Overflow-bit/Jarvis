@@ -62,6 +62,10 @@ models/*.bin
 # Benchmark results
 benchmarks/results/
 
+# SQLite Database files (generated runtime data)
+*.db
+core/memory/*.db
+
 # Temp files
 *.tmp
 *.wav
