@@ -271,7 +271,7 @@ class _Settings:
     def jarvis_system_prompt(self) -> str:
         base = os.getenv(
             "JARVIS_SYSTEM_PROMPT",
-            "You are Jarvis, a helpful local AI assistant. Be concise and precise."
+            "You are Jarvis, a versatile local AI assistant. You are friendly, helpful, and capable of discussing any topic (including programming, food, recommendations, general knowledge, and general conversation) naturally without rigid disclaimers."
         )
         return (
             f"{base.strip()} You are equipped with a persistent long-term memory system (a local Knowledge Graph) "
