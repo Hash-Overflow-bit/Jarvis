@@ -19,22 +19,24 @@ class RecallResult:
 
     def as_text(self) -> str:
         """Formats the recalled graph facts as clean, structured text context."""
-        if not self.facts:
+        if not self.facts and not self.entities:
             return "no memory matches"
 
         lines = [
-            f"[🧠 Memory] Recalled {len(self.facts)} facts in {self.latency_ms:.1f}ms\n"
+            f"[🧠 Memory] Recalled {len(self.facts)} relations and {len(self.entities)} entities in {self.latency_ms:.1f}ms\n"
         ]
 
         # 1. Format the relationships (edges)
-        for rel in self.facts:
-            lines.append(
-                f"- {rel['source']} --[{rel['predicate']}]--> {rel['target']}   ({rel['source_doc']})"
-            )
+        if self.facts:
+            lines.append("Relationships:")
+            for rel in self.facts:
+                lines.append(
+                    f"- {rel['source']} --[{rel['predicate']}]--> {rel['target']}   ({rel['source_doc']})"
+                )
 
         # 2. Format entity descriptions (nodes metadata)
         if self.entities:
-            lines.append("\nwhere:")
+            lines.append("\nEntities:")
             for ent in self.entities:
                 desc = ent["description"] or "No details available"
                 lines.append(f"  * {ent['name']} ({ent['type']}): {desc}")

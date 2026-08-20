@@ -45,9 +45,9 @@ class AgentExecutionLoop:
         if settings.graph_enabled:
             try:
                 recall_res = recall(user_input, hops=settings.max_graph_hops, top_k=settings.graph_top_k)
-                if recall_res.facts:
+                if recall_res.facts or recall_res.entities:
                     recalled_facts = recall_res.as_text()
-                    print(f"\n[🧠 Memory] Recalled {len(recall_res.facts)} facts in {recall_res.latency_ms:.1f}ms")
+                    print(f"\n[🧠 Memory] Recalled {len(recall_res.facts)} relations and {len(recall_res.entities)} entities in {recall_res.latency_ms:.1f}ms")
             except Exception as e:
                 logger.error(f"Memory recall failed: {e}")
 

@@ -153,7 +153,7 @@ class SessionManager:
                 try:
                     from core.memory.recall import recall
                     recall_result = recall(user_input, hops=settings.max_graph_hops, top_k=settings.graph_top_k)
-                    if recall_result.facts:
+                    if recall_result.facts or recall_result.entities:
                         injected_context = recall_result.as_text()
                         chat_messages.insert(1, {"role": "system", "content": injected_context})
 
