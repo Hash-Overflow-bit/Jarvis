@@ -150,9 +150,57 @@ class AgentExecutionLoop:
         # 5. Final Synthesis
         return self._synthesize_final_response(user_input, completed_steps, recalled_facts)
 
+    def _is_conversational_or_informative(self, user_input: str) -> bool:
+        """
+        Determines if the user input is purely conversational, a greeting, 
+        a memory check, or a statement of fact/preference (which does not 
+        require any tools to be executed).
+        """
+        import re
+        cleaned = user_input.lower().strip().rstrip(".!?")
+        
+        # 1. Simple greetings
+        greetings = {"hello", "hi", "hey", "good morning", "good afternoon", "good evening", "yo", "jarvis", "hello jarvis", "hi jarvis", "are you online", "are you there", "goodbye", "exit"}
+        if cleaned in greetings:
+            return True
+            
+        # 2. Memory questions / general inquiries / sound checks
+        inquiries = [
+            r"do you know (my|your|the) name",
+            r"what is (my|your|the) name",
+            r"who am i",
+            r"who are you",
+            r"do you know me",
+            r"do you have (long term |short term |)memory",
+            r"test (long term |short term |)memory",
+            r"can you hear me",
+            r"are you online",
+            r"testing audio",
+            r"test audio"
+        ]
+        for pattern in inquiries:
+            if re.search(pattern, cleaned):
+                return True
+                
+        # 3. Statements of personal facts or preferences (introductions, name declarations, preferred framework/tools)
+        statements = [
+            r"^(now\s*,\s*)?my name is\s+\w+",
+            r"^i (prefer|like|use)\s+\w+",
+            r"^my favorite\s+\w+\s+is\s+\w+",
+            r"^i want to test your\s+\w+"
+        ]
+        for pattern in statements:
+            if re.search(pattern, cleaned):
+                return True
+                
+        return False
+
     def _generate_plan(self, user_input: str, recalled_facts: str) -> List[Dict[str, Any]]:
         """Asks Qwen/LLM to generate a serialized list of tool calls."""
         if not self.use_tools:
+            return []
+
+        if self._is_conversational_or_informative(user_input):
             return []
 
         prompt = f"""User Goal: {user_input}
