@@ -7,13 +7,13 @@ Creates a new folder inside the approved sandbox boundaries.
 
 import os
 from pathlib import Path
-from typing import Type
+from pydantic import BaseModel
 from core.tools.base_tool import BaseTool
 from core.tools.sandbox_enforcer import enforcer
 from schemas.create_directory_schema import CreateDirectoryInput, CreateDirectoryOutput
 
 
-class CreateDirectory(BaseTool[CreateDirectoryInput, CreateDirectoryOutput]):
+class CreateDirectory(BaseTool):
     """
     Creates a new directory at any path the OS user has permission to access.
     When sandbox mode is disabled (default), there are no path restrictions.
@@ -26,18 +26,22 @@ class CreateDirectory(BaseTool[CreateDirectoryInput, CreateDirectoryOutput]):
     @property
     def description(self) -> str:
         return (
-            "Creates a new directory/folder at any specified absolute path on the filesystem. "
+            "Creates a new directory/folder at any specified path on the filesystem. "
+            "Accepts full absolute paths like C:\\Users\\your_username\\Desktop\\MyFolder or "
+            "/Users/your_username/Desktop/MyFolder. "
             "Creates all missing parent directories automatically."
+
         )
 
     @property
-    def input_schema(self) -> Type[CreateDirectoryInput]:
+    def input_schema(self) -> type[BaseModel]:
         return CreateDirectoryInput
 
     @property
-    def output_schema(self) -> Type[CreateDirectoryOutput]:
+    def output_schema(self) -> type[BaseModel]:
         return CreateDirectoryOutput
 
+   
     def run(self, input_data: CreateDirectoryInput) -> CreateDirectoryOutput:
         try:
             # Validate path (raises PermissionError if sandbox is ON and path is outside)

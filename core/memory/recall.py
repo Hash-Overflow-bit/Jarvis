@@ -160,7 +160,7 @@ def recall(prompt: str, hops: int = 3, top_k: int = 8) -> RecallResult:
         JOIN entities e1 ON e1.id = r.source_id
         JOIN entities e2 ON e2.id = r.target_id
         WHERE r.source_id IN ({ent_placeholders})
-          AND r.target_id IN ({ent_placeholders})
+           OR r.target_id IN ({ent_placeholders})
         """
 
         cursor.execute(relations_query, tuple(entity_ids) + tuple(entity_ids))

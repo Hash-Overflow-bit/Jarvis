@@ -204,6 +204,13 @@ def record_conversation_turn(user_input: str, agent_response: str) -> None:
         logger.warning(f"[Chat Memory] Failed to record conversation turn: {e}")
 
 
+INVALID_NAME_WORDS = {
+    "by", "back", "later", "again", "now", "here", "there", "a", "an", "the", "my", "your",
+    "name", "names", "instead", "maybe", "please", "sir", "madam", "something", "anything",
+    "nothing", "someone", "anyone", "boss", "friend", "guy", "dude", "bro", "this", "that"
+}
+
+
 def _rule_based_fact_extraction(text: str) -> list[dict]:
     """Instant pattern extraction for common personal and project facts."""
     facts = []
@@ -212,12 +219,14 @@ def _rule_based_fact_extraction(text: str) -> list[dict]:
     # Pattern 1: "my name is <Name>" / "call me <Name>" / "i am <Name>"
     m_name = re.search(r"(?:my name is|call me|i am)\s+([A-Z][a-z]+|[a-zA-Z0-9_-]{2,20})", cleaned, re.IGNORECASE)
     if m_name:
-        name = m_name.group(1).capitalize()
-        facts.append({
-            "source_name": "User", "source_type": "PERSON",
-            "predicate": "has_name", "target_name": name, "target_type": "PERSON",
-            "description": f"The user's name is {name}"
-        })
+        candidate_name = m_name.group(1).strip()
+        if candidate_name.lower() not in INVALID_NAME_WORDS:
+            name = candidate_name.capitalize()
+            facts.append({
+                "source_name": "User", "source_type": "PERSON",
+                "predicate": "has_name", "target_name": name, "target_type": "PERSON",
+                "description": f"The user's name is {name}"
+            })
 
     # Pattern 2: "our deadline is <Date>" / "project deadline is <Date>"
     m_deadline = re.search(r"(?:deadline is|deadline:)\s+([^.\n]+)", cleaned, re.IGNORECASE)
