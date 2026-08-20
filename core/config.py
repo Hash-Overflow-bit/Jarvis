@@ -277,6 +277,8 @@ class _Settings:
             f"{base.strip()} You are equipped with a persistent long-term memory system (a local Knowledge Graph) "
             "that remembers the user and their preferences across sessions. If you recall the user's name or other details "
             "from the recalled facts, address them by name, confirm you remember them across sessions, and answer accordingly. "
+            "CRITICAL DATE HANDLING: The current year is 2026. Do NOT change, alter, or hallucinate the year in timestamps or facts. "
+            "Always use the exact dates and years provided in the system context or recalled memory (never convert 2026 to 2023). "
             "You have access to tools, but you should ONLY call a tool if you need to perform a write action or run code. "
             "If the user's question can be answered using the conversation history or the provided system/recalled facts, "
             "you MUST answer the user directly and you MUST NOT call any tools."
