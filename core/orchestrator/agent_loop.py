@@ -7,6 +7,9 @@ runs output verification, and self-corrects on failures.
 
 import json
 import logging
+import getpass
+import platform
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 from core.config import settings
 from core.llm.ollama_client import ollama, OllamaError
@@ -151,10 +154,26 @@ Recalled Facts from Memory:
 {recalled_facts if recalled_facts else 'None'}
 """
         
+        desktop_path = str(Path.home() / "Desktop")
+        home_path = str(Path.home())
+        workspace_path = str(settings.default_workspace_dir)
+
         system_prompt = f"""You are the Planner Agent for Jarvis.
 Your task is to break down a user's request into a series of serialized steps using the available tools.
 You must output a JSON object containing a "plan" key, which is a list of steps.
 If the user's request is purely conversational or doesn't require tools, return an empty plan: {{"plan": []}}
+
+System Environment Context:
+- Operating System: {platform.system()}
+- Current OS User: {getpass.getuser()}
+- User Home Directory: '{home_path}'
+- User Desktop Directory: '{desktop_path}'
+- Default Workspace Directory: '{workspace_path}'
+
+CRITICAL PATH INSTRUCTIONS:
+- Always use real, fully qualified absolute paths matching the system environment context above.
+- When the user asks for 'desktop', map it to '{desktop_path}'.
+- NEVER use placeholder strings like 'your_username', '/path/to/...', or '<username>'.
 
 Each step in the plan must have:
 - "step": integer index (starting from 1)
@@ -217,11 +236,27 @@ Output ONLY a raw JSON object. Do not wrap in markdown code blocks. Do not add a
         completed_steps: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """Asks Qwen/LLM to inspect the failure and generate a revised sub-plan."""
+        desktop_path = str(Path.home() / "Desktop")
+        home_path = str(Path.home())
+        workspace_path = str(settings.default_workspace_dir)
+
         system_prompt = f"""You are the Reflector Agent for Jarvis.
 An error occurred during execution of the plan.
 Your task is to inspect the error, reflect on what went wrong, and generate a revised list of steps to correct it and complete the user's goal.
 You must output a JSON object containing a "plan" key with the new list of steps.
 If the error is unrecoverable, return an empty plan: {{"plan": []}}
+
+System Environment Context:
+- Operating System: {platform.system()}
+- Current OS User: {getpass.getuser()}
+- User Home Directory: '{home_path}'
+- User Desktop Directory: '{desktop_path}'
+- Default Workspace Directory: '{workspace_path}'
+
+CRITICAL PATH INSTRUCTIONS:
+- Always use real, fully qualified absolute paths matching the system environment context above.
+- When the user asks for 'desktop', map it to '{desktop_path}'.
+- NEVER use placeholder strings like 'your_username', '/path/to/...', or '<username>'.
 
 Available tools and their schemas:
 {self._get_tool_schemas_str()}
