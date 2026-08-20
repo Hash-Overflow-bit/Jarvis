@@ -388,11 +388,15 @@ class _Settings:
     @property
     def desktop_dir(self) -> Path:
         """Dynamically detects the user's real Desktop directory path."""
+        override = os.getenv("DESKTOP_DIR")
+        if override:
+            return normalize_path(override)
+
         home = Path.home()
         paths_to_check = [
-            home / "Desktop",
             home / "OneDrive" / "Desktop",
             home / "onedrive" / "Desktop",
+            home / "Desktop",
         ]
         
         # WSL detection helper
