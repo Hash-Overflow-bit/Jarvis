@@ -40,7 +40,11 @@ class ConfirmationGate:
         )
 
         if mode == "audio":
-            return await self._confirm_audio(tool_name, warning_msg)
+            approved = await self._confirm_audio(tool_name, warning_msg)
+            if not approved:
+                print("\n[🎙️ Audio confirmation failed or denied. Falling back to console prompt...]")
+                approved = await self._confirm_text(warning_msg)
+            return approved
         else:
             return await self._confirm_text(warning_msg)
 
