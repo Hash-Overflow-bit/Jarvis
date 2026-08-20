@@ -84,8 +84,8 @@ class ConfirmationGate:
             print(f"[Voice response: {response_text!r}]")
 
             # Parse keywords
-            approve_keywords = ["yes", "confirm", "proceed", "okay", "ok", "go ahead", "do it"]
-            deny_keywords = ["no", "cancel", "stop", "abort", "don't"]
+            approve_keywords = ["yes", "confirm", "proceed", "okay", "ok", "go ahead", "do it", "yeah", "yep", "yup", "sure", "approve", "allow"]
+            deny_keywords = ["no", "cancel", "stop", "abort", "don't", "deny", "reject", "block", "never mind", "no way"]
 
             # Check if any keyword matches
             for word in approve_keywords:
