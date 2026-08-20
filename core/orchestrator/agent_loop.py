@@ -170,10 +170,11 @@ System Environment Context:
 - User Desktop Directory: '{desktop_path}'
 - Default Workspace Directory: '{workspace_path}'
 
-CRITICAL PATH INSTRUCTIONS:
+CRITICAL PATH & TOOL INSTRUCTIONS:
 - Always use real, fully qualified absolute paths matching the system environment context above.
 - When the user asks for 'desktop', map it to '{desktop_path}'.
 - NEVER use placeholder strings like 'your_username', '/path/to/...', or '<username>'.
+- DO NOT invoke 'rebuild_knowledge_graph' when answering questions. Memory facts are provided automatically.
 
 Each step in the plan must have:
 - "step": integer index (starting from 1)

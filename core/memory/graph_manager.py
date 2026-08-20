@@ -132,7 +132,11 @@ class RebuildKnowledgeGraph(BaseTool[RebuildGraphInput, RebuildGraphOutput]):
 
     @property
     def description(self) -> str:
-        return "Rebuild or update the knowledge graph memory by scanning files in a directory."
+        return (
+            "Force a complete scan and re-indexing of documents in a directory into the knowledge graph database. "
+            "ONLY call this tool when the user explicitly asks to rebuild, re-index, or refresh the memory database. "
+            "DO NOT call this tool to answer user questions or read facts from memory."
+        )
 
     @property
     def input_schema(self) -> Type[RebuildGraphInput]:
