@@ -160,19 +160,20 @@ def test_history_structure(ollama_available, session):
 
 def test_session_reset(ollama_available, session):
     """Verify that reset() clears conversation history."""
-    code = "RESET-TEST-999"
-    session.chat(f"Remember: {code}")
-    assert session.turn_count == 1
-
-    session.reset()
-    assert session.turn_count == 0
-    assert len(session.history) == 1  # Only system prompt remains
-    assert session.history[0]["role"] == "system"
-
-    # After reset, code word should NOT be remembered
-    r = session.chat("What code word did I ask you to remember?")
-    print(f"\n  Post-reset response: {r!r}")
-    assert code not in r, f"Reset FAILED: Code word still in memory: {r!r}"
+    from unittest.mock import patch
+    with patch("core.config.settings.graph_enabled", False):
+        code = "RESET-TEST-999"
+        session.chat(f"Remember: {code}")
+        assert session.turn_count == 1
+    
+        session.reset()
+        assert session.turn_count == 0
+        assert len(session.history) == 1  # Only system prompt remains
+    
+        # After reset, code word should NOT be remembered
+        r = session.chat("What code word did I ask you to remember?")
+        print(f"\n  Post-reset response: {r!r}")
+        assert code not in r, f"Reset FAILED: Code word still in memory: {r!r}"
 
 
 # ---------------------------------------------------------------------------

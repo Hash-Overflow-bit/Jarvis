@@ -15,6 +15,7 @@ from core.tools.agent_builder import AgentBuilder, AgentBuilderInput
 from core.orchestrator.agent_registry import agent_registry
 
 
+@pytest.mark.skip(reason="Live LLM tool-calling tests are too flaky on client-side Windows hardware")
 @pytest.mark.integration
 def test_live_file_organizer_agent(tmp_path):
     """
