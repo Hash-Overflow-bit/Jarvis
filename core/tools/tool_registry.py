@@ -201,5 +201,7 @@ tool_registry.register(WriteFile())
 
 # Register Dynamic Sub-Agents (M5+)
 from core.tools.agent_builder import AgentBuilder
+from core.tools.delegate_task import DelegateTask
 tool_registry.register(AgentBuilder())
+tool_registry.register(DelegateTask())
 
