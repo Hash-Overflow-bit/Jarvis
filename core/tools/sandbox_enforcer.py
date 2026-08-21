@@ -71,8 +71,26 @@ class SandboxEnforcer:
             PermissionError: If sandbox is ON and the path escapes allowed roots.
             ValueError: If sandbox is ON but no roots are configured.
         """
+        # Intercept and sanitize LLM placeholder path hallucinations
+        target_str = str(target_path).replace("\\", "/")
+        placeholders = [
+            "/path/to/", 
+            "path/to/", 
+            "<workspace>/",
+            "<workspace_path>/",
+            "your_username", 
+            "<username>", 
+            "/home/username/"
+        ]
+        for p in placeholders:
+            if p in target_str:
+                # Replace the placeholder segment with the workspace path
+                target_str = target_str.replace(p, str(settings.default_workspace_dir) + "/")
+                # Normalize double slashes
+                target_str = target_str.replace("//", "/")
+        
         # Resolve to absolute path regardless of mode
-        resolved = Path(target_path).resolve()
+        resolved = Path(target_str).resolve()
 
         # --- Unrestricted mode: allow any path ---
         if not self._sandbox_enabled:
