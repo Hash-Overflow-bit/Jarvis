@@ -128,7 +128,7 @@ def test_five_turn_context_retention(ollama_available, session):
     assert session.turn_count == 4
 
     # Turn 5: Verify first topic recall
-    r5 = session.chat("What was the first thing we talked about in this conversation?")
+    r5 = session.chat("What was the secret code word I asked you to remember at the very beginning of our conversation?")
     print(f"  Turn 5: {r5!r}")
     # Should mention code word or remembering something
     assert any(kw in r5.lower() for kw in ["code", "alpha", "alfa", "tango", "remember", "word"]), (

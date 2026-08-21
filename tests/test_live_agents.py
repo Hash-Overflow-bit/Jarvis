@@ -29,7 +29,7 @@ def test_live_file_organizer_agent(tmp_path):
         role="Senior File System Manager",
         goal="Manage the workspace, create directories and write files accurately.",
         backstory="An AI system trained to organize files efficiently.",
-        tools=["FileManagementToolkit.write_file", "FileManagementToolkit.create_directory"]
+        tools=["write_file", "create_directory"]
     )
 
     # 2. Build and Hot-Load the Agent (this updates YAML and loads it into memory)
