@@ -338,8 +338,30 @@ Output ONLY a raw JSON object. Do not wrap in markdown code blocks. Do not add a
                 return []
 
             data = json.loads(content)
+            
+            # If the LLM returned a raw list instead of a dict
+            if isinstance(data, list):
+                plan = []
+                for idx, tc in enumerate(data):
+                    plan.append({
+                        "step": tc.get("step", idx + 1),
+                        "tool": tc.get("tool", tc.get("name")),
+                        "arguments": tc.get("arguments", tc.get("parameters", {}))
+                    })
+                return plan
+
             if "plan" in data:
                 return data.get("plan", [])
+            elif "tool_calls" in data:
+                plan = []
+                for idx, tc in enumerate(data["tool_calls"]):
+                    func = tc.get("function", tc) # Handle both OpenAI format and flattened format
+                    plan.append({
+                        "step": idx + 1,
+                        "tool": func.get("name"),
+                        "arguments": func.get("arguments", func.get("parameters", {}))
+                    })
+                return plan
             elif "name" in data and "parameters" in data:
                 return [{
                     "step": 1,
