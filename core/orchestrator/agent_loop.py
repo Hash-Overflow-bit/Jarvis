@@ -268,10 +268,10 @@ class AgentExecutionLoop:
 Recalled Facts from Memory:
 {recalled_facts if recalled_facts else 'None'}
 """
-        
-        desktop_path = str(settings.desktop_dir)
-        home_path = str(Path.home())
-        workspace_path = str(settings.default_workspace_dir)
+        # Convert to forward slashes to prevent Windows backslash JSON decoding errors
+        desktop_path = str(settings.desktop_dir).replace("\\", "/")
+        home_path = str(Path.home()).replace("\\", "/")
+        workspace_path = str(settings.default_workspace_dir).replace("\\", "/")
 
         system_prompt = f"""You are the Planner Agent for Jarvis.
 Your task is to break down a user's request into a series of serialized steps using the available tools.
@@ -286,6 +286,7 @@ System Environment Context:
 - Default Workspace Directory: '{workspace_path}'
 
 CRITICAL PATH & TOOL INSTRUCTIONS:
+- CRITICAL JSON RULE: You MUST use forward slashes (/) for all file paths, even on Windows (e.g. use 'C:/Users/name' instead of 'C:\\Users\\name'). Unescaped backslashes will corrupt the JSON and cause a total system failure!
 - Always use real, fully qualified absolute paths matching the system environment context above.
 - When the user asks for 'desktop', map it to '{desktop_path}'.
 - NEVER use placeholder strings like 'your_username', '/path/to/...', or '<username>', or invent fake user home directories like '/home/username/'.
