@@ -160,8 +160,8 @@ def test_history_structure(ollama_available, session):
 
 def test_session_reset(ollama_available, session):
     """Verify that reset() clears conversation history."""
-    from unittest.mock import patch
-    with patch("core.config.settings.graph_enabled", False):
+    from unittest.mock import patch, PropertyMock
+    with patch("core.config._Settings.graph_enabled", new_callable=PropertyMock, return_value=False):
         code = "RESET-TEST-999"
         session.chat(f"Remember: {code}")
         assert session.turn_count == 1
