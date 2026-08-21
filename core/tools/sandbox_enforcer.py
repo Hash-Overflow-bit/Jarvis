@@ -12,6 +12,7 @@ Sandbox Mode:
 
 from pathlib import Path
 from typing import Union
+import re
 from core.config import settings
 
 
@@ -73,21 +74,17 @@ class SandboxEnforcer:
         """
         # Intercept and sanitize LLM placeholder path hallucinations
         target_str = str(target_path).replace("\\", "/")
-        placeholders = [
-            "/path/to/", 
-            "path/to/", 
-            "<workspace>/",
-            "<workspace_path>/",
-            "your_username", 
-            "<username>", 
-            "/home/username/"
-        ]
-        for p in placeholders:
-            if p in target_str:
-                # Replace the placeholder segment with the workspace path
-                target_str = target_str.replace(p, str(settings.default_workspace_dir) + "/")
-                # Normalize double slashes
-                target_str = target_str.replace("//", "/")
+        
+        # Define a regex pattern that catches common fake paths
+        # Examples: /path/to/, path/to/, /Users/username/, /home/username/, <workspace>/
+        fake_path_pattern = r"(?:^/?path/to/|^/?Users/[^/]+/Desktop/|^/?Users/[^/]+/|^/?home/[^/]+/|<workspace_path>/|<workspace>/|<username>/?|your_username/?)"
+        
+        # Replace the fake prefix with the active workspace directory
+        if re.search(fake_path_pattern, target_str, re.IGNORECASE):
+            workspace = str(settings.default_workspace_dir).replace("\\", "/") + "/"
+            target_str = re.sub(fake_path_pattern, workspace, target_str, flags=re.IGNORECASE)
+            # Normalize double slashes that might have been created
+            target_str = target_str.replace("//", "/")
         
         # Resolve to absolute path regardless of mode
         resolved = Path(target_str).resolve()
