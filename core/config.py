@@ -281,7 +281,10 @@ class _Settings:
             "Always use the exact dates and years provided in the system context or recalled memory (never convert 2026 to 2023). "
             "You have access to tools, but you should ONLY call a tool if you need to perform a write action or run code. "
             "If the user's question can be answered using the conversation history or the provided system/recalled facts, "
-            "you MUST answer the user directly and you MUST NOT call any tools."
+            "you MUST answer the user directly and you MUST NOT call any tools.\n\n"
+            "CRITICAL BEHAVIOR RULES:\n"
+            "1. Reply to ALL questions very precisely and concisely. Do NOT write long paragraphs.\n"
+            "2. Answer general questions using your intrinsic real-world knowledge. Do NOT reference local dummy files or test data unless the user explicitly asks you to read a specific file."
         )
 
     # --- Sandbox (used in M2+) ---
@@ -325,11 +328,11 @@ class _Settings:
 
     @property
     def git_user_email(self) -> str:
-        return os.getenv("GIT_USER_EMAIL", "jarvis@local.ai")
+        return os.getenv("GIT_USER_EMAIL", "veoviewing@gmail.com")
 
     @property
     def git_user_name(self) -> str:
-        return os.getenv("GIT_USER_NAME", "Jarvis")
+        return os.getenv("GIT_USER_NAME", "veoviewing")
 
     # --- Safety & Auditing (used in M4+) ---
     @property
@@ -347,6 +350,21 @@ class _Settings:
     @property
     def dry_run(self) -> bool:
         return os.getenv("DRY_RUN", "false").lower().strip() == "true"
+
+    # --- Dynamic Sub-Agents (used in M5+) ---
+    @property
+    def agents_blueprint_path(self) -> Path:
+        val = os.getenv("AGENTS_BLUEPRINT_PATH")
+        if val:
+            return normalize_path(val)
+        return (self._project_root / "agents" / "agents_blueprint.yaml").resolve()
+
+    @property
+    def agent_baseline_timeout(self) -> float:
+        try:
+            return float(os.getenv("AGENT_BASELINE_TIMEOUT", "60.0").strip())
+        except ValueError:
+            return 60.0
 
     @property
     def audit_log_path(self) -> Path:

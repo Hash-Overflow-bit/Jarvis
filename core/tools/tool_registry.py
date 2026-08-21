@@ -199,3 +199,7 @@ from core.tools.write_file import WriteFile
 tool_registry.register(CreateDirectory())
 tool_registry.register(WriteFile())
 
+# Register Dynamic Sub-Agents (M5+)
+from core.tools.agent_builder import AgentBuilder
+tool_registry.register(AgentBuilder())
+

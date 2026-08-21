@@ -37,6 +37,9 @@ TOOL_RISK_MAP = {
     "graph_status": RiskLevel.LOW,
     "rebuild_knowledge_graph": RiskLevel.HIGH,
     "forget_document": RiskLevel.HIGH,
+    
+    # Dynamic Sub-Agents (M5+)
+    "agent_builder": RiskLevel.CRITICAL,
 }
 
 

@@ -57,6 +57,12 @@ class AgentExecutionLoop:
             # Fallback to direct conversational response
             return self._synthesize_fallback(user_input, recalled_facts)
 
+        valid_plan = [s for s in plan if isinstance(s, dict)]
+        if not valid_plan:
+            # Fallback if the LLM hallucinated strings instead of JSON steps
+            return self._synthesize_fallback(user_input, recalled_facts)
+
+        plan = valid_plan
         print(f"\n[📋 Plan] Decomposed into {len(plan)} steps:")
         for step in plan:
             print(f"  - Step {step.get('step')}: {step.get('tool')} with args: {step.get('arguments')}")
@@ -64,6 +70,8 @@ class AgentExecutionLoop:
         # 3. Execution Loop
         completed_steps = []
         step_idx = 0
+        retry_count = 0
+        MAX_RETRIES = 3
 
         while step_idx < len(plan):
             step = plan[step_idx]
@@ -119,10 +127,25 @@ class AgentExecutionLoop:
                 except Exception as mem_err:
                     logger.warning(f"Action memory write failed: {mem_err}")
                 step_idx += 1
+                retry_count = 0  # Reset retries on success
             else:
-                error_msg = result.get("error") or result.get("result", {}).get("message") or "Unknown error"
+                result_obj = result.get("result", {})
+                error_msg = result.get("error") or result_obj.get("message")
+                
+                # If message is missing, fallback to the first string value (e.g. dependencies_tree)
+                if not error_msg and isinstance(result_obj, dict):
+                    for v in result_obj.values():
+                        if isinstance(v, str) and v.strip() and v != "False":
+                            error_msg = v
+                            break
+                error_msg = error_msg or "Unknown error"
+
                 print(f"[❌ Failure] Step {step.get('step')} failed: {error_msg}")
 
+                retry_count += 1
+                if retry_count >= MAX_RETRIES:
+                    print(f"[❌ Reflection] Max retries ({MAX_RETRIES}) reached. Halting execution to prevent infinite loop.")
+                    return f"Execution halted at Step {step.get('step')} ({tool_name}) due to repeated failures: {error_msg}"
                 
                 # Reflection & Self-Correction
                 revised_plan = self._reflect_and_replan(

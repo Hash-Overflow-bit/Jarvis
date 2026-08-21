@@ -6,6 +6,12 @@ This guide explains how to deploy and configure Jarvis on a client's machine (su
 
 ## 📋 1. Prerequisites
 
+### Hardware Requirements (IMPORTANT)
+Running the primary `qwen2.5-coder:32b` model locally requires immense system resources.
+- **Mac (Apple Silicon)**: Minimum 32GB Unified Memory.
+- **Windows/Linux**: Minimum 32GB System RAM **AND** a dedicated GPU with at least 24GB VRAM (e.g., RTX 3090/4090).
+*Note: If the target PC only has 16GB of RAM, you MUST fall back to using `qwen2.5-coder:7b` to avoid system freezing.*
+
 ### For macOS:
 1. **Homebrew**: Install Homebrew if not already installed:
    ```bash
@@ -36,8 +42,9 @@ We recommend running Ollama directly on the host machine for best GPU accelerati
 1. Download Ollama from: [ollama.com](https://ollama.com)
 2. Install it and run the model pull command:
    ```bash
-   ollama pull llama3.1
+   ollama pull qwen2.5-coder:32b
    ```
+   *(If the client has <32GB RAM, use `ollama pull qwen2.5-coder:7b` instead).*
 3. Verify Ollama is running by navigating to `http://localhost:11434` in your browser.
 
 ---
@@ -94,7 +101,7 @@ LOG_LEVEL=INFO
 
 # --- Ollama LLM ---
 OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=llama3.1
+OLLAMA_MODEL=qwen2.5-coder:32b
 OLLAMA_KEEP_ALIVE=3600
 
 # --- Whisper STT ---
@@ -119,10 +126,10 @@ AUDIO_SILENCE_DURATION=1.5
 
 # --- Session ---
 SESSION_MAX_TURNS=20
-JARVIS_SYSTEM_PROMPT=You are Jarvis, a helpful local AI assistant. Be concise and precise.
+JARVIS_SYSTEM_PROMPT=You are Jarvis, a helpful local AI assistant. You are equipped with a persistent long-term memory system. CRITICAL BEHAVIOR RULES: 1. Reply to ALL questions very precisely and concisely. Do NOT write long paragraphs. 2. Answer general questions using your intrinsic real-world knowledge. Do NOT reference local dummy files or test data unless explicitly asked.
 
 # --- Sandbox ---
-SANDBOX_MODE=false               # Set to true to enforce strict sandbox roots
+SANDBOX_MODE=false               # Set to true to enforce strict sandbox roots. false allows full PC access.
 SANDBOX_ROOTS=/absolute/path/to/Jarvis/sandbox
 
 # --- Workspace & Safety ---
@@ -133,7 +140,7 @@ AUDIT_LOG_PATH=/absolute/path/to/Jarvis/logs/audit.log
 
 # --- Knowledge Graph ---
 KNOWLEDGE_GRAPH_PATH=/absolute/path/to/Jarvis/core/memory/graph.db
-KNOWLEDGE_CORPUS_DIRS=knowledge,workspace
+KNOWLEDGE_CORPUS_DIRS=knowledge  # Only index the knowledge folder to prevent hallucinating temporary test files
 GRAPH_WATCH=false
 MAX_GRAPH_HOPS=3
 GRAPH_TOP_K=8

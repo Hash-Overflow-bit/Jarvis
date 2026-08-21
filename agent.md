@@ -88,6 +88,36 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 - Added new Kokoro parameters to `config.py`, `.env.example`, and `.env`.
 - Wrote test suites in `tests/test_agent_loop.py` and `tests/test_kokoro_tts.py` (42/42 tests passing).
 
+### Session 10 — 2026-08-20 (Milestone 5 Update - Dynamic YAML CrewAI Blueprint)
+- Built `KokoroTTS` wrapper class in `core/audio/tts.py` implementing 24kHz low-latency streaming audio.
+- Created models downloader script `scripts/download_kokoro_models.py` to cache Kokoro ONNX assets.
+- Added new Kokoro parameters to `config.py`, `.env.example`, and `.env`.
+- Wrote test suites in `tests/test_agent_loop.py` and `tests/test_kokoro_tts.py` (42/42 tests passing).
+
+### Milestone 5: Dynamic YAML CrewAI Blueprint (Completed)
+- **Goal:** Allow the LLM to output a structured YAML configuration representing a custom sub-agent, which Jarvis dynamically parses and loads as a `crewai.Agent`.
+- **Status:** **COMPLETED**
+- **Implementation Details:**
+  - `agents/agents_blueprint.yaml`: The single source of truth template.
+  - `core/orchestrator/hot_loader.py`: Reads the YAML and instantiates native CrewAI `LLM` and `Agent` objects.
+  - `core/orchestrator/agent_registry.py`: In-memory tracking of dynamically loaded agents.
+  - `core/orchestrator/baseline_runner.py`: Executes a quick diagnostic smoke-test (with timeout) to ensure the newly loaded agent is functional.
+  - `core/orchestrator/tool_mapper.py`: Dynamically maps string-based tool names from the YAML to safe `FileManagementToolkit` and custom Jarvis tools. Updated to respect `SANDBOX_MODE` from `.env`.
+- **Testing Infrastructure:**
+  - Automated Integration Tests: `tests/test_live_agents.py` verifies the end-to-end flow using the live Ollama model.
+  - Interactive CLI Tests: `scripts/manual_test_subagents.py` allows the user to manually trigger the hot-loading and assign arbitrary real-world tasks to the agent.
+- **Errors Encountered & Resolved:**
+  1. *Pydantic Model Validation Errors*: Occurred when attempting to pass raw `langchain_community` LLM objects into CrewAI. Resolved by instantiating CrewAI's native `crewai.LLM` class.
+  2. *OpenAI Connection Fallback Error*: CrewAI's default LiteLLM wrapper defaulted to OpenAI endpoints when local Ollama wasn't running or configured properly. Resolved by explicitly passing `base_url` to the native LLM wrapper.
+  3. *Registry KeyError*: Test scripts attempted to retrieve the agent from the registry using `agent_info["module"]` instead of `agent_info["agent"]`.
+  4. *LangChain Sandbox Permissions*: The integration test attempted to write to a random pytest `tmp_path` deep in `/private/var/`, which was actively blocked by `FileManagementToolkit`'s `root_dir` security. Resolved by dynamically checking `SANDBOX_MODE`.
+  5. *LLM JSON Short-Circuiting*: The LLaMA 3.1 model occasionally output raw JSON tool-calling syntax as its "Final Answer" instead of physically executing the tool through CrewAI's ReAct loop. Resolved by adding explicit enforcement rules to the test prompts.
+- **Errors Faced & Resolved (General):**
+  - *Dependency conflicts*: Resolved `rich` version constraints during `poetry add`.
+  - *Circular Imports*: Resolved circular import loop between `agent_builder`, `hot_loader`, `tool_mapper`, and `tool_registry` by deferring the `tool_registry` import locally inside the `load_approved_tools` function.
+  - *CrewAI Tool Pydantic Validation*: CrewAI's `Agent` expects tools to strictly inherit from `crewai.tools.BaseTool` (a Pydantic BaseModel). LangChain toolkit tools failed this type check. Fixed by building a `JarvisCrewTool` wrapper class that adapts both standard and custom tools.
+  - *Test LLM Type Validation*: Mocking `OllamaLLM` with `MagicMock` in unit tests failed Pydantic's `BaseLLM` strict instance type checking in CrewAI. Fixed by creating a concrete `MockLLM` subclass inheriting directly from LangChain's `BaseLLM` to satisfy Pydantic.
+
 ---
 
 ## Current File Structure
@@ -101,6 +131,9 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 ├── .env                            ← Active config (gitignored)
 ├── .env.example                    ← Template (committed to git)
 ├── .gitignore
+├── agents/
+│   └── agents_blueprint.yaml       ← CrewAI dynamic configuration
+├── templates/
 ├── core/
 │   ├── __init__.py
 │   ├── config.py                   ← Settings singleton
@@ -125,7 +158,12 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 │   │   └── graph_manager.py        ← Management tools
 │   ├── orchestrator/
 │   │   ├── __init__.py
-│   │   └── agent_loop.py           ← Serialized steps planning, execution & reflection loop
+│   │   ├── agent_loop.py           ← Serialized steps planning, execution & reflection loop
+│   │   ├── agent_registry.py       ← Sub-agent runtime state tracking
+│   │   ├── baseline_runner.py      ← Verification sandbox runner
+│   │   ├── hot_loader.py           ← Dynamic CrewAI agent builder
+│   │   ├── rollback_manager.py     ← Failsafe config restoration
+│   │   └── tool_mapper.py          ← YAML-to-sandbox tool bindings
 │   ├── safety/
 │   │   ├── confirmation_gate.py    ← Voice/text approval loop
 │   │   ├── dry_run_wrapper.py      ← Mock simulator wrapper
@@ -137,6 +175,7 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 │   │   └── session_manager.py      ← Conversational state machine
 │   └── tools/
 │       ├── __init__.py
+│       ├── agent_builder.py        ← Autonomous sub-agent generator tool
 │       ├── background_runner.py    ← Subprocess exec manager
 │       ├── base_tool.py            ← Abstract tool interface
 │       ├── create_directory.py     ← Create folder tool
@@ -150,6 +189,7 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 │       └── tool_registry.py        ← Tool call interceptor
 ├── tests/
 │   ├── smoke_test.py
+│   ├── test_agent_builder.py
 │   ├── test_agent_loop.py
 │   ├── test_confirmation_gate.py
 │   ├── test_emergency_stop.py
@@ -199,4 +239,4 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 
 ---
 
-*Last Updated: 2026-08-19 | Session 9 | Milestone 5 Completed*
+*Last Updated: 2026-08-20 | Session 10 | Milestone 5 Completed (Dynamic YAML Blueprint)*
