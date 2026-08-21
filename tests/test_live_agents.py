@@ -54,7 +54,7 @@ def test_live_file_organizer_agent(tmp_path):
         test_file_path.unlink()
         
     task_description = (
-        f"You must use your `write_file` tool to create a new file at the EXACT path: '{test_file_path.resolve()}'. "
+        f"You must use your `write_file` tool to create a new file at the EXACT path: '{test_file_path.resolve().as_posix()}'. "
         "The file content must be exactly: 'Integration test passed!'. "
         "CRITICAL: Do NOT just output JSON as your final answer. You MUST physically execute the `write_file` tool. "
         "After the tool returns success, your final answer should be 'File created'."
