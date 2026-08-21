@@ -257,8 +257,11 @@ class AgentExecutionLoop:
         if not self.use_tools:
             return []
 
-        if self._is_conversational_or_informative(user_input):
-            return []
+        # For small 8B models, use a hardcoded regex shield to prevent tool hallucination on greetings.
+        # For large robust models (like Qwen 32B), trust the LLM's own internal routing logic.
+        if "32b" not in settings.ollama_model.lower():
+            if self._is_conversational_or_informative(user_input):
+                return []
 
         prompt = f"""User Goal: {user_input}
 
