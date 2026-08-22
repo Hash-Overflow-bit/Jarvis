@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  jarvis:
+    build: .
+    container_name: jarvis_app
+    environment:
+      - ENVIRONMENT=production
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - GRAPH_ENABLED=true
+    volumes:
+      # Mount configuration and runtime logs/databases safely outside OneDrive
+      - ./.env:/app/.env
+      - ./workspace:/app/workspace
+      - ./sandbox:/app/sandbox
+      - ./logs:/app/logs
+      - ./models:/app/models
+      - ./core/memory:/app/core/memory
+      - ./agents:/app/agents
+    stdin_open: true
+    tty: true
+    depends_on:
+      - ollama
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: jarvis_ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+volumes:
+  ollama_data:

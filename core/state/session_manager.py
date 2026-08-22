@@ -20,6 +20,7 @@ from typing import Optional
 
 from core.config import settings
 from core.llm.ollama_client import ollama, OllamaError
+from core.llm.prose_hook import prose_hook
 
 
 class SessionManager:
@@ -175,11 +176,12 @@ class SessionManager:
             self.history.append(response_msg)
             self._trim_history()
             ans = response_msg.get("content", "") or ""
+            filtered_ans = prose_hook.filter_response(ans)
             try:
-                record_conversation_turn(user_input, ans)
+                record_conversation_turn(user_input, filtered_ans)
             except Exception:
                 pass
-            return ans
+            return filtered_ans
 
 
     def chat_stream(self, user_input: str, temperature: float = 0.7):

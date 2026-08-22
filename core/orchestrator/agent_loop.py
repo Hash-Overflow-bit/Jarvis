@@ -17,6 +17,7 @@ from core.llm.ollama_client import ollama, OllamaError
 from core.tools.tool_registry import tool_registry
 from core.memory.recall import recall
 from core.memory.action_memory import record_action
+from core.llm.prose_hook import prose_hook
 
 logger = logging.getLogger("jarvis_agent_loop")
 
@@ -63,6 +64,12 @@ class AgentExecutionLoop:
             return self._synthesize_fallback(user_input, recalled_facts)
 
         plan = valid_plan
+        
+        # 2.5 Critic/Verification loop for multi-step operations
+        if len(plan) > 1:
+            print(f"\n[🛡️ Critic] Proposed plan has {len(plan)} steps. Initiating internal critic review...")
+            plan = self._criticize_plan(user_input, plan)
+
         print(f"\n[📋 Plan] Decomposed into {len(plan)} steps:")
         for step in plan:
             print(f"  - Step {step.get('step')}: {step.get('tool')} with args: {step.get('arguments')}")
@@ -480,10 +487,10 @@ Executed Steps & Results:
                 temperature=0.7
             )
             if not isinstance(resp, dict):
-                return f"Completed tasks: {json.dumps(completed_steps)}"
-            return resp.get("content", "").strip()
+                return prose_hook.filter_response(f"Completed tasks: {json.dumps(completed_steps)}")
+            return prose_hook.filter_response(resp.get("content", "").strip())
         except Exception as e:
-            return f"Completed tasks: {json.dumps(completed_steps)}"
+            return prose_hook.filter_response(f"Completed tasks: {json.dumps(completed_steps)}")
 
     def _synthesize_fallback(self, user_input: str, recalled_facts: str) -> str:
         """Asks Qwen/LLM to reply directly when no tool plan is needed."""
@@ -510,6 +517,76 @@ Executed Steps & Results:
             )
             if not isinstance(resp, dict):
                 raise OllamaError("Ollama chat returned an invalid response type.")
-            return resp.get("content", "").strip()
+            return prose_hook.filter_response(resp.get("content", "").strip())
         except Exception as e:
             raise OllamaError(f"Ollama chat failed: {e}")
+
+    def _criticize_plan(self, user_goal: str, proposed_plan: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Runs a brief critic review step on multi-step plans to catch errors
+        (like order violations, placeholder paths, or redundant steps) before execution.
+        """
+        desktop_path = str(settings.desktop_dir).replace("\\", "/")
+        home_path = str(Path.home()).replace("\\", "/")
+        workspace_path = str(settings.default_workspace_dir).replace("\\", "/")
+
+        system_prompt = f"""You are the Critic Agent for Jarvis.
+Your task is to review the proposed multi-step execution plan for any flaws and correct them.
+Inspect the steps for:
+1. Logical order (e.g. creating a directory BEFORE writing a file in it).
+2. Proper path resolution (no fake paths, placeholders, or home directories; all paths must match the environment below).
+3. Redundancy (no duplicate steps).
+
+System Environment Context:
+- Operating System: {platform.system()}
+- Current OS User: {getpass.getuser()}
+- User Home Directory: '{home_path}'
+- User Desktop Directory: '{desktop_path}'
+- Default Workspace Directory: '{workspace_path}'
+
+Available tools and their schemas:
+{self._get_tool_schemas_str()}
+
+You must output a JSON object containing a "reasoning" key detailing your audit feedback, followed immediately by a "plan" key containing the finalized, corrected list of steps.
+Format requirement:
+Output ONLY a raw JSON object. Do not wrap in markdown code blocks. Do not add any introductory text. Start your response directly with the open curly brace '{{'.
+"""
+        user_prompt = f"""User Goal: {user_goal}
+Proposed Plan to Audit:
+{json.dumps(proposed_plan, indent=2)}
+
+Audit the plan, resolve any flaws, and output the finalized JSON.
+"""
+        try:
+            resp = ollama.chat(
+                model=settings.ollama_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.0,
+                format="json"
+            )
+            if not isinstance(resp, dict):
+                return proposed_plan
+            content = resp.get("content", "").strip()
+            if not content:
+                return proposed_plan
+            data = json.loads(content)
+            
+            # Extract corrected plan
+            if isinstance(data, dict) and "plan" in data:
+                res = data.get("plan", [])
+            elif isinstance(data, list):
+                res = data
+            else:
+                res = proposed_plan
+                
+            if isinstance(res, list) and len(res) > 0:
+                print(f"[🛡️ Critic] Plan successfully audited and approved.")
+                return [s for s in res if isinstance(s, dict)]
+            return proposed_plan
+        except Exception as e:
+            logger.warning(f"Critic review failed: {e}. Falling back to original plan.")
+            return proposed_plan
+

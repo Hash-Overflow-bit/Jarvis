@@ -108,6 +108,38 @@ class _Settings:
         except FileNotFoundError:
             return False
 
+    def _check_onedrive_and_redirect(self, path: Path, subfolder: str) -> Path:
+        """
+        Detects if a path is located inside OneDrive and redirects it
+        to a local directory to avoid synchronization issues and file locks.
+        """
+        path_str = str(path.resolve())
+        if "onedrive" in path_str.lower():
+            if self.is_windows:
+                safe_base = Path.home() / "Jarvis"
+            else:
+                safe_base = Path.home() / ".jarvis"
+            
+            # Preserve filename if path is a file
+            if path.suffix:
+                redirected = (safe_base / subfolder / path.name).resolve()
+            else:
+                redirected = (safe_base / subfolder).resolve()
+                
+            redirected.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Print a single warning to stderr
+            sys.stderr.write(
+                f"\n[⚠️ OneDrive Isolation] Warning: Path '{path}' is inside OneDrive.\n"
+                f"Redirecting storage to safe local path: '{redirected}' to prevent locks.\n"
+            )
+            return redirected
+        return path
+
+    @property
+    def nopus_prose_filter(self) -> bool:
+        return os.getenv("NOPUS_PROSE_FILTER", "true").lower().strip() == "true"
+
     # --- General ---
     @property
     def environment(self) -> str:
@@ -294,7 +326,8 @@ class _Settings:
         if not raw:
             return []
         # Split by comma, support both Windows and Unix paths
-        return [normalize_path(p) for p in raw.split(",") if p.strip()]
+        paths = [normalize_path(p) for p in raw.split(",") if p.strip()]
+        return [self._check_onedrive_and_redirect(p, "sandbox") for p in paths]
 
     @property
     def sandbox_mode(self) -> bool:
@@ -315,16 +348,14 @@ class _Settings:
     @property
     def default_workspace_dir(self) -> Path:
         val = os.getenv("DEFAULT_WORKSPACE_DIR")
-        if val:
-            return normalize_path(val)
-        return (self._project_root / "workspace").resolve()
+        path = normalize_path(val) if val else (self._project_root / "workspace").resolve()
+        return self._check_onedrive_and_redirect(path, "workspace")
 
     @property
     def poetry_venv_path(self) -> Path:
         val = os.getenv("POETRY_VENV_PATH")
-        if val:
-            return normalize_path(val)
-        return (self._project_root / ".venvs").resolve()
+        path = normalize_path(val) if val else (self._project_root / ".venvs").resolve()
+        return self._check_onedrive_and_redirect(path, "venvs")
 
     @property
     def git_user_email(self) -> str:
@@ -355,9 +386,8 @@ class _Settings:
     @property
     def agents_blueprint_path(self) -> Path:
         val = os.getenv("AGENTS_BLUEPRINT_PATH")
-        if val:
-            return normalize_path(val)
-        return (self._project_root / "agents" / "agents_blueprint.yaml").resolve()
+        path = normalize_path(val) if val else (self._project_root / "agents" / "agents_blueprint.yaml").resolve()
+        return self._check_onedrive_and_redirect(path, "agents")
 
     @property
     def agent_baseline_timeout(self) -> float:
@@ -369,17 +399,15 @@ class _Settings:
     @property
     def audit_log_path(self) -> Path:
         val = os.getenv("AUDIT_LOG_PATH")
-        if val:
-            return normalize_path(val)
-        return (self._project_root / "logs" / "audit.log").resolve()
+        path = normalize_path(val) if val else (self._project_root / "logs" / "audit.log").resolve()
+        return self._check_onedrive_and_redirect(path, "logs")
 
     # --- Knowledge Graph (M4.5) ---
     @property
     def knowledge_graph_path(self) -> Path:
         val = os.getenv("KNOWLEDGE_GRAPH_PATH")
-        if val:
-            return normalize_path(val)
-        return (self._project_root / "core" / "memory" / "graph.db").resolve()
+        path = normalize_path(val) if val else (self._project_root / "core" / "memory" / "graph.db").resolve()
+        return self._check_onedrive_and_redirect(path, "memory")
 
     @property
     def knowledge_corpus_dirs(self) -> list[str]:
