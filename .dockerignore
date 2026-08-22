@@ -14,5 +14,4 @@ core/memory/*.db
 core/memory/*.db-journal
 agents/agents_blueprint.yaml
 .env
-poetry.lock
 pyproject.toml.bak
