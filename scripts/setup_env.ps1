@@ -13,8 +13,9 @@ Write-Host ""
 # 1. Check Python Installation
 Write-Host "[🔎] Checking Python 3.11+ installation..."
 try {
-    $pythonVersion = & python --version 2>&1
-    if ($pythonVersion -match "Python 3\.(11|12|13)") {
+    $pythonVersionObj = & python --version 2>&1
+    $pythonVersion = "$pythonVersionObj"
+    if ($pythonVersion.Contains("3.11") -or $pythonVersion.Contains("3.12") -or $pythonVersion.Contains("3.13")) {
         Write-Host "  - Found: $pythonVersion" -ForegroundColor Green
     } else {
         Write-Host "  - Warning: Found Python version $pythonVersion. Python 3.11+ is highly recommended." -ForegroundColor Yellow
