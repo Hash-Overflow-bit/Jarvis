@@ -178,7 +178,9 @@ def record_action(tool_name: str, args: dict, result: dict) -> None:
 
     try:
         db_path = _get_db_path()
-        conn = sqlite3.connect(str(db_path))
+        conn = sqlite3.connect(str(db_path), timeout=30.0)
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=30000;")
         _ensure_schema(conn)
 
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")

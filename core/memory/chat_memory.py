@@ -42,7 +42,9 @@ atexit.register(flush_memory_queue)
 
 def _stable_id(ent_type: str, name: str) -> str:
     """Generate a stable UUID5 from entity type + name."""
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{ent_type.upper()}:{name.lower().strip()}"))
+    t = (ent_type or "CONCEPT").upper()
+    n = (name or "unknown").lower().strip()
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{t}:{n}"))
 
 
 def _ensure_schema(conn: sqlite3.Connection) -> None:
@@ -78,9 +80,18 @@ def save_conversational_fact(source_name: str, source_type: str, predicate: str,
     if not settings.graph_enabled:
         return
 
+    # Fallbacks for None values from LLM response
+    source_name = source_name or "unknown"
+    source_type = source_type or "CONCEPT"
+    target_name = target_name or "unknown"
+    target_type = target_type or "CONCEPT"
+    description = description or "Learned fact"
+
     try:
         db_path = Path(settings.knowledge_graph_path).resolve()
-        conn = sqlite3.connect(str(db_path))
+        conn = sqlite3.connect(str(db_path), timeout=30.0)
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=30000;")
         _ensure_schema(conn)
 
         source_doc = "chat_history:learned_facts"
@@ -118,17 +129,18 @@ def save_conversational_fact(source_name: str, source_type: str, predicate: str,
         if "deadline" in lower_desc or "date" in lower_desc:
             conn.execute("""INSERT OR IGNORE INTO aliases (entity_id, alias) VALUES (?, ?)""", (tgt_id, "deadline"))
             conn.execute("""INSERT OR IGNORE INTO aliases (entity_id, alias) VALUES (?, ?)""", (tgt_id, "project deadline"))
-
-        # 3. Create Relationship
+            conn.execute("""INSERT OR IGNORE INTO aliases (entity_id, alias) VALUES (?, ?)""", (tgt_id, "date"))
+        
+        # 3. Create Relation
         conn.execute(
             """INSERT OR IGNORE INTO relations (source_id, target_id, predicate, source_doc)
                VALUES (?, ?, ?, ?)""",
-            (src_id, tgt_id, predicate.lower().strip(), source_doc)
+            (src_id, tgt_id, predicate, source_doc)
         )
 
         conn.commit()
         conn.close()
-        logger.debug(f"[Chat Memory] Saved fact: {source_name} -({predicate})-> {target_name}")
+        logger.info(f"[Chat Memory] Saved fact: {source_name} -> {predicate} -> {target_name}")
 
     except Exception as e:
         logger.warning(f"[Chat Memory] Failed to save fact: {e}")
@@ -136,7 +148,6 @@ def save_conversational_fact(source_name: str, source_type: str, predicate: str,
 
 def record_conversation_turn(user_input: str, agent_response: str) -> None:
     """
-    Persists an entire conversation turn (User prompt + Jarvis answer) into graph.db.
     Ensures every conversation from every session is stored and recallable.
     """
     if not settings.graph_enabled:
@@ -149,7 +160,9 @@ def record_conversation_turn(user_input: str, agent_response: str) -> None:
 
     try:
         db_path = Path(settings.knowledge_graph_path).resolve()
-        conn = sqlite3.connect(str(db_path))
+        conn = sqlite3.connect(str(db_path), timeout=30.0)
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=30000;")
         _ensure_schema(conn)
 
         import datetime

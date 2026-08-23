@@ -27,7 +27,9 @@ def get_entity_id(type_: str, name: str) -> str:
 def init_db(db_path: Path) -> sqlite3.Connection:
     """Initialises the SQLite database using schema.sql."""
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30.0)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA busy_timeout=30000;")
     schema_path = Path(__file__).parent / "schema.sql"
     if schema_path.exists():
         with open(schema_path, "r", encoding="utf-8") as f:

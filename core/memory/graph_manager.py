@@ -90,7 +90,9 @@ class GraphStatus(BaseTool[GraphStatusInput, GraphStatusOutput]):
             )
 
         try:
-            conn = sqlite3.connect(db_path)
+            conn = sqlite3.connect(db_path, timeout=30.0)
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA busy_timeout=30000;")
             cursor = conn.cursor()
 
             cursor.execute("SELECT COUNT(*) FROM entities")
@@ -250,7 +252,9 @@ class ForgetDocument(BaseTool[ForgetDocumentInput, ForgetDocumentOutput]):
             return ForgetDocumentOutput(success=False, details="Knowledge graph database does not exist.")
 
         try:
-            conn = sqlite3.connect(db_path)
+            conn = sqlite3.connect(db_path, timeout=30.0)
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA busy_timeout=30000;")
             cursor = conn.cursor()
 
             # Retrieve total relations matching this doc

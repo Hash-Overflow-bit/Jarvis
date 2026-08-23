@@ -114,7 +114,9 @@ def recall(prompt: str, hops: int = 3, top_k: int = 8) -> RecallResult:
     top_k = min(top_k, config_top_k)
 
     try:
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_path, timeout=30.0)
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=30000;")
         conn.row_factory = sqlite3.Row
         
         # Step 1: Seed
