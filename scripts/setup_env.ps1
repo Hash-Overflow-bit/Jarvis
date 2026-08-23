@@ -118,6 +118,20 @@ if ($oneDriveExists) {
     Write-Host "  - .env is configured correctly." -ForegroundColor Green
 }
 
+# 6. Register jarvis command globally in system PATH
+Write-Host ""
+Write-Host "[🔎] Registering global 'jarvis' command..."
+$oldPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+$currentDir = (Get-Item .).FullName
+if ($oldPath -notlike "*$currentDir*") {
+    $newPath = "$oldPath;$currentDir"
+    [System.Environment]::SetEnvironmentVariable("PATH", $newPath, "User")
+    Write-Host "  - Added Jarvis project folder to system PATH successfully." -ForegroundColor Green
+    Write-Host "  - Note: Open a NEW terminal window for changes to take effect." -ForegroundColor Yellow
+} else {
+    Write-Host "  - Jarvis folder is already registered in system PATH." -ForegroundColor Green
+}
+
 Write-Host ""
 Write-Host "=========================================" -ForegroundColor Green
 Write-Host "   SETUP COMPLETE! Ready to run Jarvis. " -ForegroundColor Green
