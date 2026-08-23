@@ -437,6 +437,14 @@ class _Settings:
         return os.getenv("GRAPH_ENABLED", "true").lower().strip() == "true"
 
     @property
+    def telemetry_enabled(self) -> bool:
+        return os.getenv("TELEMETRY_ENABLED", "false").lower().strip() == "true"
+
+    @property
+    def otel_exporter_otlp_endpoint(self) -> str:
+        return os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:6006/v1/traces").strip()
+
+    @property
     def desktop_dir(self) -> Path:
         """Dynamically detects the user's real Desktop directory path."""
         override = os.getenv("DESKTOP_DIR")

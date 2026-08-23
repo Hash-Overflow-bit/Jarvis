@@ -6,6 +6,8 @@ services:
       - ENVIRONMENT=production
       - OLLAMA_BASE_URL=http://ollama:11434
       - GRAPH_ENABLED=true
+      - TELEMETRY_ENABLED=true
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://phoenix:6006/v1/traces
     volumes:
       # Mount configuration and runtime logs/databases safely outside OneDrive
       - ./.env:/app/.env
@@ -19,6 +21,7 @@ services:
     tty: true
     depends_on:
       - ollama
+      - phoenix
 
   ollama:
     image: ollama/ollama:latest
@@ -27,6 +30,15 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    container_name: jarvis_phoenix
+    ports:
+      - "6006:6006"
+    environment:
+      - PHOENIX_PORT=6006
+      - PHOENIX_HOST=0.0.0.0
 
 volumes:
   ollama_data:
