@@ -21,4 +21,4 @@ set "WSL_PATH=/mnt/!DRIVE_LOWER!!REST_PATH!"
 if "!WSL_PATH:~-1!"=="/" set "WSL_PATH=!WSL_PATH:~0,-1!"
 
 :: Execute python main.py inside WSL 2, passing through all CLI arguments
-wsl -e bash -c "cd '!WSL_PATH!' && poetry run python main.py %*"
+wsl -e bash -c "export PATH=\"$HOME/.local/bin:$PATH\" && cd '!WSL_PATH!' && poetry run python main.py %*"
