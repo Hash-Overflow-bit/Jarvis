@@ -108,6 +108,21 @@ class _Settings:
         except FileNotFoundError:
             return False
 
+    def _get_wsl_host_ip(self) -> str:
+        """Helper to dynamically resolve Windows host IP address from inside WSL 2."""
+        try:
+            resolv_path = Path("/etc/resolv.conf")
+            if resolv_path.exists():
+                content = resolv_path.read_text()
+                for line in content.splitlines():
+                    if "nameserver" in line:
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            return parts[1]
+        except Exception:
+            pass
+        return "127.0.0.1"
+
     def _check_onedrive_and_redirect(self, path: Path, subfolder: str) -> Path:
         """
         Detects if a path is located inside OneDrive and redirects it
@@ -156,7 +171,11 @@ class _Settings:
     # --- Ollama ---
     @property
     def ollama_base_url(self) -> str:
-        return os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").strip()
+        if self.is_wsl and ("localhost" in url or "127.0.0.1" in url):
+            host_ip = self._get_wsl_host_ip()
+            url = url.replace("localhost", host_ip).replace("127.0.0.1", host_ip)
+        return url
 
     @property
     def ollama_generate_url(self) -> str:
