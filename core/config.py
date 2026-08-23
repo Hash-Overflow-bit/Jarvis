@@ -156,11 +156,6 @@ class _Settings:
                 
             redirected.parent.mkdir(parents=True, exist_ok=True)
             
-            # Print a single warning to stderr
-            sys.stderr.write(
-                f"\n[⚠️ OneDrive Isolation] Warning: Path '{path}' is inside OneDrive.\n"
-                f"Redirecting storage to safe local path: '{redirected}' to prevent locks.\n"
-            )
             return redirected
         return path
 
