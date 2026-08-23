@@ -110,6 +110,19 @@ class _Settings:
 
     def _get_wsl_host_ip(self) -> str:
         """Helper to dynamically resolve Windows host IP address from inside WSL 2."""
+        # 1. Try Default Gateway first (most accurate for Windows host on WSL bridge)
+        try:
+            import subprocess
+            result = subprocess.run(["ip", "route", "show"], capture_output=True, text=True, timeout=2.0)
+            for line in result.stdout.splitlines():
+                if line.startswith("default via"):
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        return parts[2]
+        except Exception:
+            pass
+
+        # 2. Fall back to nameserver in resolv.conf
         try:
             resolv_path = Path("/etc/resolv.conf")
             if resolv_path.exists():
