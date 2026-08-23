@@ -7,6 +7,7 @@ conversational fluff, and redundant tool execution disclosures.
 
 import re
 from core.config import settings
+from core.llm.no_slop import no_slop_linter
 
 
 class ProseQualityHook:
@@ -77,9 +78,9 @@ class ProseQualityHook:
         
         # If the resulting text is empty or fully stripped, fallback to original to prevent blank responses
         if not cleaned or len(cleaned.strip(" .\n\t,;")) == 0:
-            return text.strip()
+            return no_slop_linter.lint(text.strip())
 
-        return cleaned
+        return no_slop_linter.lint(cleaned)
 
 
 prose_hook = ProseQualityHook()

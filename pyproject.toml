@@ -27,6 +27,11 @@ crewai = "^1.15.17"
 crewai-tools = "^1.15.17"
 langchain-community = "^0.4.2"
 langchain-ollama = "^1.1.0"
+openinference-instrumentation-crewai = "^1.1.12"
+openinference-instrumentation-langchain = "^0.1.70"
+opentelemetry-api = "~1.42.0"
+opentelemetry-sdk = "~1.42.0"
+opentelemetry-exporter-otlp = "~1.42.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.1.1"
