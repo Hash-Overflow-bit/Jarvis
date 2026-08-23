@@ -176,6 +176,10 @@ def run_audio_mode():
 
 
 def main():
+    # Initialize OpenTelemetry telemetry & tracing loops (M6)
+    from core.logging.tracing import init_telemetry
+    init_telemetry()
+
     parser = argparse.ArgumentParser(
         description="Jarvis — Local AI Assistant",
         formatter_class=argparse.RawDescriptionHelpFormatter,
