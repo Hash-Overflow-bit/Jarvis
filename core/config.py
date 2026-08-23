@@ -469,7 +469,11 @@ class _Settings:
 
     @property
     def otel_exporter_otlp_endpoint(self) -> str:
-        return os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:6006/v1/traces").strip()
+        url = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:6006/v1/traces").strip()
+        if self.is_wsl and ("localhost" in url or "127.0.0.1" in url):
+            host_ip = self._get_wsl_host_ip()
+            url = url.replace("localhost", host_ip).replace("127.0.0.1", host_ip)
+        return url
 
     @property
     def desktop_dir(self) -> Path:
