@@ -44,10 +44,10 @@ try {
     Write-Host "  - Connected to Ollama at $ollamaUrl successfully." -ForegroundColor Green
     
     # Pull default models
-    Write-Host "  - Pulling primary model (llama3.1)..." -ForegroundColor Cyan
+    Write-Host '  - Pulling primary model llama3.1...' -ForegroundColor Cyan
     $pullPayload = @{ name = "llama3.1"; stream = $false } | ConvertTo-Json
     $pullResult = Invoke-RestMethod -Uri "$ollamaUrl/api/pull" -Method Post -Body $pullPayload -ContentType "application/json" -TimeoutSec 300
-    Write-Host "  - Llama 3.1 pulled and verified." -ForegroundColor Green
+    Write-Host '  - Llama 3.1 pulled and verified.' -ForegroundColor Green
 } catch {
     Write-Host "  - Warning: Cannot connect to Ollama at $ollamaUrl. Please make sure Ollama is running ('ollama serve') before launching Jarvis." -ForegroundColor Yellow
 }
