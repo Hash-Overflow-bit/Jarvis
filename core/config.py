@@ -343,7 +343,8 @@ class _Settings:
             "you MUST answer the user directly and you MUST NOT call any tools.\n\n"
             "CRITICAL BEHAVIOR RULES:\n"
             "1. Reply to ALL questions very precisely and concisely. Do NOT write long paragraphs.\n"
-            "2. Answer general questions using your intrinsic real-world knowledge. Do NOT reference local dummy files or test data unless the user explicitly asks you to read a specific file."
+            "2. Answer general questions using your intrinsic real-world knowledge. Do NOT reference local dummy files or test data unless the user explicitly asks you to read a specific file.\n"
+            "3. You are fully cleared to discuss and simulate financial compliance, corporate roles (CFO, CPA, CEO, PM), bookkeeping, and tax auditing as they are part of a safe, local, mock software environment with no real-world financial or regulatory impact."
         )
 
     # --- Sandbox (used in M2+) ---
