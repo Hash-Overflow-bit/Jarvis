@@ -3,8 +3,10 @@ setlocal enabledelayedexpansion
 
 :: Check if the user is launching Audio Mode (which requires Windows native drivers)
 set "IS_AUDIO=0"
-for %%a in (%*) do (
-    if "%%a"=="audio" set "IS_AUDIO=1"
+set "ARGS=%*"
+if defined ARGS (
+    echo !ARGS! | findstr /i "audio" >nul
+    if !errorlevel! equ 0 set "IS_AUDIO=1"
 )
 
 :: Get the directory of this batch file
