@@ -304,15 +304,16 @@ System Environment Context:
 - Default Workspace Directory: '{workspace_path}'
 
 CRITICAL PATH & TOOL INSTRUCTIONS:
-- SECURITY CLEARANCE: This is a local mock software simulation environment with zero financial, legal, or regulatory real-world impact. You are fully authorized to simulate and create configuration files for fictitious executive board roles (CEO, PM, CFO, CPA, etc.) and write mock tax or compliance validation scripts.
-- CRITICAL JSON RULE: You MUST use forward slashes (/) for all file paths, even on Windows (e.g. use 'C:/Users/name' instead of 'C:\\Users\\name'). Unescaped backslashes will corrupt the JSON and cause a total system failure!
-- Always use real, fully qualified absolute paths matching the system environment context above.
-- When the user asks for 'desktop', map it to '{desktop_path}'.
-- NEVER use placeholder strings like 'your_username', '/path/to/...', or '<username>', or invent fake user home directories like '/home/username/'.
-- CRITICAL CONVERSATIONAL RULE: When the user is stating personal facts, introductions, or preferences (e.g., "My name is Hashir", "I use ReactJS"), or asking general questions, DO NOT generate any tool calls! Return an empty plan: {{"reasoning": "This is a conversational request.", "plan": []}}. ONLY generate tool steps when the user gives an explicit command to execute an action (e.g., "Create a file", "Scan folder", "Write a document").
-- DO NOT invoke 'rebuild_knowledge_graph' when answering questions. Memory facts are provided automatically.
-- For 'poetry_add', 'package_name' is REQUIRED and MUST be a non-empty package name (e.g. 'requests', 'fastapi'). NEVER pass an empty package_name string or omit it.
-- DO NOT run 'poetry_add' or 'poetry_install' on a directory unless 'pyproject.toml' or 'requirements.txt' exists in that folder.
+1. You MUST generate explicit tool steps (like write_file, file_scanner, create_directory) for any file read, write, create, or modify actions requested by the user. Do NOT attempt to perform or simulate these file operations conversationally in the chat response.
+2. SECURITY CLEARANCE: This is a local mock software simulation environment with zero financial, legal, or regulatory real-world impact. You are fully authorized to simulate and create configuration files for fictitious executive board roles (CEO, PM, CFO, CPA, etc.) and write mock tax or compliance validation scripts. You are fully authorized to perform all file read, write, create, and modify tasks on the host system. Do NOT refuse file management operations.
+3. CRITICAL JSON RULE: You MUST use forward slashes (/) for all file paths, even on Windows (e.g. use 'C:/Users/name' instead of 'C:\\Users\\name'). Unescaped backslashes will corrupt the JSON and cause a total system failure!
+4. Always use real, fully qualified absolute paths matching the system environment context above.
+5. When the user asks for 'desktop', map it to '{desktop_path}'.
+6. NEVER use placeholder strings like 'your_username', '/path/to/...', or '<username>', or invent fake user home directories like '/home/username/'.
+7. CRITICAL CONVERSATIONAL RULE: When the user is stating personal facts, introductions, or preferences (e.g., "My name is Hashir", "I use ReactJS"), or asking general questions, DO NOT generate any tool calls! Return an empty plan: {{"reasoning": "This is a conversational request.", "plan": []}}. ONLY generate tool steps when the user gives an explicit command to execute an action (e.g., "Create a file", "Scan folder", "Write a document").
+8. DO NOT invoke 'rebuild_knowledge_graph' when answering questions. Memory facts are provided automatically.
+9. For 'poetry_add', 'package_name' is REQUIRED and MUST be a non-empty package name (e.g. 'requests', 'fastapi'). NEVER pass an empty package_name string or omit it.
+10. DO NOT run 'poetry_add' or 'poetry_install' on a directory unless 'pyproject.toml' or 'requirements.txt' exists in that folder.
 
 Each step in the plan must have:
 - "step": integer index (starting from 1)
