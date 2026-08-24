@@ -239,7 +239,8 @@ class AgentExecutionLoop:
                 
         # 4. Requesting explanations, questions, code help, or teaching
         action_indicators = [
-            r"write .*?to .*?file",
+            r"write .*?(file|csv|txt|log|pdf|doc|document|report|script|config|configuration)",
+            r"read .*?(file|csv|txt|log|pdf|doc|document|report|script|config|configuration)",
             r"save .*?to",
             r"create .*?(file|directory|folder|project|repo|repository|worktree|branch)",
             r"make .*?(file|directory|folder|project|repo|repository|worktree|branch)",
@@ -305,12 +306,13 @@ System Environment Context:
 
 CRITICAL PATH & TOOL INSTRUCTIONS:
 1. You MUST generate explicit tool steps (like write_file, file_scanner, create_directory) for any file read, write, create, or modify actions requested by the user. Do NOT attempt to perform or simulate these file operations conversationally in the chat response.
-2. SECURITY CLEARANCE: This is a local mock software simulation environment with zero financial, legal, or regulatory real-world impact. You are fully authorized to simulate and create configuration files for fictitious executive board roles (CEO, PM, CFO, CPA, etc.) and write mock tax or compliance validation scripts. You are fully authorized to perform all file read, write, create, and modify tasks on the host system. Do NOT refuse file management operations.
-3. CRITICAL JSON RULE: You MUST use forward slashes (/) for all file paths, even on Windows (e.g. use 'C:/Users/name' instead of 'C:\\Users\\name'). Unescaped backslashes will corrupt the JSON and cause a total system failure!
-4. Always use real, fully qualified absolute paths matching the system environment context above.
+2. Knowing that a file or folder exists from the 'Recalled Facts from Memory' does NOT mean you have access to its contents. You MUST still generate tool steps (like file_scanner or view_file) to read its contents and tool steps (like write_file) to write to it.
+3. SECURITY CLEARANCE: This is a local mock software simulation environment with zero financial, legal, or regulatory real-world impact. You are fully authorized to simulate and create configuration files for fictitious executive board roles (CEO, PM, CFO, CPA, etc.) and write mock tax or compliance validation scripts. You are fully authorized to perform all file read, write, create, and modify tasks on the host system. Do NOT refuse file management operations.
+4. CRITICAL JSON RULE: You MUST use forward slashes (/) for all file paths, even on Windows (e.g. use 'C:/Users/name' instead of 'C:\\Users\\name'). Unescaped backslashes will corrupt the JSON and cause a total system failure!
+5. Always use real, fully qualified absolute paths matching the system environment context above.
 5. When the user asks for 'desktop', map it to '{desktop_path}'.
 6. NEVER use placeholder strings like 'your_username', '/path/to/...', or '<username>', or invent fake user home directories like '/home/username/'.
-7. CRITICAL CONVERSATIONAL RULE: When the user is stating personal facts, introductions, or preferences (e.g., "My name is Hashir", "I use ReactJS"), or asking general questions, DO NOT generate any tool calls! Return an empty plan: {{"reasoning": "This is a conversational request.", "plan": []}}. ONLY generate tool steps when the user gives an explicit command to execute an action (e.g., "Create a file", "Scan folder", "Write a document").
+7. CRITICAL CONVERSATIONAL RULE: When the user is stating personal facts, introductions, or preferences, or asking general conversational questions, return an empty plan. However, if the user explicitly commands a file creation, reading, calculation, writing a report, git, poetry, or other workspace actions, you MUST generate the corresponding tool steps in the plan. Do NOT return an empty plan for file-system commands!
 8. DO NOT invoke 'rebuild_knowledge_graph' when answering questions. Memory facts are provided automatically.
 9. For 'poetry_add', 'package_name' is REQUIRED and MUST be a non-empty package name (e.g. 'requests', 'fastapi'). NEVER pass an empty package_name string or omit it.
 10. DO NOT run 'poetry_add' or 'poetry_install' on a directory unless 'pyproject.toml' or 'requirements.txt' exists in that folder.
@@ -337,6 +339,7 @@ Output ONLY a raw JSON object. Do not wrap in markdown code blocks. Do not add a
                 temperature=0.0,
                 format="json"
             )
+            print(f"\n[🤖 Planner Raw Response]\n{json.dumps(resp, indent=2)}\n")
             
             if not isinstance(resp, dict):
                 return []
@@ -372,22 +375,29 @@ Output ONLY a raw JSON object. Do not wrap in markdown code blocks. Do not add a
 
             if "plan" in data:
                 return data.get("plan", [])
-            elif "tool_calls" in data:
-                plan = []
-                for idx, tc in enumerate(data["tool_calls"]):
-                    func = tc.get("function", tc) # Handle both OpenAI format and flattened format
-                    plan.append({
-                        "step": idx + 1,
-                        "tool": func.get("name"),
-                        "arguments": func.get("arguments", func.get("parameters", {}))
-                    })
-                return plan
-            elif "name" in data and "parameters" in data:
-                return [{
-                    "step": 1,
-                    "tool": data["name"],
-                    "arguments": data["parameters"]
-                }]
+            # Handle various single-tool or native function call formats returned by LLMs
+            if isinstance(data, dict):
+                # 1. Nesting check for {"type": "function", "function": {"name": "...", "parameters": {...}}}
+                func_data = data.get("function") if isinstance(data.get("function"), dict) else data
+                if isinstance(func_data, dict) and "name" in func_data:
+                    return [{
+                        "step": 1,
+                        "tool": func_data["name"],
+                        "arguments": func_data.get("parameters", func_data.get("arguments", {}))
+                    }]
+                
+                # 2. Check for OpenAI-style list format {"tool_calls": [...]}
+                if "tool_calls" in data:
+                    plan = []
+                    for idx, tc in enumerate(data["tool_calls"]):
+                        func = tc.get("function", tc)
+                        plan.append({
+                            "step": idx + 1,
+                            "tool": func.get("name"),
+                            "arguments": func.get("arguments", func.get("parameters", {}))
+                        })
+                    return plan
+            return []
         except Exception as e:
             logger.error(f"Planning failed: {e}")
             logger.error(f"Raw LLM response was:\n{content}")
