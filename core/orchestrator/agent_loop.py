@@ -41,6 +41,16 @@ class AgentExecutionLoop:
         """
         Runs the full intent routing, planning, execution, and synthesis loop.
         """
+        from opentelemetry import trace
+        tracer = trace.get_tracer("jarvis")
+        with tracer.start_as_current_span("AgentExecutionLoop.run") as span:
+            span.set_attribute("user_input", user_input)
+            span.set_attribute("mode", mode)
+            res = self._run_traced(user_input, mode, span)
+            span.set_attribute("response", res)
+            return res
+
+    def _run_traced(self, user_input: str, mode: str, span) -> str:
         # 1. Memory Routing & Context Ingestion
         recalled_facts = ""
         if settings.graph_enabled:

@@ -192,13 +192,22 @@ class OllamaClient:
             payload["tools"] = tools
 
         try:
-            resp = requests.post(
-                settings.ollama_chat_url,   # http://localhost:11434/api/chat
-                json=payload,
-                stream=stream,
-                timeout=120,
-            )
-            resp.raise_for_status()
+            from opentelemetry import trace
+            tracer = trace.get_tracer("jarvis")
+            with tracer.start_as_current_span("OllamaClient.chat") as span:
+                span.set_attribute("llm.model", model or self.model)
+                span.set_attribute("llm.temperature", temperature)
+                if format:
+                    span.set_attribute("llm.format", format)
+
+                resp = requests.post(
+                    settings.ollama_chat_url,   # http://localhost:11434/api/chat
+                    json=payload,
+                    stream=stream,
+                    timeout=120,
+                )
+                resp.raise_for_status()
+                span.set_attribute("llm.status_code", resp.status_code)
         except requests.exceptions.ConnectionError:
             raise OllamaError(
                 f"Cannot connect to Ollama at {self.base_url}. "

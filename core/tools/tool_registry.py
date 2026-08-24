@@ -137,7 +137,16 @@ class ToolRegistry:
             )
 
         # 2. Execute Tool (via exception handler wrapper)
-        result = run_async(safe_execute(name, cleaned_args, lambda: tool.run(input_data)))
+        from opentelemetry import trace
+        tracer = trace.get_tracer("jarvis")
+        with tracer.start_as_current_span(f"Tool.{name}") as span:
+            span.set_attribute("tool.name", name)
+            span.set_attribute("tool.args", str(cleaned_args))
+            result = run_async(safe_execute(name, cleaned_args, lambda: tool.run(input_data)))
+            span.set_attribute("tool.success", result.get("success", False))
+            if not result.get("success"):
+                span.set_attribute("tool.error", result.get("error", ""))
+        
         if not result.get("success"):
             return result
 
