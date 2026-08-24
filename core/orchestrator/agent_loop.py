@@ -239,10 +239,10 @@ class AgentExecutionLoop:
                 
         # 4. Requesting explanations, questions, code help, or teaching
         action_indicators = [
-            r"write (it |this |code |)to (a )?file",
-            r"save (it |this |code |)to",
-            r"create (a )?(file|directory|folder)",
-            r"make (a )?(file|directory|folder)",
+            r"write .*?to .*?file",
+            r"save .*?to",
+            r"create .*?(file|directory|folder|project|repo|repository|worktree|branch)",
+            r"make .*?(file|directory|folder|project|repo|repository|worktree|branch)",
             r"run (the |a )?(command|code|script)",
             r"execute",
             r"git (commit|push|pull|clone|status)",
@@ -354,7 +354,7 @@ Output ONLY a raw JSON object. Do not wrap in markdown code blocks. Do not add a
             if not content:
                 return []
 
-            data = json.loads(content)
+            data = json.loads(content, strict=False)
             
             # If the LLM returned a raw list instead of a dict
             if isinstance(data, list):
@@ -449,7 +449,7 @@ Context of failure:
             content = resp.get("content", "").strip()
             if not content:
                 return []
-            data = json.loads(content)
+            data = json.loads(content, strict=False)
             if isinstance(data, dict):
                 res = data.get("plan", [])
             elif isinstance(data, list):
@@ -582,7 +582,7 @@ Audit the plan, resolve any flaws, and output the finalized JSON.
             content = resp.get("content", "").strip()
             if not content:
                 return proposed_plan
-            data = json.loads(content)
+            data = json.loads(content, strict=False)
             
             # Extract corrected plan
             if isinstance(data, dict) and "plan" in data:
