@@ -214,3 +214,7 @@ from core.tools.delegate_task import DelegateTask
 tool_registry.register(AgentBuilder())
 tool_registry.register(DelegateTask())
 
+# Register Model Weight Manager Tool (M6)
+from core.tools.weight_tool import WeightManagerTool
+tool_registry.register(WeightManagerTool())
+
