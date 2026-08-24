@@ -76,14 +76,14 @@ class SandboxEnforcer:
         target_str = str(target_path).replace("\\", "/")
         
         # Define a regex pattern that catches common fake paths
-        # Examples: /path/to/, path/to/, /Users/username/, /home/username/, <workspace>/
-        fake_path_pattern = r"(?:^/?path/to/|^/?Users/[^/]+/Desktop/|^/?Users/[^/]+/|^/?home/[^/]+/|<workspace_path>/|<workspace>/|<username>/?|your_username/?)"
+        # Examples: /sandbox/, /path/to/, /Users/username/, /home/username/
+        fake_path_pattern = r"(?:^/?sandbox/|^/?path/to/|^/?Users/[^/]+/Desktop/|^/?Users/[^/]+/|^/?home/[^/]+/|<workspace_path>/|<workspace>/|<username>/?|your_username/?)"
         
         # Replace the fake prefix with the active workspace directory or desktop directory
         if re.search(fake_path_pattern, target_str, re.IGNORECASE):
-            if "desktop" in target_str.lower():
+            if "desktop" in target_str.lower() or target_str.lower().startswith("/sandbox/") or target_str.lower().startswith("sandbox/"):
                 desktop = str(settings.desktop_dir).replace("\\", "/") + "/"
-                target_str = re.sub(fake_path_pattern + r"desktop/?", desktop, target_str, flags=re.IGNORECASE)
+                target_str = re.sub(fake_path_pattern + r"(?:desktop|sandbox)/?", desktop, target_str, flags=re.IGNORECASE)
             else:
                 workspace = str(settings.default_workspace_dir).replace("\\", "/") + "/"
                 target_str = re.sub(fake_path_pattern, workspace, target_str, flags=re.IGNORECASE)
