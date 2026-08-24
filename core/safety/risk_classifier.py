@@ -52,26 +52,14 @@ class RiskClassifier:
 
     def should_confirm(self, tool_name: str) -> bool:
         """
-        Determines if confirmation is required for a tool based on SAFE_MODE.
-
-        SAFE_MODE rules:
-        - 'off': never confirm.
-        - 'permissive': confirm HIGH and CRITICAL risks.
-        - 'strict': confirm MEDIUM, HIGH, and CRITICAL risks.
+        Determines if confirmation is required for a tool.
+        If SAFE_MODE is 'off', no tools require confirmation.
+        Otherwise, only file deletion/cleanup and document forget actions require user confirmation
+        to keep the user experience seamless while protecting against data loss.
         """
-        mode = settings.safe_mode
-        if mode == "off":
+        if settings.safe_mode == "off":
             return False
-
-        risk = self.get_risk_level(tool_name)
-
-        if mode == "permissive":
-            return risk in [RiskLevel.HIGH, RiskLevel.CRITICAL]
-
-        if mode == "strict":
-            return risk in [RiskLevel.MEDIUM, RiskLevel.HIGH, RiskLevel.CRITICAL]
-
-        return True
+        return tool_name in ("file_cleanup", "forget_document")
 
 
 # Global risk classifier singleton

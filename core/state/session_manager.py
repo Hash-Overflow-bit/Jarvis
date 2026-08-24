@@ -92,6 +92,7 @@ class SessionManager:
                 
             self.system_prompt += (
                 f"- You are fully authorized to clone Git repositories and manage Poetry/pip packages inside the workspace directory.\n"
+                f"- When creating general files, folders, or scripts (e.g. at user request), place them in the 'desktop' directory by default so the user can see them instantly. Do NOT place general user creations in the workspace unless they are part of a Git repository or Poetry project.\n"
                 f"- Never use placeholder paths like '/path/to/sandbox' or './sandbox' or '/path/to/desktop'."
             )
 

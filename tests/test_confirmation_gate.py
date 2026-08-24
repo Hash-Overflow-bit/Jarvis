@@ -32,19 +32,12 @@ def test_should_confirm_by_safe_mode():
         assert not risk_classifier.should_confirm("file_cleanup")
         assert not risk_classifier.should_confirm("git_push")
 
-    # Test safe_mode = permissive
-    with patch.dict(os.environ, {"SAFE_MODE": "permissive"}):
-        assert not risk_classifier.should_confirm("file_scanner")  # LOW
-        assert not risk_classifier.should_confirm("git_clone")     # MEDIUM
-        assert risk_classifier.should_confirm("file_cleanup")      # HIGH
-        assert risk_classifier.should_confirm("git_push")          # CRITICAL
-
-    # Test safe_mode = strict
+    # Test safe_mode = strict/permissive (only confirm deletion tools)
     with patch.dict(os.environ, {"SAFE_MODE": "strict"}):
         assert not risk_classifier.should_confirm("file_scanner")  # LOW
-        assert risk_classifier.should_confirm("git_clone")         # MEDIUM
-        assert risk_classifier.should_confirm("file_cleanup")      # HIGH
-        assert risk_classifier.should_confirm("git_push")          # CRITICAL
+        assert not risk_classifier.should_confirm("git_clone")     # MEDIUM
+        assert not risk_classifier.should_confirm("git_push")      # CRITICAL
+        assert risk_classifier.should_confirm("file_cleanup")      # HIGH (Deletion)
 
 
 @pytest.mark.asyncio

@@ -385,9 +385,9 @@ Output ONLY a raw JSON object. Do not wrap in markdown code blocks. Do not add a
                     "tool": data["name"],
                     "arguments": data["parameters"]
                 }]
-            return []
         except Exception as e:
             logger.error(f"Planning failed: {e}")
+            logger.error(f"Raw LLM response was:\n{content}")
             return []
 
     def _reflect_and_replan(
