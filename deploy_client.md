@@ -170,6 +170,35 @@ GRAPH_ENABLED=true
    ```
 
 5. **Build/Refresh Knowledge Graph**:
-   Once Jarvis is started, type or speak:
+    Once Jarvis is started, type or speak:
    > *"Jarvis, rebuild your knowledge graph"*
    *(Enter `yes` when prompted to authorize the action).*
+
+---
+
+## 🐳 7. Telemetry & Observability (Arize Phoenix & Docker)
+
+To run the real-time execution dashboard and trace agent loops:
+
+1. **Start the Docker Stack**:
+   Navigate to the project root and run:
+   ```cmd
+   docker compose up -d
+   ```
+   *(This starts the `jarvis_phoenix` and `jarvis_app` services. Note that the containerized Ollama runs on port `11435` to avoid port conflict with your native Windows Ollama running on port `11434` for GPU acceleration).*
+
+2. **Configure Environment**:
+   Ensure your `.env` contains:
+   ```env
+   TELEMETRY_ENABLED=true
+   ```
+
+3. **Verify Dashboard Connection**:
+   Open `http://localhost:6006` in your browser. To verify that your WSL container can send data to the Windows host container, run:
+   ```bash
+   curl -I http://172.24.16.1:6006
+   ```
+   *(Must return `HTTP/1.1 200 OK` from `uvicorn`).*
+
+4. **Verify Traces**:
+   Run `jarvis --mode text`, execute any tool command, and refresh `http://localhost:6006` to audit agent execution steps.
