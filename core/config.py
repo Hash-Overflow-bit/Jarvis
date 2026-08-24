@@ -483,25 +483,29 @@ class _Settings:
             return normalize_path(override)
 
         home = Path.home()
-        paths_to_check = [
+        paths_to_check = []
+
+        # WSL detection helper: Check Windows user desktop directories first if in WSL
+        if self.is_wsl or self.os_name.lower() == "linux":
+            mnt_c_users = Path("/mnt/c/Users")
+            if mnt_c_users.exists():
+                try:
+                    for user_dir in mnt_c_users.iterdir():
+                        try:
+                            if user_dir.is_dir() and user_dir.name.lower() not in ("public", "all users", "default", "defaultuser0"):
+                                paths_to_check.append(user_dir / "OneDrive" / "Desktop")
+                                paths_to_check.append(user_dir / "Desktop")
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+
+        # Then fall back to local home directory paths
+        paths_to_check.extend([
             home / "OneDrive" / "Desktop",
             home / "onedrive" / "Desktop",
             home / "Desktop",
-        ]
-        
-        # WSL detection helper
-        if self.is_wsl or self.os_name.lower() == "linux":
-            import getpass
-            try:
-                # Try to map Windows users
-                mnt_c_users = Path("/mnt/c/Users")
-                if mnt_c_users.exists():
-                    for user_dir in mnt_c_users.iterdir():
-                        if user_dir.is_dir() and user_dir.name.lower() not in ("public", "all users", "default", "defaultuser0"):
-                            paths_to_check.append(user_dir / "Desktop")
-                            paths_to_check.append(user_dir / "OneDrive" / "Desktop")
-            except Exception:
-                pass
+        ])
 
         for p in paths_to_check:
             # Check existence
