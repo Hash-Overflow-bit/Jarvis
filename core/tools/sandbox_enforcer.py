@@ -79,10 +79,14 @@ class SandboxEnforcer:
         # Examples: /path/to/, path/to/, /Users/username/, /home/username/, <workspace>/
         fake_path_pattern = r"(?:^/?path/to/|^/?Users/[^/]+/Desktop/|^/?Users/[^/]+/|^/?home/[^/]+/|<workspace_path>/|<workspace>/|<username>/?|your_username/?)"
         
-        # Replace the fake prefix with the active workspace directory
+        # Replace the fake prefix with the active workspace directory or desktop directory
         if re.search(fake_path_pattern, target_str, re.IGNORECASE):
-            workspace = str(settings.default_workspace_dir).replace("\\", "/") + "/"
-            target_str = re.sub(fake_path_pattern, workspace, target_str, flags=re.IGNORECASE)
+            if "desktop" in target_str.lower():
+                desktop = str(settings.desktop_dir).replace("\\", "/") + "/"
+                target_str = re.sub(fake_path_pattern + r"desktop/?", desktop, target_str, flags=re.IGNORECASE)
+            else:
+                workspace = str(settings.default_workspace_dir).replace("\\", "/") + "/"
+                target_str = re.sub(fake_path_pattern, workspace, target_str, flags=re.IGNORECASE)
             # Normalize double slashes that might have been created
             target_str = target_str.replace("//", "/")
         
