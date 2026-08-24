@@ -1,10 +1,23 @@
 @echo off
 setlocal enabledelayedexpansion
 
+:: Check if the user is launching Audio Mode (which requires Windows native drivers)
+set "IS_AUDIO=0"
+for %%a in (%*) do (
+    if "%%a"=="audio" set "IS_AUDIO=1"
+)
+
 :: Get the directory of this batch file
 set "WIN_PATH=%~dp0"
 
-:: Convert Windows backslashes to forward slashes
+if "!IS_AUDIO!"=="1" (
+    echo [🎙️] Launching Jarvis in Windows Native Audio Mode (GPU & Mic)...
+    cd /d "!WIN_PATH!"
+    poetry run python main.py %*
+    exit /b
+)
+
+:: Convert Windows backslashes to forward slashes for WSL
 set "WIN_PATH=%WIN_PATH:\=/%"
 
 :: Extract drive letter (first character) and lower-case it
