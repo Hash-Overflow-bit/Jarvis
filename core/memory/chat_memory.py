@@ -299,6 +299,8 @@ def learn_from_message(user_message: str) -> None:
     system_prompt = """You are the Fact Extractor Agent for Jarvis.
 Your job is to read the user's message and extract any persistent personal facts (e.g. name, preferences, job, boss) or project facts (e.g. deadlines, server names, ports, repository URLs) that should be remembered across sessions.
 
+DO NOT extract action requests, workflow commands, or transient task intents (e.g. 'The user requests creation of folder X', 'Delete file Y', 'Make a file named Z'). Workflow intents are NOT persistent facts.
+
 Output ONLY a JSON object containing a "facts" key, which is a list of extracted facts.
 If no persistent facts are found, return: {"facts": []}
 

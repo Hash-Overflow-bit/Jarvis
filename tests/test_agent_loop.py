@@ -378,3 +378,50 @@ def test_agent_loop_wsl_path_conversion_on_windows(tmp_path):
                 assert sanitized_dir.startswith("C:")
                 assert "automation_demo" in sanitized_dir
 
+
+def test_agent_loop_folder_name_parsing():
+    """
+    Regression Test for Bug 1:
+    Ensure folder extraction extracts 'automation_demo' and NEVER the literal word 'named' or 'called'.
+    """
+    loop = AgentExecutionLoop()
+    inputs = [
+        "create a local project folder named automation_demo",
+        "create folder called automation_demo",
+        "create automation_demo folder",
+        "create project folder automation_demo"
+    ]
+    for inp in inputs:
+        route = loop._direct_route(inp)
+        assert route is not None, f"Direct route failed for: {inp}"
+        target_dir = route[0]["arguments"]["directory"]
+        assert "automation_demo" in target_dir
+        assert "named" not in target_dir.lower()
+        assert "called" not in target_dir.lower()
+
+
+def test_agent_loop_synthesis_no_unexecuted_file_claims():
+    """
+    Regression Test for Bug 2:
+    When user requests creation of a directory + 3 files, but execution ONLY completes directory creation,
+    _synthesize_final_response MUST NOT claim any requested files were created.
+    """
+    loop = AgentExecutionLoop()
+    user_req = "Create automation_demo and inside it business_script.txt, workflow_background.png, and automation_summary.md"
+    completed_steps = [
+        {"step": 1, "tool": "create_directory", "arguments": {"directory": "/workspace/automation_demo"}}
+    ]
+
+    mock_llm_synth = {
+        "role": "assistant",
+        "content": "I created the directory /workspace/automation_demo."
+    }
+
+    with patch("core.orchestrator.agent_loop.ollama.chat", return_value=mock_llm_synth):
+        res = loop._synthesize_final_response(user_req, completed_steps, "")
+        res_lower = res.lower()
+        assert "business_script" not in res_lower
+        assert "workflow_background" not in res_lower
+        assert "automation_summary" not in res_lower
+        assert "automation_demo" in res_lower
+

@@ -313,19 +313,35 @@ class AgentExecutionLoop:
 
         # --- Create Directory / Folder: "create folder X" / "create directory X" ---
         folder_match = re.search(
-            r'(?:create|make|build)\s+(?:a\s+)?(?:new\s+)?(?:local\s+)?(?:project\s+)?(?:folder|directory)\s+(?:named\s+|called\s+)?[\'\"]?([a-zA-Z0-9_\-\./\\]+)[\'\"]?',
+            r'(?:create|make|build)\s+(?:a\s+)?(?:new\s+)?(?:local\s+)?(?:project\s+)?(?:folder|directory)\s+(?:named\s+|called\s+)\s*[\'\"]?([a-zA-Z0-9_\-\./\\]+)[\'\"]?',
             cleaned, re.IGNORECASE
         )
+        if not folder_match:
+            folder_match = re.search(
+                r'(?:create|make|build)\s+(?:a\s+)?(?:new\s+)?(?:local\s+)?(?:project\s+)?(?:folder|directory)\s+[\'\"]?([a-zA-Z0-9_\-\./\\]+)[\'\"]?',
+                cleaned, re.IGNORECASE
+            )
+        if not folder_match:
+            folder_match = re.search(
+                r'(?:create|make|build)\s+(?:a\s+)?(?:new\s+)?(?:local\s+)?(?:project\s+)?[\'\"]?([a-zA-Z0-9_\-\./\\]+)[\'\"]?\s+(?:folder|directory)',
+                cleaned, re.IGNORECASE
+            )
         if folder_match:
             folder_name = folder_match.group(1).strip()
-            is_absolute = folder_name.startswith("/") or ":" in folder_name or folder_name.startswith("\\")
-            if "desktop" in cleaned.lower():
-                target_dir = str(settings.desktop_dir / folder_name) if not is_absolute else folder_name
-            elif "project" in cleaned.lower() or "workspace" in cleaned.lower() or "local" in cleaned.lower():
-                target_dir = str(settings.default_workspace_dir / folder_name) if not is_absolute else folder_name
-            else:
-                target_dir = folder_name
-            return [{"step": 1, "tool": "create_directory", "arguments": {"directory": target_dir}}]
+            if folder_name.lower().startswith("named "):
+                folder_name = folder_name[6:].strip()
+            elif folder_name.lower().startswith("called "):
+                folder_name = folder_name[7:].strip()
+
+            if folder_name.lower() not in ("named", "called", "folder", "directory"):
+                is_absolute = folder_name.startswith("/") or ":" in folder_name or folder_name.startswith("\\")
+                if "desktop" in cleaned.lower():
+                    target_dir = str(settings.desktop_dir / folder_name) if not is_absolute else folder_name
+                elif "project" in cleaned.lower() or "workspace" in cleaned.lower() or "local" in cleaned.lower():
+                    target_dir = str(settings.default_workspace_dir / folder_name) if not is_absolute else folder_name
+                else:
+                    target_dir = folder_name
+                return [{"step": 1, "tool": "create_directory", "arguments": {"directory": target_dir}}]
 
         # --- Create / Write File: "write/create a file named X containing Y" ---
         write_match = re.search(
@@ -863,12 +879,14 @@ Executed Steps & Results:
 {json.dumps(completed_steps, indent=2)}
 """
         system_prompt = (
-            "You are Jarvis. Synthesize a concise, friendly final response summarizing what was completed and answering any questions. "
-            "Note that you have a persistent long-term memory system (Knowledge Graph) across sessions. "
-            "Only mention details from the Recalled Facts from Memory if they are directly relevant to the user's current goal or if the user is asking about them. "
-            "DO NOT bring up unrelated memory facts (such as favorite languages, frameworks, or past projects) when the user is performing a simple action command (like creating a directory or writing a file). "
-            "CRITICAL DATE HANDLING: The current year is 2026. Do NOT change, alter, or hallucinate the year in timestamps or facts. "
-            "Always use the exact dates and years provided in the system context or recalled memory (never convert 2026 to 2023)."
+            "You are Jarvis. Synthesize a concise, friendly final response summarizing what was completed and answering any questions.\n"
+            "CRITICAL TRUTH ENFORCEMENT:\n"
+            "1. You must ONLY report actions and artifacts that were ACTUALLY executed in Executed Steps & Results.\n"
+            "2. If the user requested multiple files, scripts, images, or folders, but only some (or one) appear in Executed Steps & Results, state ONLY what was executed.\n"
+            "3. DO NOT claim that any requested file, script, image, or document was created unless its corresponding tool execution (e.g. write_file, create_directory) appears in Executed Steps & Results with success.\n"
+            "4. PATH TRUTH ENFORCEMENT: When stating file or directory paths, state ONLY the exact verified path from Executed Steps & Results or Recalled Facts from Memory. Do NOT invent, reconstruct, or guess a path. If no verified path is available in Executed Steps or Recalled Facts, state: 'I don't have a verified path for that folder.'\n"
+            "5. Note that you have a persistent long-term memory system (Knowledge Graph) across sessions. Only mention details from Recalled Facts if directly relevant.\n"
+            "6. CRITICAL DATE HANDLING: The current year is 2026. Do NOT change, alter, or hallucinate the year in timestamps or facts."
         )
         try:
             resp = ollama.chat(
@@ -887,8 +905,11 @@ Executed Steps & Results:
 
     def _synthesize_fallback(self, user_input: str, recalled_facts: str) -> str:
         """Asks the LLM to reply directly when no tool plan is needed."""
+        fallback_sys_prompt = settings.jarvis_system_prompt + (
+            "\n\nPATH TRUTH ENFORCEMENT: When answering questions about where a file or folder is located, state ONLY the exact verified path from Recalled Long-Term Memory or prior completed tool actions. Do NOT reconstruct, guess, or hallucinate a path from the user's original request or question. If no verified path is available in memory or prior turns, state: 'I don't have a verified path for that folder.'"
+        )
         messages = [
-            {"role": "system", "content": settings.jarvis_system_prompt}
+            {"role": "system", "content": fallback_sys_prompt}
         ]
         if recalled_facts:
             messages.append({"role": "system", "content": f"Recalled Long-Term Memory:\n{recalled_facts}"})
