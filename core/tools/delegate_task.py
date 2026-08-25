@@ -80,9 +80,11 @@ class DelegateTask(BaseTool[DelegateTaskInput, DelegateTaskOutput]):
             verbose=True
         )
 
-        # Kickoff the crew execution synchronously (since run() is called by the executor thread)
+        # Execute the crew. Since Jarvis runs tools inside an asyncio wrapper with nest_asyncio,
+        # we must use kickoff_async() to avoid CrewAI's synchronous event loop detector errors.
         try:
-            result = crew.kickoff()
+            loop = asyncio.get_event_loop()
+            result = loop.run_until_complete(crew.kickoff_async())
             return DelegateTaskOutput(
                 success=True,
                 result=str(result)
