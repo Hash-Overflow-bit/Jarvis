@@ -131,6 +131,20 @@ class AgentExecutionLoop:
             
             # 4. Self-Verification & Reflection
             tool_success = result.get("success") and result.get("result", {}).get("success", True)
+            
+            # --- Physical File System Verification ---
+            if tool_success:
+                if tool_name == "create_directory":
+                    dir_path = args.get("directory")
+                    if dir_path and not dir_path.startswith("/workspace") and not Path(dir_path).exists():
+                        tool_success = False
+                        result["error"] = f"Directory '{dir_path}' was reported created, but does not physically exist on disk."
+                elif tool_name == "write_file":
+                    file_path = args.get("filepath")
+                    if file_path and not file_path.startswith("/workspace") and not Path(file_path).exists():
+                        tool_success = False
+                        result["error"] = f"File '{file_path}' was reported created, but does not physically exist on disk."
+
             if tool_success:
                 print(f"[✅ Success] Step {step.get('step')} completed.")
                 completed_steps.append({
@@ -382,17 +396,35 @@ Output ONLY raw JSON. Start with '{{'.
             if not content:
                 return []
 
-            data = None
-            try:
-                data = json.loads(content, strict=False)
-            except Exception:
-                import re
-                json_match = re.search(r"(\{[\s\S]*\})", content)
-                if json_match:
+            def _parse_json_robust(text: str) -> Optional[Any]:
+                if not text or not isinstance(text, str):
+                    return None
+                text = text.strip()
+                try:
+                    return json.loads(text, strict=False)
+                except Exception:
+                    pass
+                if '\\"' in text or '\\n' in text:
                     try:
-                        data = json.loads(json_match.group(1), strict=False)
+                        return json.loads(text.replace('\\"', '"').replace('\\n', '\n'), strict=False)
                     except Exception:
                         pass
+                import re
+                m = re.search(r"(\{[\s\S]*\}|\[[\s\S]*\])", text)
+                if m:
+                    try:
+                        return json.loads(m.group(1), strict=False)
+                    except Exception:
+                        pass
+                return None
+
+            data = _parse_json_robust(content)
+
+            # Unwrap nested {"role": "assistant", "content": "..."} payloads
+            if isinstance(data, dict) and "content" in data and isinstance(data["content"], str):
+                inner_data = _parse_json_robust(data["content"])
+                if inner_data:
+                    data = inner_data
                 if not data:
                     name_match = re.search(r'"(?:name|tool)"\s*:\s*"([^"]+)"', content)
                     fp_match = re.search(r'"filepath"\s*:\s*"([^"]+)"', content)
