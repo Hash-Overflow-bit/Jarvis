@@ -12,7 +12,7 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 - **Package Manager:** Poetry
 - **LLM Backend:** Ollama (local)
 - **STT:** faster-whisper
-- **TTS:** Piper TTS
+- **TTS:** Piper TTS / Kokoro TTS
 - **Frameworks:** CrewAI, LangGraph (Milestone 5+)
 
 ---
@@ -27,6 +27,7 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 | M4 | Safety, Sandboxing & Confirmation Boundaries | — | ✅ DONE |
 | M4.5 | Local Knowledge Graph Memory | — | ✅ DONE |
 | M5 | Core Agent Execution Loop & Kokoro TTS | $60 | ✅ DONE |
+| M5.5 | Grounded Writing, Web Research & Data Extraction | — | ✅ DONE |
 | M6 | Local Model Fine-Tuning & Tool-Calling Optimization | $40 | ⬜ NOT STARTED |
 | M7 | End-to-End System Integration & Stress Test | $20 | ⬜ NOT STARTED |
 
@@ -89,34 +90,35 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 - Wrote test suites in `tests/test_agent_loop.py` and `tests/test_kokoro_tts.py` (42/42 tests passing).
 
 ### Session 10 — 2026-08-20 (Milestone 5 Update - Dynamic YAML CrewAI Blueprint)
-- Built `KokoroTTS` wrapper class in `core/audio/tts.py` implementing 24kHz low-latency streaming audio.
-- Created models downloader script `scripts/download_kokoro_models.py` to cache Kokoro ONNX assets.
-- Added new Kokoro parameters to `config.py`, `.env.example`, and `.env`.
-- Wrote test suites in `tests/test_agent_loop.py` and `tests/test_kokoro_tts.py` (42/42 tests passing).
+- Built dynamic YAML CrewAI agent builder, hot loader, baseline runner, and tool mapper.
+- Integrated `JarvisCrewTool` wrapper adapting custom tools to CrewAI.
 
-### Milestone 5: Dynamic YAML CrewAI Blueprint (Completed)
-- **Goal:** Allow the LLM to output a structured YAML configuration representing a custom sub-agent, which Jarvis dynamically parses and loads as a `crewai.Agent`.
-- **Status:** **COMPLETED**
-- **Implementation Details:**
-  - `agents/agents_blueprint.yaml`: The single source of truth template.
-  - `core/orchestrator/hot_loader.py`: Reads the YAML and instantiates native CrewAI `LLM` and `Agent` objects.
-  - `core/orchestrator/agent_registry.py`: In-memory tracking of dynamically loaded agents.
-  - `core/orchestrator/baseline_runner.py`: Executes a quick diagnostic smoke-test (with timeout) to ensure the newly loaded agent is functional.
-  - `core/orchestrator/tool_mapper.py`: Dynamically maps string-based tool names from the YAML to safe `FileManagementToolkit` and custom Jarvis tools. Updated to respect `SANDBOX_MODE` from `.env`.
-- **Testing Infrastructure:**
-  - Automated Integration Tests: `tests/test_live_agents.py` verifies the end-to-end flow using the live Ollama model.
-  - Interactive CLI Tests: `scripts/manual_test_subagents.py` allows the user to manually trigger the hot-loading and assign arbitrary real-world tasks to the agent.
-- **Errors Encountered & Resolved:**
-  1. *Pydantic Model Validation Errors*: Occurred when attempting to pass raw `langchain_community` LLM objects into CrewAI. Resolved by instantiating CrewAI's native `crewai.LLM` class.
-  2. *OpenAI Connection Fallback Error*: CrewAI's default LiteLLM wrapper defaulted to OpenAI endpoints when local Ollama wasn't running or configured properly. Resolved by explicitly passing `base_url` to the native LLM wrapper.
-  3. *Registry KeyError*: Test scripts attempted to retrieve the agent from the registry using `agent_info["module"]` instead of `agent_info["agent"]`.
-  4. *LangChain Sandbox Permissions*: The integration test attempted to write to a random pytest `tmp_path` deep in `/private/var/`, which was actively blocked by `FileManagementToolkit`'s `root_dir` security. Resolved by dynamically checking `SANDBOX_MODE`.
-  5. *LLM JSON Short-Circuiting*: The LLaMA 3.1 model occasionally output raw JSON tool-calling syntax as its "Final Answer" instead of physically executing the tool through CrewAI's ReAct loop. Resolved by adding explicit enforcement rules to the test prompts.
-- **Errors Faced & Resolved (General):**
-  - *Dependency conflicts*: Resolved `rich` version constraints during `poetry add`.
-  - *Circular Imports*: Resolved circular import loop between `agent_builder`, `hot_loader`, `tool_mapper`, and `tool_registry` by deferring the `tool_registry` import locally inside the `load_approved_tools` function.
-  - *CrewAI Tool Pydantic Validation*: CrewAI's `Agent` expects tools to strictly inherit from `crewai.tools.BaseTool` (a Pydantic BaseModel). LangChain toolkit tools failed this type check. Fixed by building a `JarvisCrewTool` wrapper class that adapts both standard and custom tools.
-  - *Test LLM Type Validation*: Mocking `OllamaLLM` with `MagicMock` in unit tests failed Pydantic's `BaseLLM` strict instance type checking in CrewAI. Fixed by creating a concrete `MockLLM` subclass inheriting directly from LangChain's `BaseLLM` to satisfy Pydantic.
+### Session 11 — 2026-08-25 (Session Isolation & Execution State Cleanup)
+- Fixed session isolation bug where prior tool execution details (`yeah.txt`, `Hello Jsss`, `user_goal.txt`) leaked into subsequent conversational turns or interview requests.
+- Filtered raw `tool_calls` payloads and `role: "tool"` execution blobs out of fallback prompt history in `_synthesize_fallback()`.
+- Added strict `CRITICAL CONVERSATIONAL ISOLATION & TRUTH RULES` to the fallback prompt.
+- Extended `_is_conversational_or_informative()` to recognize interview requests (e.g. `Start a new isolated interview. Ask one question about my current professional role`).
+- Enforced clean per-run local execution state (`completed_steps = []`) in `AgentExecutionLoop.run()`.
+
+### Session 12 — 2026-08-26 (Grounded Writing, Web Research & Data Extraction Workflow)
+- **Goal:** Build a grounded 4-mode writing pipeline to cleanly distinguish between Simple Writing, Research-Backed Writing, Local Document Writing, and Data Extraction.
+- **Implemented Components:**
+  - `core/writing/sources.py`: Defined `EvidenceSource` model (`source_type`, `title`, `location`, `url`, `content`, `verified`).
+  - `core/writing/extractor.py`: Built zero-hallucination `DataExtractor` for TXT, MD, CSV, JSON, and documents into normalized schema (`source`, `data`, `warnings`). Absent fields return `null` / `"not found"`.
+  - `core/writing/pipeline.py`: Built `WritingPipeline` for 4 workflow modes:
+    1. *Mode A (Simple Writing)*: 0 research calls, clean generation based on user prompt.
+    2. *Mode B (Research Writing)*: Gathers evidence via `web_search`. Enforces strict URL verification (strips unretrieved fake links). If retrieval fails, explicitly states it could not verify online search results.
+    3. *Mode C (Local Document Writing)*: Reads local files via `read_file`, preserves source attribution across multi-document summaries.
+    4. *Mode D (Data Extraction)*: Extracts structured key-value data without guessing missing fields.
+  - `core/tools/web_search.py`: Created real-time DuckDuckGo web search tool (`web_search`) returning normalized result dicts. Added `_clean_query()` stripping instruction filler words and multi-stage fallback search.
+  - `core/orchestrator/agent_loop.py`:
+    - Updated `_get_tool_schemas_str()`, `_direct_route()`, and synthesis handlers.
+    - Fixed error message extraction so query strings are never extracted as tool errors.
+    - Added `Guardrail 3` in `_sanitize_plan()`: strips unrequested filesystem tools (`write_file`, `read_file`, `list_dir`) for research prompts without explicit save intent.
+    - Standardized Windows Desktop path rules (`PATH_FIXES`) mapping WSL/Linux path representations to native Windows `desktop_dir`.
+- **Test Infrastructure & Results:**
+  - Created `tests/test_writing_workflow.py` with 14 comprehensive unit, regression, and acceptance tests.
+  - Full test suite status: **100 passed, 1 skipped (100% green)**.
 
 ---
 
@@ -173,35 +175,57 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 │   ├── state/
 │   │   ├── __init__.py
 │   │   └── session_manager.py      ← Conversational state machine
-│   └── tools/
+│   ├── tools/
+│   │   ├── __init__.py
+│   │   ├── agent_builder.py        ← Autonomous sub-agent generator tool
+│   │   ├── background_runner.py    ← Subprocess exec manager
+│   │   ├── base_tool.py            ← Abstract tool interface
+│   │   ├── create_directory.py     ← Create folder tool
+│   │   ├── delete_directory.py     ← Directory deletion tool
+│   │   ├── directory_audit.py      ← Tree structure audit
+│   │   ├── file_cleanup.py         ← Sandbox file deletion tool
+│   │   ├── file_scanner.py         ← Sandbox scanner tool
+│   │   ├── git_tool.py             ← Git client tool
+│   │   ├── poetry_tool.py          ← Poetry environment manager
+│   │   ├── read_file.py            ← Read file tool
+│   │   ├── sandbox_enforcer.py     ← Sandbox path boundaries
+│   │   ├── skyvern_tool.py         ← Skyvern browser automation tool
+│   │   ├── tool_registry.py        ← Tool call interceptor
+│   │   ├── web_search.py           ← Real-time DuckDuckGo web search tool
+│   │   ├── weight_tool.py          ← Model weight manager tool
+│   │   └── write_file.py           ← Write file content tool
+│   └── writing/
 │       ├── __init__.py
-│       ├── agent_builder.py        ← Autonomous sub-agent generator tool
-│       ├── background_runner.py    ← Subprocess exec manager
-│       ├── base_tool.py            ← Abstract tool interface
-│       ├── create_directory.py     ← Create folder tool
-│       ├── write_file.py           ← Write file content tool
-│       ├── directory_audit.py      ← Tree structure audit
-│       ├── file_cleanup.py         ← Sandbox file deletion tool
-│       ├── file_scanner.py         ← Sandbox scanner tool
-│       ├── git_tool.py             ← Git client tool
-│       ├── poetry_tool.py          ← Poetry environment manager
-│       ├── sandbox_enforcer.py     ← Sandbox path boundaries
-│       └── tool_registry.py        ← Tool call interceptor
+│       ├── extractor.py            ← Grounded DataExtractor (JSON/KV/Entities)
+│       ├── pipeline.py             ← 4-Mode WritingPipeline manager
+│       └── sources.py              ← EvidenceSource model & prompt formatter
 ├── tests/
 │   ├── smoke_test.py
 │   ├── test_agent_builder.py
 │   ├── test_agent_loop.py
+│   ├── test_chat_memory.py
 │   ├── test_confirmation_gate.py
+│   ├── test_critic_loop.py
+│   ├── test_delete_directory.py
 │   ├── test_emergency_stop.py
 │   ├── test_file_tools.py
 │   ├── test_git_tool.py
 │   ├── test_knowledge_graph.py
 │   ├── test_kokoro_tts.py
+│   ├── test_live_agents.py
+│   ├── test_milestone5_polish.py
+│   ├── test_no_slop.py
 │   ├── test_poetry_tool.py
-│   └── test_sandbox.py
+│   ├── test_sandbox.py
+│   ├── test_skyvern_tool.py
+│   ├── test_weight_manager.py
+│   ├── test_worktree_orchestrator.py
+│   └── test_writing_workflow.py   ← 14 Grounded writing & research tests
 ├── scripts/
 │   ├── audit.py
+│   ├── download_kokoro_models.py
 │   ├── list_audio_devices.py
+│   ├── manual_test_subagents.py
 │   └── test_whisper.py
 ├── sandbox/
 ├── workspace/
@@ -215,6 +239,9 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 - **Windows DLL loading:** ctranslate2 native C++ loader ignores `os.add_dll_directory()`. We dynamically resolve `nvidia.cublas` and `nvidia.cudnn` absolute paths and prepend them directly to `os.environ["PATH"]` on Windows startup.
 - **Nested Event Loops:** Used `nest-asyncio` dependency to execute async prompt hooks and voice confirmation gates synchronously inside the conversational LLM loop.
 - **Safe Execution Format:** Standardised `safe_execute` to return `{"success": True, "result": ...}` to prevent attribute errors on pydantic model returns.
+- **Session Isolation:** Raw `tool_calls` payloads and `role: "tool"` execution blobs are filtered out of history when building conversational fallback prompts to prevent stale tool execution contamination across turns.
+- **Grounded Research & Link Truth:** Research outputs strictly strip any URL that was not present in retrieved search engine results (`EvidenceSource`). If web search is unavailable or returns 0 results, Jarvis explicitly states it could not verify online search results instead of fabricating citations.
+- **Research File-Write Protection:** `_sanitize_plan()` strips unrequested filesystem tools (`write_file`, `read_file`, `list_dir`) for research prompts unless the user explicitly requests file-saving intent (`save to file`, `export`, `report.txt`).
 
 ---
 
@@ -239,4 +266,4 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 
 ---
 
-*Last Updated: 2026-08-20 | Session 10 | Milestone 5 Completed (Dynamic YAML Blueprint)*
+*Last Updated: 2026-08-26 | Session 12 | Milestone 5.5 Completed (Grounded Writing, Web Research & Data Extraction Workflow)*
