@@ -54,7 +54,7 @@ def test_local_git_workflow(temp_git_env):
 
     # 1. Test GitClone
     clone_tool = GitClone()
-    clone_inp = GitCloneInput(url=str(bare_repo_path), target_dir_name="clone_dir")
+    clone_inp = GitCloneInput(url=str(bare_repo_path), target_path=str(workspace_dir / "clone_dir"))
     clone_out = clone_tool.run(clone_inp)
 
     assert clone_out.success is True
@@ -99,7 +99,7 @@ def test_local_git_workflow(temp_git_env):
 
     # 6. Test GitPull
     # Clone a second directory to pull modifications
-    clone_inp2 = GitCloneInput(url=str(bare_repo_path), target_dir_name="clone_dir2")
+    clone_inp2 = GitCloneInput(url=str(bare_repo_path), target_path=str(workspace_dir / "clone_dir2"))
     clone_out2 = clone_tool.run(clone_inp2)
     assert clone_out2.success is True
     assert (workspace_dir / "clone_dir2" / "test.txt").exists()

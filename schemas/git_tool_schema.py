@@ -17,9 +17,9 @@ class GitCloneInput(BaseModel):
         description="The HTTPS URL of the Git repository to clone (e.g. 'https://github.com/tiangolo/fastapi').",
         alias="url"
     )
-    target_dir_name: Optional[str] = Field(
+    target_path: Optional[str] = Field(
         None,
-        description="Optional folder name inside the workspace. If omitted, uses the repository name."
+        description="Optional absolute path to clone the repository into (e.g. desktop path). If omitted, clones into the default workspace."
     )
 
 

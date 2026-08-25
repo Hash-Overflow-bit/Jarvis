@@ -70,8 +70,8 @@ class GitClone(BaseTool[GitCloneInput, GitCloneOutput]):
             url = url.replace("https://", f"https://oauth2:{settings.git_token}@")
 
         # Resolve target directory
-        if input_data.target_dir_name:
-            target_path = settings.default_workspace_dir / input_data.target_dir_name
+        if input_data.target_path:
+            target_path = Path(input_data.target_path)
         else:
             # Extract repository name from URL
             repo_name = url.rstrip("/").split("/")[-1]
@@ -80,7 +80,8 @@ class GitClone(BaseTool[GitCloneInput, GitCloneOutput]):
                 repo_name = repo_name.split("@")[-1]
             if repo_name.endswith(".git"):
                 repo_name = repo_name[:-4]
-            target_path = settings.default_workspace_dir / repo_name
+            # Default to cloning onto the Desktop
+            target_path = settings.desktop_dir / repo_name
 
         try:
             validated_path = enforcer.validate(target_path)
