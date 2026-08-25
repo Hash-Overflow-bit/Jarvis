@@ -113,15 +113,33 @@ def test_delete_directory_false_success_physical_verification_failure(tmp_path):
         "result": {"success": True, "message": "Fake deletion success"}
     }
 
-    # Mock ollama chat for reflection if it gets called
-    mock_chat_res = {
+    # Mock planner response in case LLM planner is invoked (if direct route is bypassed)
+    mock_plan_res = {
+        "role": "assistant",
+        "content": json.dumps({
+            "plan": [
+                {
+                    "step": 1,
+                    "tool": "delete_directory",
+                    "arguments": {"directory": str(target_dir)}
+                }
+            ]
+        })
+    }
+    # Mock reflection response
+    mock_empty_plan_res = {
         "role": "assistant",
         "content": json.dumps({"plan": []})
     }
 
     with patch("core.orchestrator.agent_loop.tool_registry.execute", return_value=mock_tool_result):
-        with patch("core.orchestrator.agent_loop.ollama.chat", return_value=mock_chat_res):
+        with patch("core.orchestrator.agent_loop.ollama.chat", side_effect=[mock_plan_res, mock_empty_plan_res, mock_empty_plan_res]):
             res = loop.run(f"Delete the folder {target_dir}")
+
+            # Debugging outputs
+            print("\n[DEBUG] result type:", type(res))
+            print("[DEBUG] result:", repr(res))
+            print("[DEBUG] completed/verification state if available:", getattr(loop, "completed_steps", None))
 
             # 1. Verify target directory still exists
             assert target_dir.exists()
