@@ -20,9 +20,18 @@ from core.orchestrator.rollback_manager import rollback_manager
 
 class AgentBuilderInput(BaseModel):
     name: str = Field(..., description="The name of the sub-agent (PascalCase, e.g. LogCleanerAgent)")
-    role: str = Field(..., description="The role of the sub-agent")
-    goal: str = Field(..., description="The goal of the sub-agent")
-    backstory: str = Field(..., description="The backstory of the sub-agent")
+    role: str = Field(
+        default="Automated Task Specialist",
+        description="The role of the sub-agent"
+    )
+    goal: str = Field(
+        default="Execute assigned automated operations efficiently and safely.",
+        description="The goal of the sub-agent"
+    )
+    backstory: str = Field(
+        default="An expert autonomous AI sub-agent built to execute domain-specific tasks.",
+        description="The backstory of the sub-agent"
+    )
     tools: List[str] = Field(
         default_factory=list,
         description="List of tool names allowed (e.g. ['FileManagementToolkit.list_dir', 'file_scanner'])"

@@ -265,3 +265,23 @@ def test_agent_loop_sanitizer_auto_remap_invalid_delegate_task():
     assert sanitized[0]["tool"] == "create_directory"
     assert "hey" in sanitized[0]["arguments"]["directory"]
 
+
+def test_agent_loop_sanitizer_auto_populate_agent_builder_fields():
+    loop = AgentExecutionLoop()
+    raw_plan = [
+        {
+            "step": 1,
+            "tool": "agent_builder",
+            "arguments": {
+                "name": "QuickBookkeeperAgent",
+                "tools": ["read_file", "write_file"]
+            }
+        }
+    ]
+    sanitized = loop._sanitize_plan(raw_plan)
+    assert len(sanitized) == 1
+    assert sanitized[0]["tool"] == "agent_builder"
+    assert "role" in sanitized[0]["arguments"]
+    assert "goal" in sanitized[0]["arguments"]
+    assert "backstory" in sanitized[0]["arguments"]
+

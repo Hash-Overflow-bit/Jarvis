@@ -579,6 +579,16 @@ Output ONLY raw JSON. Start with '{{'.
                         args = step["arguments"]
                         tool_name = "create_directory"
 
+            # --- GUARDRAIL 1.9: Auto-populate missing agent_builder fields ---
+            if tool_name == "agent_builder":
+                if not args.get("role"):
+                    args["role"] = f"Automated {args.get('name', 'Task')} Specialist"
+                if not args.get("goal"):
+                    args["goal"] = f"Execute automated operations for {args.get('name', 'sub-agent')}"
+                if not args.get("backstory"):
+                    args["backstory"] = f"An autonomous sub-agent configured to perform specialized domain tasks."
+                step["arguments"] = args
+
             # --- GUARDRAIL 2: Reject Invalid Unregistered Tools ---
             if tool_name not in valid_tools:
                 print(f"[🚫 Sanitizer] Rejected Step {step.get('step')} — tool '{tool_name}' is not in the registry.")
