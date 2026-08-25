@@ -295,6 +295,7 @@ Recalled Facts from Memory:
         system_prompt = f"""You are the Planner Agent for Jarvis.
 Your task is to break down a user's request into a series of serialized steps using the available tools.
 You must output a JSON object containing a "reasoning" key detailing your thought process, followed immediately by a "plan" key containing the list of steps.
+You MUST follow this exact plan structure: {{"reasoning": "...", "plan": [{{"step": 1, "tool": "...", "arguments": {{...}}}}, ...]}}. Do NOT output native single function call structures (like {{"type": "function"}}). Always decompose into the "plan" array list so you can execute multiple steps sequentially (e.g., reading a file in step 1 BEFORE summarizing/writing it in step 2).
 If the user's request is purely conversational or doesn't require tools, return an empty plan: {{"reasoning": "This is a conversational request.", "plan": []}}
 
 System Environment Context:
@@ -377,24 +378,38 @@ Output ONLY a raw JSON object. Do not wrap in markdown code blocks. Do not add a
                 return data.get("plan", [])
             # Handle various single-tool or native function call formats returned by LLMs
             if isinstance(data, dict):
-                # 1. Nesting check for {"type": "function", "function": {"name": "...", "parameters": {...}}}
-                func_data = data.get("function") if isinstance(data.get("function"), dict) else data
-                if isinstance(func_data, dict) and "name" in func_data:
+                # 1. Check for {"type": "function", "function": "...", "parameters": {...}}
+                func_val = data.get("function")
+                if isinstance(func_val, str) and func_val.strip():
                     return [{
                         "step": 1,
-                        "tool": func_data["name"],
-                        "arguments": func_data.get("parameters", func_data.get("arguments", {}))
+                        "tool": func_val,
+                        "arguments": data.get("parameters", data.get("arguments", {}))
+                    }]
+                # 2. Check for {"type": "function", "function": {"name": "...", "parameters": {...}}}
+                elif isinstance(func_val, dict) and "name" in func_val:
+                    return [{
+                        "step": 1,
+                        "tool": func_val["name"],
+                        "arguments": func_val.get("parameters", func_val.get("arguments", {}))
+                    }]
+                # 3. Check for flattened format {"name": "...", "parameters": {...}}
+                elif "name" in data and isinstance(data["name"], str):
+                    return [{
+                        "step": 1,
+                        "tool": data["name"],
+                        "arguments": data.get("parameters", data.get("arguments", {}))
                     }]
                 
-                # 2. Check for OpenAI-style list format {"tool_calls": [...]}
+                # 4. Check for OpenAI-style list format {"tool_calls": [...]}
                 if "tool_calls" in data:
                     plan = []
                     for idx, tc in enumerate(data["tool_calls"]):
                         func = tc.get("function", tc)
                         plan.append({
                             "step": idx + 1,
-                            "tool": func.get("name"),
-                            "arguments": func.get("arguments", func.get("parameters", {}))
+                            "tool": func.get("name") if isinstance(func, dict) else func,
+                            "arguments": func.get("arguments", func.get("parameters", {})) if isinstance(func, dict) else tc.get("parameters", {})
                         })
                     return plan
             return []

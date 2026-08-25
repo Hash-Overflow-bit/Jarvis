@@ -205,8 +205,10 @@ tool_registry.register(ForgetDocument())
 # Register File Manipulation Tools (M4.5+)
 from core.tools.create_directory import CreateDirectory
 from core.tools.write_file import WriteFile
+from core.tools.read_file import ReadFile
 tool_registry.register(CreateDirectory())
 tool_registry.register(WriteFile())
+tool_registry.register(ReadFile())
 
 # Register Dynamic Sub-Agents (M5+)
 from core.tools.agent_builder import AgentBuilder
