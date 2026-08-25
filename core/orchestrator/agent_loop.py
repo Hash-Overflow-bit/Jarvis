@@ -345,12 +345,17 @@ Environment:
 
 Rules:
 - NEVER invent or hallucinate new tools (e.g., do not invent 'LedgerBookkeeper' or 'csv_parser' tools).
-- Use ONLY the exact tools listed below. Match each user action to the correct tool.
+- Use ONLY the exact tools listed below. Match each user action to the correct tool:
+  * "create folder" or "create directory" -> MUST use 'create_directory'.
+  * "create file" or "write file" -> MUST use 'write_file'.
+  * "read file" -> MUST use 'read_file'.
+  * "list folder" or "list files" or "show files" -> MUST use 'list_dir'.
+  * "modify file" or "edit file" -> MUST use 'write_file'.
+  * "browse website" or "navigate webpage" or "open portal" -> ONLY then use 'skyvern_tool'.
+- NEVER substitute skyvern_tool, browser tools, or web tools for local filesystem requests.
 - To trigger, assign, or invoke ANY sub-agent (like LedgerBookkeeper or CaliforniaCPA), you MUST use the 'delegate_task' tool with the 'agent_name' argument. Do NOT try to call the agent name as a function.
-- Use real absolute paths. Map 'desktop' to '{desktop_path}'. Never use placeholder paths.
+- Use real absolute paths. Map 'desktop' to '{desktop_path}'. Never use placeholder paths or append '/user/desktop' to an already resolved Desktop path.
 - Use forward slashes (/) in all paths, even on Windows.
-- If the user asks to create a folder/directory locally, use create_directory. If they ask to read a file, use read_file. If they ask to write, use write_file. If they ask to clone a repo, use git_clone.
-- Use skyvern_tool ONLY when the user explicitly provides a web URL or asks to perform browser portal navigation. Do NOT use skyvern_tool for local desktop file or folder creation.
 - CRITICAL: When using delegate_task, you MUST inject the absolute path for 'Desktop' ('{desktop_path}') into the 'task_description' so the sub-agent knows exactly where to read/write files.
 - If reading a file AND then processing its contents, plan ONLY the read step now. The processing step will happen in the next turn.
 - If the user provides a filename but no folder (e.g., "create hello.txt"), default to creating it directly on the Desktop ('{desktop_path}'). DO NOT append it to random directories from memory unless the user explicitly refers to that folder.
@@ -639,9 +644,16 @@ Output ONLY raw JSON. Start with '{{'.
                         tool_name = "create_directory"
 
             # --- GUARDRAIL 1.95: Fix schema-dump arguments in write_file ---
-            if tool_name == "write_file" and ("properties" in args or "type" in args):
-                fp_m = re.search(r'(/[\S]+\.(?:json|txt|md|csv|py))', user_input)
-                target_fp = fp_m.group(1) if fp_m else f"{desktop_path}/output.txt"
+            if tool_name == "write_file" and ("properties" in args or "type" in args or not args.get("filepath")):
+                target_fp = ""
+                fn_m = re.search(r'(?:named|called|file)\s+([a-zA-Z0-9_\-]+\.[a-zA-Z0-9]+)', user_input)
+                dir_m = re.search(r'(/(?:[^\s]+))', user_input)
+                if fn_m and dir_m:
+                    d_path = dir_m.group(1).rstrip('/')
+                    target_fp = f"{d_path}/{fn_m.group(1)}"
+                else:
+                    fp_m = re.search(r'(/[\S]+\.(?:json|txt|md|csv|py))', user_input)
+                    target_fp = fp_m.group(1) if fp_m else f"{desktop_path}/output.txt"
                 
                 c_m = re.search(r'containing\s+(?:exactly|valid JSON:?)?\s*(.*)$', user_input, re.IGNORECASE)
                 content_val = c_m.group(1).strip() if c_m else ""
@@ -653,7 +665,7 @@ Output ONLY raw JSON. Start with '{{'.
                 step["arguments"] = {"filepath": target_fp, "content": content_val}
                 args = step["arguments"]
 
-            # --- GUARDRAIL 1.96: Fix read_file hallucinated on folder creation request ---
+            # --- GUARDRAIL 1.96: Fix read_file hallucinated on folder or file creation request ---
             if tool_name == "read_file":
                 fp = args.get("filepath", "")
                 if user_input and ("create" in user_input.lower() or "make" in user_input.lower()) and ("folder" in user_input.lower() or "directory" in user_input.lower()):
@@ -663,6 +675,28 @@ Output ONLY raw JSON. Start with '{{'.
                         step["arguments"] = {"directory": fp}
                         args = step["arguments"]
                         tool_name = "create_directory"
+                elif user_input and any(w in user_input.lower() for w in ("write", "save", "create a file", "create file")) and "containing" in user_input.lower():
+                    target_fp = ""
+                    fn_m = re.search(r'(?:named|called|file)\s+([a-zA-Z0-9_\-]+\.[a-zA-Z0-9]+)', user_input)
+                    dir_m = re.search(r'(/(?:[^\s]+))', user_input)
+                    if fn_m and dir_m:
+                        d_path = dir_m.group(1).rstrip('/')
+                        target_fp = f"{d_path}/{fn_m.group(1)}"
+                    else:
+                        fp_m = re.search(r'(/[\S]+\.(?:json|txt|md|csv|py))', user_input)
+                        target_fp = fp_m.group(1) if fp_m else fp
+                    
+                    c_m = re.search(r'containing\s+(?:exactly|valid JSON:?)?\s*(.*)$', user_input, re.IGNORECASE)
+                    content_val = c_m.group(1).strip() if c_m else ""
+                    if not content_val:
+                        json_m = re.search(r'(\{[\s\S]*\})', user_input)
+                        content_val = json_m.group(1) if json_m else ""
+                    
+                    print(f"[🛡️ Auto-Remap] Auto-remapping read_file on write request to 'write_file' -> {target_fp}")
+                    step["tool"] = "write_file"
+                    step["arguments"] = {"filepath": target_fp, "content": content_val}
+                    args = step["arguments"]
+                    tool_name = "write_file"
 
             # --- GUARDRAIL 1.9: Auto-remap / Auto-populate agent_builder calls ---
             if tool_name == "agent_builder":
