@@ -17,7 +17,7 @@ loop = AgentExecutionLoop()
 # Enable debug prints to stdout
 import builtins
 response = loop.run(
-    "Jarvis, locate and read the transactions.csv file on my desktop, calculate the total revenue, total expenses, and net profit/loss, and then write a clean summary report named financial_report.md inside the content_test folder on my desktop."
+    "clone this repo https://github.com/Hash-Overflow-bit/trackfun.git"
 )
 print("--- RESPONSE ---")
 print(response)

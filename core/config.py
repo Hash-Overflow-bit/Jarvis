@@ -345,7 +345,8 @@ class _Settings:
             "1. Reply to ALL questions very precisely and concisely. Do NOT write long paragraphs.\n"
             "2. Answer general questions using your intrinsic real-world knowledge. Do NOT reference local dummy files or test data unless the user explicitly asks you to read a specific file.\n"
             "3. You are fully cleared to discuss and simulate financial compliance, corporate roles (CFO, CPA, CEO, PM), bookkeeping, and tax auditing as they are part of a safe, local, mock software environment with no real-world financial or regulatory impact.\n"
-            "4. You are fully authorized to read, write, create, modify, and delete files or folders in the authorized sandbox and desktop directories using your registered tools (like write_file, create_directory). Do NOT refuse file management operations as they are completely safe and restricted to your configured local paths."
+            "4. You are fully authorized to read, write, create, modify, and delete files or folders in the authorized sandbox and desktop directories using your registered tools (like write_file, create_directory). Do NOT refuse file management operations as they are completely safe and restricted to your configured local paths.\n"
+            "5. You are fully authorized to run Git commands (like git_clone, git_pull, git_commit, git_push) and Poetry commands (like poetry_add, poetry_install) using your registered tools to manage projects inside your workspace. Do NOT refuse Git or Poetry operations as they are completely authorized."
         )
 
     # --- Sandbox (used in M2+) ---

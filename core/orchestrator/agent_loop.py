@@ -308,7 +308,7 @@ System Environment Context:
 CRITICAL PATH & TOOL INSTRUCTIONS:
 1. You MUST generate explicit tool steps (like write_file, file_scanner, create_directory) for any file read, write, create, or modify actions requested by the user. Do NOT attempt to perform or simulate these file operations conversationally in the chat response.
 2. Knowing that a file or folder exists from the 'Recalled Facts from Memory' does NOT mean you have access to its contents. You MUST still generate tool steps (like file_scanner or view_file) to read its contents and tool steps (like write_file) to write to it.
-3. SECURITY CLEARANCE: This is a local mock software simulation environment with zero financial, legal, or regulatory real-world impact. You are fully authorized to simulate and create configuration files for fictitious executive board roles (CEO, PM, CFO, CPA, etc.) and write mock tax or compliance validation scripts. You are fully authorized to perform all file read, write, create, and modify tasks on the host system. Do NOT refuse file management operations.
+3. SECURITY CLEARANCE: This is a local mock software simulation environment with zero financial, legal, or regulatory real-world impact. You are fully authorized to simulate and create configuration files for fictitious executive board roles (CEO, PM, CFO, CPA, etc.) and write mock tax or compliance validation scripts. You are fully authorized to perform all file read, write, create, modify, Git operations (cloning, pulling, committing, pushing), and Poetry package management tasks on the host system. Do NOT refuse file management, Git, or Poetry operations.
 4. CRITICAL JSON RULE: You MUST use forward slashes (/) for all file paths, even on Windows (e.g. use 'C:/Users/name' instead of 'C:\\Users\\name'). Unescaped backslashes will corrupt the JSON and cause a total system failure!
 5. Always use real, fully qualified absolute paths matching the system environment context above.
 5. When the user asks for 'desktop', map it to '{desktop_path}'.
@@ -318,6 +318,8 @@ CRITICAL PATH & TOOL INSTRUCTIONS:
 9. For 'poetry_add', 'package_name' is REQUIRED and MUST be a non-empty package name (e.g. 'requests', 'fastapi'). NEVER pass an empty package_name string or omit it.
 10. DO NOT run 'poetry_add' or 'poetry_install' on a directory unless 'pyproject.toml' or 'requirements.txt' exists in that folder.
 11. CRITICAL MULTI-TURN RULE: If the user request requires reading or scanning a file (using read_file, file_scanner) AND performing an action based on its contents (such as writing a report, calculating totals, or modifying another file), you MUST ONLY plan the read/scan step in this turn. Do NOT generate the write or modification step in the same plan, as you cannot statically predict the file contents. Return a plan containing ONLY the read_file/file_scanner step. The subsequent steps will be handled in the next turn once the file contents are loaded into memory.
+12. CRITICAL MEMORY RULE: The 'Recalled Facts from Memory' contains facts from past sessions. You MUST ignore these facts if they are not directly relevant to the active User Goal. Do NOT plan actions or reference files mentioned in memory if they are unrelated to the current command (e.g., if the user asks to clone a repository, do not attempt to read or build unrelated executive board files).
+13. GIT CLONE RULE: You MUST use the git_clone tool when the user asks to clone a remote git repository. Do NOT attempt to simulate cloning by manually creating directories and writing mock files.
 Each step in the plan must have:
 - "step": integer index (starting from 1)
 - "tool": name of the tool to execute
@@ -331,6 +333,7 @@ Output ONLY a raw JSON object. Do not wrap in markdown code blocks. Do not add a
 """
 
         try:
+            content = ""
             resp = ollama.chat(
                 model=settings.ollama_model,
                 messages=[
