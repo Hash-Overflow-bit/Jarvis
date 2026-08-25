@@ -7,6 +7,7 @@ sanitizer guardrails, post-condition verification, and final response synthesis.
 
 import os
 import shutil
+import json
 import pytest
 from pathlib import Path
 from unittest.mock import patch
@@ -90,3 +91,41 @@ def test_prevent_unrelated_steps_on_deletion_goal():
     ]
     sanitized = loop._sanitize_plan(unrelated_plan, "Delete the smoke_test folder from my Desktop")
     assert len(sanitized) == 0, "Sanitizer MUST reject unrelated steps for a deletion request!"
+
+
+def test_delete_directory_false_success_physical_verification_failure(tmp_path):
+    """
+    Regression Test:
+    1. delete_directory tool returns success=True
+    2. target directory still physically exists on disk
+    3. AgentExecutionLoop physical verification marks tool_success as False
+    4. Jarvis does not claim the folder was successfully deleted.
+    """
+    target_dir = tmp_path / "stubborn_folder"
+    target_dir.mkdir(exist_ok=True)
+    assert target_dir.exists()
+
+    loop = AgentExecutionLoop()
+
+    # Mock tool_registry.execute to simulate a tool claiming success=True without actually deleting the directory
+    mock_tool_result = {
+        "success": True,
+        "result": {"success": True, "message": "Fake deletion success"}
+    }
+
+    # Mock ollama chat for reflection if it gets called
+    mock_chat_res = {
+        "role": "assistant",
+        "content": json.dumps({"plan": []})
+    }
+
+    with patch("core.orchestrator.agent_loop.tool_registry.execute", return_value=mock_tool_result):
+        with patch("core.orchestrator.agent_loop.ollama.chat", return_value=mock_chat_res):
+            res = loop.run(f"Delete the folder {target_dir}")
+
+            # 1. Verify target directory still exists
+            assert target_dir.exists()
+            # 2. Verify Jarvis does NOT claim successful deletion
+            assert "successfully deleted" not in res.lower()
+            assert "halted" in res.lower() or "physically exists" in res.lower() or "couldn't delete" in res.lower()
+

@@ -6,6 +6,7 @@ runs output verification, and self-corrects on failures.
 """
 
 import json
+import re
 import logging
 import getpass
 import platform
@@ -156,6 +157,14 @@ class AgentExecutionLoop:
                     if file_path and not file_path.startswith("/workspace") and not Path(file_path).exists():
                         tool_success = False
                         result["error"] = f"File '{file_path}' was reported created, but does not physically exist on disk."
+                elif tool_name == "delete_directory":
+                    dir_path = args.get("directory")
+                    if dir_path and Path(dir_path).exists():
+                        tool_success = False
+                        result["error"] = (
+                            f"Directory '{dir_path}' was reported deleted, "
+                            f"but it still physically exists on disk."
+                        )
 
             if tool_success:
                 print(f"[✅ Success] Step {step.get('step')} completed.")
@@ -300,7 +309,7 @@ class AgentExecutionLoop:
             desktop_path = str(settings.desktop_dir.resolve()).replace("\\", "/")
             if "desktop" in cleaned.lower() and not target.startswith("/"):
                 target = f"{desktop_path}/{target}"
-            return [{"step": 1, "tool": "file_cleanup", "arguments": {"directory": target}}]
+            return [{"step": 1, "tool": "delete_directory", "arguments": {"directory": target}}]
 
         # --- Create Directory / Folder: "create folder X" / "create directory X" ---
         folder_match = re.search(
