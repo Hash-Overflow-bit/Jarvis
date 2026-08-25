@@ -449,6 +449,22 @@ class _Settings:
     def graph_watch(self) -> bool:
         return os.getenv("GRAPH_WATCH", "false").lower().strip() == "true"
 
+    # --- Skyvern Browser Automation (M6) ---
+    @property
+    def skyvern_base_url(self) -> str:
+        return os.getenv("SKYVERN_BASE_URL", "http://localhost:8000/api/v1").rstrip("/")
+
+    @property
+    def skyvern_api_key(self) -> str:
+        return os.getenv("SKYVERN_API_KEY", "").strip()
+
+    @property
+    def skyvern_task_timeout(self) -> float:
+        try:
+            return float(os.getenv("SKYVERN_TASK_TIMEOUT", "120.0").strip())
+        except ValueError:
+            return 120.0
+
     @property
     def max_graph_hops(self) -> int:
         try:

@@ -251,3 +251,7 @@ tool_registry.register(DelegateTask())
 from core.tools.weight_tool import WeightManagerTool
 tool_registry.register(WeightManagerTool())
 
+# Register Skyvern Browser Automation Tool (M6)
+from core.tools.skyvern_tool import SkyvernTool
+tool_registry.register(SkyvernTool())
+
