@@ -335,7 +335,8 @@ Rules:
 - To trigger, assign, or invoke ANY sub-agent (like LedgerBookkeeper or CaliforniaCPA), you MUST use the 'delegate_task' tool with the 'agent_name' argument. Do NOT try to call the agent name as a function.
 - Use real absolute paths. Map 'desktop' to '{desktop_path}'. Never use placeholder paths.
 - Use forward slashes (/) in all paths, even on Windows.
-- If the user asks to clone a repo, use git_clone. If they ask to read a file, use read_file. If they ask to write, use write_file. Match the tool to the action.
+- If the user asks to create a folder/directory locally, use create_directory. If they ask to read a file, use read_file. If they ask to write, use write_file. If they ask to clone a repo, use git_clone.
+- Use skyvern_tool ONLY when the user explicitly provides a web URL or asks to perform browser portal navigation. Do NOT use skyvern_tool for local desktop file or folder creation.
 - CRITICAL: When using delegate_task, you MUST inject the absolute path for 'Desktop' ('{desktop_path}') into the 'task_description' so the sub-agent knows exactly where to read/write files.
 - If reading a file AND then processing its contents, plan ONLY the read step now. The processing step will happen in the next turn.
 - If the user provides a filename but no folder (e.g., "create hello.txt"), default to creating it directly on the Desktop ('{desktop_path}'). DO NOT append it to random directories from memory unless the user explicitly refers to that folder.
@@ -547,6 +548,20 @@ Output ONLY raw JSON. Start with '{{'.
                 }
                 args = step["arguments"]
                 tool_name = "delegate_task"
+
+            # --- GUARDRAIL 1.5: Auto-remap skyvern_tool used for Local Folder Operations ---
+            if tool_name == "skyvern_tool" and not args.get("url"):
+                goal_str = (args.get("navigation_goal") or "").lower()
+                if "folder" in goal_str or "directory" in goal_str:
+                    import re
+                    folder_m = re.search(r'(?:folder|directory)\s+(?:named|called)?\s*([a-zA-Z0-9_\-]+)', goal_str)
+                    folder_name = folder_m.group(1) if (folder_m and folder_m.group(1) not in ("named", "called", "on")) else "new_folder"
+                    target_dir = f"{desktop_path}/{folder_name}"
+                    print(f"[🛡️ Auto-Remap] Mapping skyvern_tool (local folder request) to 'create_directory' -> {target_dir}")
+                    step["tool"] = "create_directory"
+                    step["arguments"] = {"directory": target_dir}
+                    args = step["arguments"]
+                    tool_name = "create_directory"
 
             # --- GUARDRAIL 2: Reject Invalid Unregistered Tools ---
             if tool_name not in valid_tools:

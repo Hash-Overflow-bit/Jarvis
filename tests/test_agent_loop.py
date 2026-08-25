@@ -232,3 +232,18 @@ def test_agent_loop_tool_call_leakage_recovery():
             assert "Created file: agents/test_leak.json" in res
             mock_exec.assert_called_once_with("write_file", {"filepath": "agents/test_leak.json", "content": '{"role": "CEO"}'})
 
+
+def test_agent_loop_sanitizer_auto_remap_skyvern_local():
+    loop = AgentExecutionLoop()
+    raw_plan = [
+        {
+            "step": 1,
+            "tool": "skyvern_tool",
+            "arguments": {"url": "", "navigation_goal": "create a folder named hey on desktop"}
+        }
+    ]
+    sanitized = loop._sanitize_plan(raw_plan)
+    assert len(sanitized) == 1
+    assert sanitized[0]["tool"] == "create_directory"
+    assert "hey" in sanitized[0]["arguments"]["directory"]
+
