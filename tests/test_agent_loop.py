@@ -247,3 +247,21 @@ def test_agent_loop_sanitizer_auto_remap_skyvern_local():
     assert sanitized[0]["tool"] == "create_directory"
     assert "hey" in sanitized[0]["arguments"]["directory"]
 
+
+def test_agent_loop_sanitizer_auto_remap_invalid_delegate_task():
+    loop = AgentExecutionLoop()
+    raw_plan = [
+        {
+            "step": 1,
+            "tool": "delegate_task",
+            "arguments": {
+                "agent_name": "FileManagementToolkit",
+                "task_description": "Create a new folder named 'hey' on the user's desktop."
+            }
+        }
+    ]
+    sanitized = loop._sanitize_plan(raw_plan)
+    assert len(sanitized) == 1
+    assert sanitized[0]["tool"] == "create_directory"
+    assert "hey" in sanitized[0]["arguments"]["directory"]
+

@@ -563,6 +563,22 @@ Output ONLY raw JSON. Start with '{{'.
                     args = step["arguments"]
                     tool_name = "create_directory"
 
+            # --- GUARDRAIL 1.8: Auto-remap invalid delegate_task requests for local folder/file actions ---
+            if tool_name == "delegate_task":
+                target_agent = (args.get("agent_name") or "").strip()
+                if target_agent.lower() not in registered_agents and target_agent not in ("CaliforniaCPA", "LedgerBookkeeper", "DataHygieneEnforcer"):
+                    task_str = (args.get("task_description") or "").lower()
+                    if "folder" in task_str or "directory" in task_str:
+                        import re
+                        folder_m = re.search(r'(?:folder|directory)\s+(?:named|called)?\s*[\'\"]?([a-zA-Z0-9_\-]+)', task_str)
+                        folder_name = folder_m.group(1) if (folder_m and folder_m.group(1) not in ("named", "called", "on")) else "new_folder"
+                        target_dir = f"{desktop_path}/{folder_name}"
+                        print(f"[🛡️ Auto-Remap] Mapping invalid delegate_task ('{target_agent}') to 'create_directory' -> {target_dir}")
+                        step["tool"] = "create_directory"
+                        step["arguments"] = {"directory": target_dir}
+                        args = step["arguments"]
+                        tool_name = "create_directory"
+
             # --- GUARDRAIL 2: Reject Invalid Unregistered Tools ---
             if tool_name not in valid_tools:
                 print(f"[🚫 Sanitizer] Rejected Step {step.get('step')} — tool '{tool_name}' is not in the registry.")
