@@ -579,15 +579,29 @@ Output ONLY raw JSON. Start with '{{'.
                         args = step["arguments"]
                         tool_name = "create_directory"
 
-            # --- GUARDRAIL 1.9: Auto-populate missing agent_builder fields ---
+            # --- GUARDRAIL 1.9: Auto-remap / Auto-populate agent_builder calls ---
             if tool_name == "agent_builder":
-                if not args.get("role"):
-                    args["role"] = f"Automated {args.get('name', 'Task')} Specialist"
-                if not args.get("goal"):
-                    args["goal"] = f"Execute automated operations for {args.get('name', 'sub-agent')}"
-                if not args.get("backstory"):
-                    args["backstory"] = f"An autonomous sub-agent configured to perform specialized domain tasks."
-                step["arguments"] = args
+                goal_str = (args.get("goal") or args.get("backstory") or "").lower()
+                if ("folder" in goal_str or "directory" in goal_str) and ("create" in goal_str or "make" in goal_str):
+                    import re
+                    folder_m = re.search(r'(?:folder|directory)\s+(?:named|called)?\s*[\'\"]?([a-zA-Z0-9_\-]+)', goal_str)
+                    folder_name = folder_m.group(1) if (folder_m and folder_m.group(1) not in ("named", "called", "on")) else "hey"
+                    target_dir = f"{desktop_path}/{folder_name}"
+                    print(f"[🛡️ Auto-Remap] Mapping agent_builder (local folder request) to 'create_directory' -> {target_dir}")
+                    step["tool"] = "create_directory"
+                    step["arguments"] = {"directory": target_dir}
+                    args = step["arguments"]
+                    tool_name = "create_directory"
+                else:
+                    if not args.get("name"):
+                        args["name"] = "CustomSubAgent"
+                    if not args.get("role"):
+                        args["role"] = f"Automated {args.get('name', 'Task')} Specialist"
+                    if not args.get("goal"):
+                        args["goal"] = f"Execute automated operations for {args.get('name', 'sub-agent')}"
+                    if not args.get("backstory"):
+                        args["backstory"] = f"An autonomous sub-agent configured to perform specialized domain tasks."
+                    step["arguments"] = args
 
             # --- GUARDRAIL 2: Reject Invalid Unregistered Tools ---
             if tool_name not in valid_tools:

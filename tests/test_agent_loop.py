@@ -285,3 +285,22 @@ def test_agent_loop_sanitizer_auto_populate_agent_builder_fields():
     assert "goal" in sanitized[0]["arguments"]
     assert "backstory" in sanitized[0]["arguments"]
 
+
+def test_agent_loop_sanitizer_auto_remap_agent_builder_local_folder():
+    loop = AgentExecutionLoop()
+    raw_plan = [
+        {
+            "step": 1,
+            "tool": "agent_builder",
+            "arguments": {
+                "role": "User",
+                "goal": "Create a folder named 'hey' on the desktop.",
+                "backstory": "The user wants to create a folder named 'hey' on their desktop."
+            }
+        }
+    ]
+    sanitized = loop._sanitize_plan(raw_plan)
+    assert len(sanitized) == 1
+    assert sanitized[0]["tool"] == "create_directory"
+    assert "hey" in sanitized[0]["arguments"]["directory"]
+
