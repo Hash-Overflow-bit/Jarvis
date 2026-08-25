@@ -25,6 +25,8 @@ class ToolRegistry:
 
     def get(self, name: str) -> Optional[BaseTool]:
         """Retrieves a registered tool by its name."""
+        if name == "list_dir":
+            name = "file_scanner"
         return self._tools.get(name)
 
     def get_all_schemas(self) -> List[dict]:

@@ -234,37 +234,18 @@ def test_agent_loop_tool_call_leakage_recovery():
             mock_exec.assert_called_once_with("write_file", {"filepath": "agents/test_leak.json", "content": '{"role": "CEO"}'})
 
 
-def test_agent_loop_sanitizer_auto_remap_skyvern_local():
+def test_agent_loop_sanitizer_toolkit_prefix_stripping():
     loop = AgentExecutionLoop()
     raw_plan = [
         {
             "step": 1,
-            "tool": "skyvern_tool",
-            "arguments": {"url": "", "navigation_goal": "create a folder named hey on desktop"}
+            "tool": "FileManagementToolkit.list_dir",
+            "arguments": {"folder_path": "/Users/m2air/Desktop"}
         }
     ]
     sanitized = loop._sanitize_plan(raw_plan)
     assert len(sanitized) == 1
-    assert sanitized[0]["tool"] == "create_directory"
-    assert "hey" in sanitized[0]["arguments"]["directory"]
-
-
-def test_agent_loop_sanitizer_auto_remap_invalid_delegate_task():
-    loop = AgentExecutionLoop()
-    raw_plan = [
-        {
-            "step": 1,
-            "tool": "delegate_task",
-            "arguments": {
-                "agent_name": "FileManagementToolkit",
-                "task_description": "Create a new folder named 'hey' on the user's desktop."
-            }
-        }
-    ]
-    sanitized = loop._sanitize_plan(raw_plan)
-    assert len(sanitized) == 1
-    assert sanitized[0]["tool"] == "create_directory"
-    assert "hey" in sanitized[0]["arguments"]["directory"]
+    assert sanitized[0]["tool"] == "list_dir"
 
 
 def test_agent_loop_sanitizer_auto_populate_agent_builder_fields():
@@ -285,25 +266,6 @@ def test_agent_loop_sanitizer_auto_populate_agent_builder_fields():
     assert "role" in sanitized[0]["arguments"]
     assert "goal" in sanitized[0]["arguments"]
     assert "backstory" in sanitized[0]["arguments"]
-
-
-def test_agent_loop_sanitizer_auto_remap_agent_builder_local_folder():
-    loop = AgentExecutionLoop()
-    raw_plan = [
-        {
-            "step": 1,
-            "tool": "agent_builder",
-            "arguments": {
-                "role": "User",
-                "goal": "Create a folder named 'hey' on the desktop.",
-                "backstory": "The user wants to create a folder named 'hey' on their desktop."
-            }
-        }
-    ]
-    sanitized = loop._sanitize_plan(raw_plan)
-    assert len(sanitized) == 1
-    assert sanitized[0]["tool"] == "create_directory"
-    assert "hey" in sanitized[0]["arguments"]["directory"]
 
 
 def test_agent_loop_exec_board_config_auto_writer():

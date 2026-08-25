@@ -555,7 +555,7 @@ Output ONLY raw JSON. Start with '{{'.
 
         # Known registered tools in Jarvis
         registered_tool_names = set(tool_registry._tools.keys())
-        valid_builtin_tools = {"delegate_task", "agent_builder"}
+        valid_builtin_tools = {"delegate_task", "agent_builder", "list_dir"}
         valid_tools = registered_tool_names.union(valid_builtin_tools)
 
         # Get known dynamic sub-agents (e.g. LedgerBookkeeper, CaliforniaCPA)
@@ -603,7 +603,7 @@ Output ONLY raw JSON. Start with '{{'.
             if not isinstance(args, dict):
                 args = {}
 
-            # --- GUARDRAIL 1: Auto-remap Sub-Agent Invocation ---
+            # --- GUARDRAIL 1: Auto-remap Sub-Agent Invocation to delegate_task ---
             is_agent_name = (
                 tool_name.lower() in registered_agents or 
                 tool_name.endswith("Agent") or 
@@ -611,7 +611,7 @@ Output ONLY raw JSON. Start with '{{'.
                 "bookkeeper" in tool_name.lower()
             )
             if is_agent_name and tool_name not in valid_tools:
-                print(f"[🛡️ Auto-Remap] Auto-mapping hallucinated tool '{tool_name}' to 'delegate_task'.")
+                print(f"[🛡️ Auto-Remap] Auto-mapping sub-agent invocation '{tool_name}' to 'delegate_task'.")
                 step["tool"] = "delegate_task"
                 task_desc = args.get("task_description") or args.get("task") or args.get("description") or f"Execute task assigned to {tool_name}"
                 exp_out = args.get("expected_output") or "Task completion report"
@@ -623,134 +623,30 @@ Output ONLY raw JSON. Start with '{{'.
                 args = step["arguments"]
                 tool_name = "delegate_task"
 
-            # --- GUARDRAIL 1.5: Auto-remap skyvern_tool used for Local Folder Operations ---
-            if tool_name == "skyvern_tool" and not args.get("url"):
-                goal_str = (args.get("navigation_goal") or "").lower()
-                if "folder" in goal_str or "directory" in goal_str:
-                    folder_m = re.search(r'(?:folder|directory)\s+(?:named|called)?\s*([a-zA-Z0-9_\-]+)', goal_str)
-                    folder_name = folder_m.group(1) if (folder_m and folder_m.group(1) not in ("named", "called", "on")) else "new_folder"
-                    target_dir = f"{desktop_path}/{folder_name}"
-                    print(f"[🛡️ Auto-Remap] Mapping skyvern_tool (local folder request) to 'create_directory' -> {target_dir}")
-                    step["tool"] = "create_directory"
-                    step["arguments"] = {"directory": target_dir}
-                    args = step["arguments"]
-                    tool_name = "create_directory"
-
-            # --- GUARDRAIL 1.8: Auto-remap invalid delegate_task requests for local folder/file actions ---
-            if tool_name == "delegate_task":
-                target_agent = (args.get("agent_name") or "").strip()
-                if target_agent.lower() not in registered_agents and target_agent not in ("CaliforniaCPA", "LedgerBookkeeper", "DataHygieneEnforcer"):
-                    task_str = (args.get("task_description") or "").lower()
-                    if "folder" in task_str or "directory" in task_str:
-                        folder_m = re.search(r'(?:folder|directory)\s+(?:named|called)?\s*[\'\"]?([a-zA-Z0-9_\-]+)', task_str)
-                        folder_name = folder_m.group(1) if (folder_m and folder_m.group(1) not in ("named", "called", "on")) else "new_folder"
-                        target_dir = f"{desktop_path}/{folder_name}"
-                        print(f"[🛡️ Auto-Remap] Mapping invalid delegate_task ('{target_agent}') to 'create_directory' -> {target_dir}")
-                        step["tool"] = "create_directory"
-                        step["arguments"] = {"directory": target_dir}
-                        args = step["arguments"]
-                        tool_name = "create_directory"
-
-            # --- GUARDRAIL 1.95: Fix schema-dump arguments in write_file ---
-            if tool_name == "write_file" and ("properties" in args or "type" in args or not args.get("filepath")):
-                target_fp = ""
-                fn_m = re.search(r'(?:named|called|file)\s+([a-zA-Z0-9_\-]+\.[a-zA-Z0-9]+)', user_input)
-                dir_m = re.search(r'(/(?:[^\s]+))', user_input)
-                if fn_m and dir_m:
-                    d_path = dir_m.group(1).rstrip('/')
-                    target_fp = f"{d_path}/{fn_m.group(1)}"
-                else:
-                    fp_m = re.search(r'(/[\S]+\.(?:json|txt|md|csv|py))', user_input)
-                    target_fp = fp_m.group(1) if fp_m else f"{desktop_path}/output.txt"
-                
-                c_m = re.search(r'containing\s+(?:exactly|valid JSON:?)?\s*(.*)$', user_input, re.IGNORECASE)
-                content_val = c_m.group(1).strip() if c_m else ""
-                if not content_val:
-                    json_m = re.search(r'(\{[\s\S]*\})', user_input)
-                    content_val = json_m.group(1) if json_m else ""
-                
-                print(f"[🛡️ Auto-Remap] Auto-fixing schema-dump write_file arguments -> filepath={target_fp}")
-                step["arguments"] = {"filepath": target_fp, "content": content_val}
-                args = step["arguments"]
-
-            # --- GUARDRAIL 1.96: Fix read_file hallucinated on folder or file creation request ---
-            if tool_name == "read_file":
-                fp = args.get("filepath", "")
-                if user_input and ("create" in user_input.lower() or "make" in user_input.lower()) and ("folder" in user_input.lower() or "directory" in user_input.lower()):
-                    if not fp.endswith((".txt", ".json", ".md", ".csv", ".py", ".html", ".log")):
-                        print(f"[🛡️ Auto-Remap] Auto-remapping read_file on folder creation to 'create_directory' -> {fp}")
-                        step["tool"] = "create_directory"
-                        step["arguments"] = {"directory": fp}
-                        args = step["arguments"]
-                        tool_name = "create_directory"
-                elif user_input and any(w in user_input.lower() for w in ("write", "save", "create a file", "create file")) and "containing" in user_input.lower():
-                    target_fp = ""
-                    fn_m = re.search(r'(?:named|called|file)\s+([a-zA-Z0-9_\-]+\.[a-zA-Z0-9]+)', user_input)
-                    dir_m = re.search(r'(/(?:[^\s]+))', user_input)
-                    if fn_m and dir_m:
-                        d_path = dir_m.group(1).rstrip('/')
-                        target_fp = f"{d_path}/{fn_m.group(1)}"
-                    else:
-                        fp_m = re.search(r'(/[\S]+\.(?:json|txt|md|csv|py))', user_input)
-                        target_fp = fp_m.group(1) if fp_m else fp
-                    
-                    c_m = re.search(r'containing\s+(?:exactly|valid JSON:?)?\s*(.*)$', user_input, re.IGNORECASE)
-                    content_val = c_m.group(1).strip() if c_m else ""
-                    if not content_val:
-                        json_m = re.search(r'(\{[\s\S]*\})', user_input)
-                        content_val = json_m.group(1) if json_m else ""
-                    
-                    print(f"[🛡️ Auto-Remap] Auto-remapping read_file on write request to 'write_file' -> {target_fp}")
-                    step["tool"] = "write_file"
-                    step["arguments"] = {"filepath": target_fp, "content": content_val}
-                    args = step["arguments"]
-                    tool_name = "write_file"
-
-            # --- GUARDRAIL 1.97: Fix write_file misclassified on folder creation request ---
-            if tool_name == "write_file":
-                fp = args.get("filepath", "")
-                if user_input and ("folder" in user_input.lower() or "directory" in user_input.lower()) and ("create" in user_input.lower() or "make" in user_input.lower()):
-                    if not fp.endswith((".txt", ".json", ".md", ".csv", ".py", ".html", ".log")):
-                        print(f"[🛡️ Auto-Remap] Auto-remapping write_file on folder creation to 'create_directory' -> {fp}")
-                        step["tool"] = "create_directory"
-                        step["arguments"] = {"directory": fp}
-                        args = step["arguments"]
-                        tool_name = "create_directory"
-
-            # --- GUARDRAIL 1.9: Auto-remap / Auto-populate agent_builder calls ---
-            if tool_name == "agent_builder":
-                goal_str = (args.get("goal") or args.get("backstory") or "").lower()
-                if ("folder" in goal_str or "directory" in goal_str) and ("create" in goal_str or "make" in goal_str):
-                    import re
-                    folder_m = re.search(r'(?:folder|directory)\s+(?:named|called)?\s*[\'\"]?([a-zA-Z0-9_\-]+)', goal_str)
-                    folder_name = folder_m.group(1) if (folder_m and folder_m.group(1) not in ("named", "called", "on")) else "hey"
-                    target_dir = f"{desktop_path}/{folder_name}"
-                    print(f"[🛡️ Auto-Remap] Mapping agent_builder (local folder request) to 'create_directory' -> {target_dir}")
-                    step["tool"] = "create_directory"
-                    step["arguments"] = {"directory": target_dir}
-                    args = step["arguments"]
-                    tool_name = "create_directory"
-                else:
-                    if not args.get("name"):
-                        args["name"] = "CustomSubAgent"
-                    if not args.get("role"):
-                        args["role"] = f"Automated {args.get('name', 'Task')} Specialist"
-                    if not args.get("goal"):
-                        args["goal"] = f"Execute automated operations for {args.get('name', 'sub-agent')}"
-                    if not args.get("backstory"):
-                        args["backstory"] = f"An autonomous sub-agent configured to perform specialized domain tasks."
-                    step["arguments"] = args
-
-            # --- GUARDRAIL 2: Reject Invalid Unregistered Tools ---
+            # --- GUARDRAIL 2: Reject Invalid / Unregistered Tools strictly ---
             if tool_name not in valid_tools:
-                print(f"[🚫 Sanitizer] Rejected Step {step.get('step')} — tool '{tool_name}' is not in the registry.")
+                print(f"[🚫 Sanitizer] Rejected Step {step.get('step')} — tool '{tool_name}' is not in the tool registry.")
                 continue
 
-            # --- GUARDRAIL 3: Auto-Fix Path Arguments ---
+            # --- GUARDRAIL 2: Auto-populate missing agent_builder fields ---
+            if tool_name == "agent_builder":
+                if not args.get("name"):
+                    args["name"] = "CustomSubAgent"
+                if not args.get("role"):
+                    args["role"] = f"Automated {args.get('name', 'Task')} Specialist"
+                if not args.get("goal"):
+                    args["goal"] = f"Execute automated operations for {args.get('name', 'sub-agent')}"
+                if not args.get("backstory"):
+                    args["backstory"] = f"An autonomous sub-agent configured to perform specialized domain tasks."
+                step["arguments"] = args
+
+            # --- GUARDRAIL 3: Auto-Fix Path Arguments & Deduplicate Desktop Paths ---
             for key, val in list(args.items()):
                 if isinstance(val, str):
                     for pattern, replacement in PATH_FIXES:
                         val = re.sub(pattern, replacement, val)
+                    while "/Desktop/Desktop/" in val:
+                        val = val.replace("/Desktop/Desktop/", "/Desktop/")
                     args[key] = val
 
             # --- GUARDRAIL 3.5: Auto-resolve relative create_directory paths to Desktop ---
