@@ -42,6 +42,7 @@ class AgentExecutionLoop:
             "- list_dir: Use when user wants to view or list files in a folder. Arguments: {'directory': '<absolute_path>'}",
             "- delegate_task: Use when assigning a task to a sub-agent. Arguments: {'agent_name': '<name>', 'task_description': '<desc>'}",
             "- agent_builder: Use when building a new sub-agent. Arguments: {'name': '<Name>', 'role': '...', 'goal': '...', 'backstory': '...'}",
+            "- web_search: Use when user wants to research online topics, current information, or retrieve external sources. Arguments: {'query': '<search_query>'}",
             "- skyvern_tool: ONLY use when user explicitly asks to navigate a web portal or URL. Arguments: {'url': '<url>', 'navigation_goal': '<goal>'}"
         ]
         return "\n".join(tools_summary)
@@ -168,10 +169,13 @@ class AgentExecutionLoop:
 
             if tool_success:
                 print(f"[✅ Success] Step {step.get('step')} completed.")
+                step_res = result.get("result")
+                if step_res is None and isinstance(result, dict):
+                    step_res = result
                 completed_steps.append({
                     "step": step.get("step"),
                     "tool": tool_name,
-                    "result": result.get("result")
+                    "result": step_res
                 })
                 # ── Persist action to knowledge graph for cross-session recall ──
                 try:
@@ -380,6 +384,22 @@ class AgentExecutionLoop:
         # --- Rebuild Knowledge Graph ---
         if re.search(r'rebuild\s+(the\s+)?(knowledge\s+graph|memory|graph)', cleaned, re.IGNORECASE):
             return [{"step": 1, "tool": "rebuild_knowledge_graph", "arguments": {}}]
+
+        # --- Research Writing: "research X and write report", "write report about X with sources" ---
+        if any(k in cleaned.lower() for k in ("research ", "investigate ", "current info", "latest ", "with sources", "with references")):
+            query = cleaned
+            query_m = re.search(r'(?:research|investigate|find info on)\s+(.+)', cleaned, re.IGNORECASE)
+            if query_m:
+                query = query_m.group(1).strip()
+            return [{"step": 1, "tool": "web_search", "arguments": {"query": query}}]
+
+        # --- Local Document Extraction/Writing: "read report.txt/md/pdf and summarize" ---
+        read_doc_m = re.search(r'(?:read|extract|summarize|from)\s+(?:the\s+)?(?:file|document)?\s*[\'\"]?([a-zA-Z0-9_\-\./\\]+\.(?:txt|md|csv|json|pdf))[\'\"]?', cleaned, re.IGNORECASE)
+        if read_doc_m:
+            filepath = read_doc_m.group(1).strip()
+            is_abs = filepath.startswith("/") or ":" in filepath or filepath.startswith("\\")
+            target_fp = str(settings.desktop_dir / filepath) if not is_abs else filepath
+            return [{"step": 1, "tool": "read_file", "arguments": {"filepath": target_fp}}]
 
         # No deterministic match → fall through to LLM planner
         return None
@@ -867,6 +887,70 @@ Failure Context:
                     "I couldn't delete the specified folder or file because no registered deletion tool executed successfully."
                 )
 
+        # --- Grounded Writing + Research + Document Pipeline Routing ---
+        from core.writing.pipeline import WritingPipeline
+        from core.writing.sources import EvidenceSource
+
+        web_search_steps = [s for s in completed_steps if isinstance(s, dict) and s.get("tool") == "web_search"]
+        read_file_steps = [s for s in completed_steps if isinstance(s, dict) and s.get("tool") in ("read_file", "file_scanner")]
+        intent = WritingPipeline.classify_intent(user_input)
+
+        if web_search_steps:
+            sources: List[EvidenceSource] = []
+            for s in web_search_steps:
+                res = s.get("result", {})
+                if isinstance(res, dict) and "result" in res and isinstance(res["result"], dict):
+                    res = res["result"]
+
+                if isinstance(res, dict) and (res.get("success") or "results" in res):
+                    for item in res.get("results", []):
+                        sources.append(EvidenceSource(
+                            source_type="web",
+                            title=item.get("title", "Search Result"),
+                            url=item.get("url", ""),
+                            location=item.get("url", ""),
+                            content=item.get("snippet", ""),
+                            verified=True
+                        ))
+                elif isinstance(res, dict) and not res.get("success", True):
+                    sources.append(EvidenceSource(
+                        source_type="web",
+                        title="Search Failed",
+                        verified=False
+                    ))
+            return WritingPipeline.run_research_workflow(user_input, sources)
+
+        if read_file_steps:
+            sources: List[EvidenceSource] = []
+            raw_content = ""
+            for s in read_file_steps:
+                res = s.get("result", {})
+                if isinstance(res, dict) and "result" in res and isinstance(res["result"], dict):
+                    res = res["result"]
+
+                args = s.get("arguments", {})
+                filepath = args.get("filepath", "document")
+                filename = Path(filepath).name if filepath else "document"
+                content = ""
+                if isinstance(res, dict):
+                    content = res.get("content") or res.get("message") or ""
+                elif isinstance(res, str):
+                    content = res
+
+                sources.append(EvidenceSource(
+                    source_type="local_file",
+                    title=filename,
+                    location=filepath,
+                    content=str(content),
+                    verified=True
+                ))
+                raw_content += str(content) + "\n"
+
+            if intent == "extraction":
+                return WritingPipeline.run_extraction_workflow(user_input, sources, raw_content)
+            else:
+                return WritingPipeline.run_local_doc_workflow(user_input, sources)
+
         prompt = f"""User Goal: {user_input}
 
 Recalled Facts from Memory:
@@ -902,6 +986,13 @@ Executed Steps & Results:
 
     def _synthesize_fallback(self, user_input: str, recalled_facts: str) -> str:
         """Asks the LLM to reply directly when no tool plan is needed."""
+        from core.writing.pipeline import WritingPipeline
+        intent = WritingPipeline.classify_intent(user_input)
+
+        if intent == "simple" and any(w in user_input.lower() for w in ("write", "email", "rewrite", "paragraph", "notes")):
+            return WritingPipeline.run_simple_workflow(user_input)
+        elif intent == "extraction":
+            return WritingPipeline.run_extraction_workflow(user_input, [], user_input)
         fallback_sys_prompt = settings.jarvis_system_prompt + (
             "\n\nCRITICAL CONVERSATIONAL ISOLATION & TRUTH RULES:\n"
             "1. Focus strictly on the user's current conversational prompt (e.g., conducting an interview, asking a question, or discussing a topic).\n"

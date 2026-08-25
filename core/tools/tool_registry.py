@@ -270,3 +270,7 @@ tool_registry.register(WeightManagerTool())
 from core.tools.skyvern_tool import SkyvernTool
 tool_registry.register(SkyvernTool())
 
+# Register Web Search Tool (Writing & Research Workflow)
+from core.tools.web_search import WebSearch
+tool_registry.register(WebSearch())
+
