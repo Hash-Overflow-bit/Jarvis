@@ -83,7 +83,8 @@ class AgentExecutionLoop:
         # 2.6 Sanitize — reject steps with placeholder/hallucinated paths
         plan = self._sanitize_plan(plan, user_input)
         if not plan:
-            return self._synthesize_fallback(user_input, recalled_facts)
+            print(f"[❌ Sanitizer] Plan was rejected by sanitizer guardrails.")
+            return "[❌ Failure] Execution halted: Sanitizer rejected all proposed plan steps due to invalid or unregistered tools."
 
         print(f"\n[📋 Plan] Decomposed into {len(plan)} steps:")
         for step in plan:
@@ -565,6 +566,8 @@ Output ONLY raw JSON. Start with '{{'.
 
         # Path replacement rules for auto-fixing hallucinated path strings
         PATH_FIXES = [
+            (r'(?i)/Users/(?:username|your_username|m2air)/Desktop/?', desktop_path.rstrip('/') + '/'),
+            (r'(?i)/Users/(?:username|your_username|m2air)/?', desktop_path.rstrip('/') + '/'),
             (r'(?i)/path/to/desktop/?', desktop_path.rstrip('/') + '/'),
             (r'(?i)/path/to/workspace/?', workspace_path.rstrip('/') + '/'),
             (r'(?i)/sandbox/?', workspace_path.rstrip('/') + '/'),
@@ -590,6 +593,11 @@ Output ONLY raw JSON. Start with '{{'.
             tool_name = step.get("tool")
             if not isinstance(tool_name, str) or not tool_name:
                 continue
+
+            # Strip toolkit prefixes like "FileManagementToolkit.list_dir" -> "list_dir"
+            if tool_name.startswith("FileManagementToolkit."):
+                tool_name = tool_name.replace("FileManagementToolkit.", "")
+                step["tool"] = tool_name
 
             args = step.get("arguments", {})
             if not isinstance(args, dict):
