@@ -118,7 +118,11 @@ def test_agent_loop_execution_success():
         with patch("core.orchestrator.agent_loop.tool_registry.execute", return_value=mock_tool_res) as mock_exec:
             res = loop.run("Scan files")
             assert "file1.txt" in res
-            mock_exec.assert_called_once_with("file_scanner", {"directory": "/sandbox"}, mode="text")
+            # Since /sandbox is auto-fixed to the workspace directory by the sanitizer,
+            # we must expect the fixed path, not the raw /sandbox path.
+            from core.config import settings
+            expected_path = str(settings.default_workspace_dir).replace("\\", "/").rstrip("/") + "/"
+            mock_exec.assert_called_once_with("file_scanner", {"directory": expected_path}, mode="text")
 
 
 def test_agent_loop_execution_with_reflection():

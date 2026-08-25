@@ -438,19 +438,41 @@ Output ONLY raw JSON. Start with '{{'.
         """
         Strips steps that contain placeholder/hallucinated paths before execution.
         This is a safety net — even if the LLM outputs bad paths, they never reach the tool.
+        If a path hallucination resembles a known directory (e.g. /path/to/Desktop), 
+        it attempts to map it to the actual path before rejecting.
         """
         import re
+        desktop_path = str(settings.desktop_dir).replace("\\", "/")
+        workspace_path = str(settings.default_workspace_dir).replace("\\", "/")
+
+        # Auto-fix common LLM hallucinated path roots
+        PATH_FIXES = [
+            (r'(?i)/path/to/desktop/?', desktop_path.rstrip('/') + '/'),
+            (r'(?i)/path/to/workspace/?', workspace_path.rstrip('/') + '/'),
+            (r'(?i)/sandbox/?', workspace_path.rstrip('/') + '/')
+        ]
+
         PLACEHOLDER_PATTERNS = [
             r'/path/to/',
             r'/home/username/',
             r'your_username',
             r'<username>',
-            r'/sandbox/',
             r'/tmp/',
         ]
+        
         sanitized = []
         for step in plan:
             args = step.get("arguments", {})
+            
+            # Apply auto-fixes to string arguments
+            for key, val in args.items():
+                if isinstance(val, str):
+                    for pattern, replacement in PATH_FIXES:
+                        val = re.sub(pattern, replacement, val)
+                    args[key] = val
+                    
+            step["arguments"] = args
+            
             args_str = json.dumps(args)
             is_bad = False
             for pattern in PLACEHOLDER_PATTERNS:
