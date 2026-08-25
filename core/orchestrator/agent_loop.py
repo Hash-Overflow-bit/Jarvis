@@ -334,6 +334,7 @@ Rules:
 - Use real absolute paths. Map 'desktop' to '{desktop_path}'. Never use placeholder paths.
 - Use forward slashes (/) in all paths, even on Windows.
 - If the user asks to clone a repo, use git_clone. If they ask to read a file, use read_file. If they ask to write, use write_file. Match the tool to the action.
+- If the user asks you to instruct, assign, or tell a sub-agent to perform a task, use the delegate_task tool. Do NOT attempt to perform the sub-agent's task yourself.
 - If reading a file AND then processing its contents, plan ONLY the read step now. The processing step will happen in the next turn.
 - If the user provides a filename but no folder (e.g., "create hello.txt"), default to creating it directly on the Desktop ('{desktop_path}'). DO NOT append it to random directories from memory unless the user explicitly refers to that folder.
 - If the user's request is completely vague (e.g., "create file" with no name), DO NOT guess paths from memory. Return an empty plan ({{"reasoning": "Need more info", "plan": []}}) to ask for clarification.
