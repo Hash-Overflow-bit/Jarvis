@@ -32,6 +32,7 @@ TOOL_RISK_MAP = {
     # File Manipulation (M4.5+)
     "create_directory": RiskLevel.MEDIUM,
     "write_file": RiskLevel.MEDIUM,
+    "delete_directory": RiskLevel.HIGH,
     
     # Memory Knowledge Graph (M4.5+)
     "graph_status": RiskLevel.LOW,

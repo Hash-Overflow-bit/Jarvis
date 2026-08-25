@@ -73,12 +73,15 @@ class AgentExecutionLoop:
         # 2. Decompose Task & Build Plan
         plan = self._generate_plan(user_input, recalled_facts)
         if not plan:
-            # Fallback to direct conversational response
+            # Fallback to direct conversational response or report deletion failure
+            if user_input and any(w in user_input.lower() for w in ("delete", "remove", "trash", "purge")):
+                return "I couldn't delete the specified folder or file because no valid delete_directory tool was executed."
             return self._synthesize_fallback(user_input, recalled_facts)
 
         valid_plan = [s for s in plan if isinstance(s, dict)]
         if not valid_plan:
-            # Fallback if the LLM hallucinated strings instead of JSON steps
+            if user_input and any(w in user_input.lower() for w in ("delete", "remove", "trash", "purge")):
+                return "I couldn't delete the specified folder or file because no valid delete_directory tool was executed."
             return self._synthesize_fallback(user_input, recalled_facts)
 
         plan = valid_plan
@@ -714,6 +717,14 @@ Output ONLY raw JSON. Start with '{{'.
             if not is_bad:
                 sanitized.append(step)
 
+        # --- GUARDRAIL 5: Deletion Request Integrity Guard ---
+        if user_input and any(w in user_input.lower() for w in ("delete", "remove", "trash", "purge", "erase")):
+            deletion_tools = {"delete_directory", "file_cleanup", "delete_file", "remove_directory", "remove_file"}
+            has_delete = any(step.get("tool") in deletion_tools for step in sanitized)
+            if not has_delete:
+                print(f"[🚫 Sanitizer] User requested deletion, but sanitized plan contains no registered deletion tool. Rejecting plan.")
+                return []
+
         return sanitized
 
     def _reflect_and_replan(
@@ -791,6 +802,17 @@ Failure Context:
         recalled_facts: str
     ) -> str:
         """Asks the LLM to synthesize a natural answer based on execution results."""
+        # GUARDRAIL: If user goal was deletion, verify that a deletion tool actually executed successfully
+        if user_input and any(w in user_input.lower() for w in ("delete", "remove", "trash", "purge", "erase")):
+            deletion_tools = {"delete_directory", "file_cleanup", "delete_file", "remove_directory", "remove_file"}
+            executed_deletion = any(
+                isinstance(s, dict) and s.get("tool") in deletion_tools for s in completed_steps
+            )
+            if not executed_deletion:
+                return prose_hook.filter_response(
+                    "I couldn't delete the specified folder or file because no registered deletion tool executed successfully."
+                )
+
         prompt = f"""User Goal: {user_input}
 
 Recalled Facts from Memory:

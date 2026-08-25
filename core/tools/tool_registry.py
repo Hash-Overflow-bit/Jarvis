@@ -217,12 +217,14 @@ from core.tools.directory_audit import DirectoryAudit
 file_scanner_tool = FileScanner()
 tool_registry.register(file_scanner_tool)
 tool_registry.register_alias("list_dir", file_scanner_tool)
+from core.tools.delete_directory import DeleteDirectory
+delete_dir_tool = DeleteDirectory()
+tool_registry.register(delete_dir_tool)
+tool_registry.register_alias("delete_file", delete_dir_tool)
+tool_registry.register_alias("remove_directory", delete_dir_tool)
+tool_registry.register_alias("remove_file", delete_dir_tool)
 file_cleanup_tool = FileCleanup()
 tool_registry.register(file_cleanup_tool)
-tool_registry.register_alias("delete_directory", file_cleanup_tool)
-tool_registry.register_alias("delete_file", file_cleanup_tool)
-tool_registry.register_alias("remove_directory", file_cleanup_tool)
-tool_registry.register_alias("remove_file", file_cleanup_tool)
 tool_registry.register(DirectoryAudit())
 
 # Register Git and Poetry tools (M3+)
