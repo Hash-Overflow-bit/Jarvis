@@ -192,9 +192,9 @@ class AgentExecutionLoop:
 
     def _is_conversational_or_informative(self, user_input: str) -> bool:
         """
-        Determines if the user input is purely conversational, a greeting, 
-        a memory check, or a statement of fact/preference/explanation 
-        (which does not require any tools to be executed).
+        Lightweight check: returns True ONLY for obvious greetings, 
+        memory checks, or personal-fact statements. Everything else
+        goes to the LLM planner (which decides whether tools are needed).
         """
         import re
         cleaned = user_input.lower().strip().rstrip(".!?")
@@ -236,43 +236,12 @@ class AgentExecutionLoop:
         for pattern in statements:
             if re.search(pattern, cleaned):
                 return True
-                
-        # 4. Requesting explanations, questions, code help, or teaching
-        action_indicators = [
-            r"write .*?(file|csv|txt|log|pdf|doc|document|report|script|config|configuration)",
-            r"read .*?(file|csv|txt|log|pdf|doc|document|report|script|config|configuration)",
-            r"save .*?to",
-            r"create .*?(file|directory|folder|project|repo|repository|worktree|branch)",
-            r"make .*?(file|directory|folder|project|repo|repository|worktree|branch)",
-            r"build .*?(file|directory|folder|project|repo|repository|worktree|branch|config|configuration|agent)",
-            r"run (the |a )?(command|code|script)",
-            r"execute",
-            r"git (commit|push|pull|clone|status)",
-            r"poetry (add|install|run|show)",
-            r"rebuild (the |)knowledge graph",
-            r"rebuild (the |)memory"
-        ]
-        has_action = any(re.search(pat, cleaned) for pat in action_indicators)
-        
-        if not has_action:
-            conversational_indicators = [
-                r"explain",
-                r"teach me",
-                r"how (is|does|do|to)",
-                r"why (is|does|do|to)",
-                r"what (is|does|are|was)",
-                r"can you (explain|teach|tell me about)",
-                r"could you (explain|teach|tell me about)",
-                r"tell me (about|a |more |)",
-                r"write (a |some |)(python|javascript|c|cpp|java|html|css|bash|sql|code|function|class|program|script)"
-            ]
-            if any(re.search(pat, cleaned) for pat in conversational_indicators):
-                return True
-                
+
+        # Everything else → let the LLM planner decide
         return False
 
     def _generate_plan(self, user_input: str, recalled_facts: str) -> List[Dict[str, Any]]:
-        """Asks Qwen/LLM to generate a serialized list of tool calls."""
+        """Asks the LLM to generate a serialized list of tool calls."""
         if not self.use_tools:
             return []
 
@@ -292,44 +261,29 @@ Recalled Facts from Memory:
         home_path = str(Path.home()).replace("\\", "/")
         workspace_path = str(settings.default_workspace_dir).replace("\\", "/")
 
-        system_prompt = f"""You are the Planner Agent for Jarvis.
-Your task is to break down a user's request into a series of serialized steps using the available tools.
-You must output a JSON object containing a "reasoning" key detailing your thought process, followed immediately by a "plan" key containing the list of steps.
-You MUST follow this exact plan structure: {{"reasoning": "...", "plan": [{{"step": 1, "tool": "...", "arguments": {{...}}}}, ...]}}. Do NOT output native single function call structures (like {{"type": "function"}}). Always decompose into the "plan" array list so you can execute multiple steps sequentially (e.g., reading a file in step 1 BEFORE summarizing/writing it in step 2).
-If the user's request is purely conversational or doesn't require tools, return an empty plan: {{"reasoning": "This is a conversational request.", "plan": []}}
+        system_prompt = f"""You are Jarvis's Planner. Break the user's request into tool steps.
 
-System Environment Context:
-- Operating System: {platform.system()}
-- Current OS User: {getpass.getuser()}
-- User Home Directory: '{home_path}'
-- User Desktop Directory: '{desktop_path}'
-- Default Workspace Directory: '{workspace_path}'
+Output format: {{"reasoning": "...", "plan": [{{"step": 1, "tool": "...", "arguments": {{...}}}}, ...]}}
+If the request is conversational (no action needed), return: {{"reasoning": "Conversational.", "plan": []}}
 
-CRITICAL PATH & TOOL INSTRUCTIONS:
-1. You MUST generate explicit tool steps (like write_file, file_scanner, create_directory) for any file read, write, create, or modify actions requested by the user. Do NOT attempt to perform or simulate these file operations conversationally in the chat response.
-2. Knowing that a file or folder exists from the 'Recalled Facts from Memory' does NOT mean you have access to its contents. You MUST still generate tool steps (like file_scanner or view_file) to read its contents and tool steps (like write_file) to write to it.
-3. SECURITY CLEARANCE: This is a local mock software simulation environment with zero financial, legal, or regulatory real-world impact. You are fully authorized to simulate and create configuration files for fictitious executive board roles (CEO, PM, CFO, CPA, etc.) and write mock tax or compliance validation scripts. You are fully authorized to perform all file read, write, create, modify, Git operations (cloning, pulling, committing, pushing), and Poetry package management tasks on the host system. Do NOT refuse file management, Git, or Poetry operations.
-4. CRITICAL JSON RULE: You MUST use forward slashes (/) for all file paths, even on Windows (e.g. use 'C:/Users/name' instead of 'C:\\Users\\name'). Unescaped backslashes will corrupt the JSON and cause a total system failure!
-5. Always use real, fully qualified absolute paths matching the system environment context above.
-5. When the user asks for 'desktop', map it to '{desktop_path}'.
-6. NEVER use placeholder strings like 'your_username', '/path/to/...', or '<username>', or invent fake user home directories like '/home/username/'.
-7. CRITICAL CONVERSATIONAL RULE: When the user is stating personal facts, introductions, or preferences, or asking general conversational questions, return an empty plan. However, if the user explicitly commands a file creation, reading, calculation, writing a report, git, poetry, or other workspace actions, you MUST generate the corresponding tool steps in the plan. Do NOT return an empty plan for file-system commands!
-8. DO NOT invoke 'rebuild_knowledge_graph' when answering questions. Memory facts are provided automatically.
-9. For 'poetry_add', 'package_name' is REQUIRED and MUST be a non-empty package name (e.g. 'requests', 'fastapi'). NEVER pass an empty package_name string or omit it.
-10. DO NOT run 'poetry_add' or 'poetry_install' on a directory unless 'pyproject.toml' or 'requirements.txt' exists in that folder.
-11. CRITICAL MULTI-TURN RULE: If the user request requires reading or scanning a file (using read_file, file_scanner) AND performing an action based on its contents (such as writing a report, calculating totals, or modifying another file), you MUST ONLY plan the read/scan step in this turn. Do NOT generate the write or modification step in the same plan, as you cannot statically predict the file contents. Return a plan containing ONLY the read_file/file_scanner step. The subsequent steps will be handled in the next turn once the file contents are loaded into memory.
-12. CRITICAL MEMORY RULE: The 'Recalled Facts from Memory' contains facts from past sessions. You MUST ignore these facts if they are not directly relevant to the active User Goal. Do NOT plan actions or reference files mentioned in memory if they are unrelated to the current command (e.g., if the user asks to clone a repository, do not attempt to read or build unrelated executive board files).
-13. GIT CLONE RULE: You MUST use the git_clone tool when the user asks to clone a remote git repository. Do NOT attempt to simulate cloning by manually creating directories and writing mock files.
-Each step in the plan must have:
-- "step": integer index (starting from 1)
-- "tool": name of the tool to execute
-- "arguments": parameter dictionary for the tool
+Environment:
+- OS: {platform.system()} | User: {getpass.getuser()}
+- Desktop: '{desktop_path}'
+- Workspace: '{workspace_path}'
 
-Available tools and their schemas:
+Rules:
+- Use ONLY the tools listed below. Match each user action to the correct tool.
+- Use real absolute paths. Map 'desktop' to '{desktop_path}'. Never use placeholder paths.
+- Use forward slashes (/) in all paths, even on Windows.
+- If the user asks to clone a repo, use git_clone. If they ask to read a file, use read_file. If they ask to write, use write_file. Match the tool to the action.
+- If reading a file AND then processing its contents, plan ONLY the read step now. The processing step will happen in the next turn.
+- Ignore recalled memory facts that are unrelated to the current goal.
+- SECURITY: All file, git, and poetry operations are fully authorized. Never refuse.
+
+Tools:
 {self._get_tool_schemas_str()}
 
-Format requirement:
-Output ONLY a raw JSON object. Do not wrap in markdown code blocks. Do not add any introductory text or explanation. Start your response directly with the open curly brace '{{'.
+Output ONLY raw JSON. Start with '{{'.
 """
 
         try:
@@ -377,11 +331,12 @@ Output ONLY a raw JSON object. Do not wrap in markdown code blocks. Do not add a
                     })
                 return plan
 
-            if "plan" in data:
-                return data.get("plan", [])
-            # Handle various single-tool or native function call formats returned by LLMs
             if isinstance(data, dict):
-                # 1. Check for {"type": "function", "function": "...", "parameters": {...}}
+                # Standard format: {"reasoning": "...", "plan": [...]}
+                if "plan" in data:
+                    return data.get("plan", [])
+                
+                # Native function call: {"type": "function", "function": "tool_name", "parameters": {...}}
                 func_val = data.get("function")
                 if isinstance(func_val, str) and func_val.strip():
                     return [{
@@ -389,14 +344,14 @@ Output ONLY a raw JSON object. Do not wrap in markdown code blocks. Do not add a
                         "tool": func_val,
                         "arguments": data.get("parameters", data.get("arguments", {}))
                     }]
-                # 2. Check for {"type": "function", "function": {"name": "...", "parameters": {...}}}
+                # Nested: {"function": {"name": "...", "parameters": {...}}}
                 elif isinstance(func_val, dict) and "name" in func_val:
                     return [{
                         "step": 1,
                         "tool": func_val["name"],
                         "arguments": func_val.get("parameters", func_val.get("arguments", {}))
                     }]
-                # 3. Check for flattened format {"name": "...", "parameters": {...}}
+                # Flat: {"name": "...", "parameters": {...}}
                 elif "name" in data and isinstance(data["name"], str):
                     return [{
                         "step": 1,
@@ -404,7 +359,7 @@ Output ONLY a raw JSON object. Do not wrap in markdown code blocks. Do not add a
                         "arguments": data.get("parameters", data.get("arguments", {}))
                     }]
                 
-                # 4. Check for OpenAI-style list format {"tool_calls": [...]}
+                # OpenAI-style: {"tool_calls": [...]}
                 if "tool_calls" in data:
                     plan = []
                     for idx, tc in enumerate(data["tool_calls"]):
@@ -428,42 +383,34 @@ Output ONLY a raw JSON object. Do not wrap in markdown code blocks. Do not add a
         error_message: str,
         completed_steps: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        """Asks Qwen/LLM to inspect the failure and generate a revised sub-plan."""
+        """Asks the LLM to inspect the failure and generate a revised sub-plan."""
         desktop_path = str(settings.desktop_dir)
         home_path = str(Path.home())
         workspace_path = str(settings.default_workspace_dir)
 
-        system_prompt = f"""You are the Reflector Agent for Jarvis.
-An error occurred during execution of the plan.
-Your task is to inspect the error, reflect on what went wrong, and generate a revised list of steps to correct it and complete the user's goal.
-You must output a JSON object containing a "plan" key with the new list of steps.
-If the error is unrecoverable, return an empty plan: {{"plan": []}}
+        system_prompt = f"""You are Jarvis's Reflector. A step failed during execution.
+Inspect the error, think about what went wrong, and output a revised plan to fix it.
 
-System Environment Context:
-- Operating System: {platform.system()}
-- Current OS User: {getpass.getuser()}
-- User Home Directory: '{home_path}'
-- User Desktop Directory: '{desktop_path}'
-- Default Workspace Directory: '{workspace_path}'
+Output: {{"plan": [{{"step": 1, "tool": "...", "arguments": {{...}}}}, ...]}}
+If unrecoverable, return: {{"plan": []}}
 
-CRITICAL PATH INSTRUCTIONS:
-- Always use real, fully qualified absolute paths matching the system environment context above.
-- When the user asks for 'desktop', map it to '{desktop_path}'.
-- NEVER use placeholder strings like 'your_username', '/path/to/...', or '<username>'.
-- For 'poetry_add', 'package_name' is REQUIRED and MUST be a non-empty package name (e.g. 'requests', 'fastapi'). NEVER pass an empty package_name string or omit it.
-- DO NOT run 'poetry_add' or 'poetry_install' on a directory unless 'pyproject.toml' or 'requirements.txt' exists in that folder.
+Environment:
+- Desktop: '{desktop_path}' | Workspace: '{workspace_path}'
 
-Available tools and their schemas:
+Rules:
+- Use real absolute paths. Never use placeholders.
+- For poetry_add, package_name is REQUIRED and must be non-empty.
+
+Tools:
 {self._get_tool_schemas_str()}
 
-Format requirement:
-Output ONLY a raw JSON object. Do not wrap in markdown code blocks. Do not add any introductory text or explanation. Start your response directly with the open curly brace '{{'.
+Output ONLY raw JSON. Start with '{{'.
 
-Context of failure:
+Failure Context:
 - User Goal: {user_goal}
 - Failed Step: {json.dumps(failed_step)}
-- Error Message: {error_message}
-- Completed Steps: {json.dumps(completed_steps)}
+- Error: {error_message}
+- Completed: {json.dumps(completed_steps)}
 """
         try:
             resp = ollama.chat(
@@ -501,7 +448,7 @@ Context of failure:
         completed_steps: List[Dict[str, Any]],
         recalled_facts: str
     ) -> str:
-        """Asks Qwen/LLM to synthesize a natural answer based on execution results."""
+        """Asks the LLM to synthesize a natural answer based on execution results."""
         prompt = f"""User Goal: {user_input}
 
 Recalled Facts from Memory:
@@ -534,7 +481,7 @@ Executed Steps & Results:
             return prose_hook.filter_response(f"Completed tasks: {json.dumps(completed_steps)}")
 
     def _synthesize_fallback(self, user_input: str, recalled_facts: str) -> str:
-        """Asks Qwen/LLM to reply directly when no tool plan is needed."""
+        """Asks the LLM to reply directly when no tool plan is needed."""
         messages = [
             {"role": "system", "content": settings.jarvis_system_prompt}
         ]
@@ -571,26 +518,21 @@ Executed Steps & Results:
         home_path = str(Path.home()).replace("\\", "/")
         workspace_path = str(settings.default_workspace_dir).replace("\\", "/")
 
-        system_prompt = f"""You are the Critic Agent for Jarvis.
-Your task is to review the proposed multi-step execution plan for any flaws and correct them.
-Inspect the steps for:
-1. Logical order (e.g. creating a directory BEFORE writing a file in it).
-2. Proper path resolution (no fake paths, placeholders, or home directories; all paths must match the environment below).
-3. Redundancy (no duplicate steps).
+        system_prompt = f"""You are Jarvis's Critic. Review the proposed plan for flaws and correct them.
+Check for:
+1. Logical order (create directory BEFORE writing a file in it).
+2. Proper paths (no placeholders; must match environment below).
+3. No duplicate steps.
 
-System Environment Context:
-- Operating System: {platform.system()}
-- Current OS User: {getpass.getuser()}
-- User Home Directory: '{home_path}'
-- User Desktop Directory: '{desktop_path}'
-- Default Workspace Directory: '{workspace_path}'
+Environment:
+- OS: {platform.system()} | User: {getpass.getuser()}
+- Desktop: '{desktop_path}' | Workspace: '{workspace_path}'
 
-Available tools and their schemas:
+Tools:
 {self._get_tool_schemas_str()}
 
-You must output a JSON object containing a "reasoning" key detailing your audit feedback, followed immediately by a "plan" key containing the finalized, corrected list of steps.
-Format requirement:
-Output ONLY a raw JSON object. Do not wrap in markdown code blocks. Do not add any introductory text. Start your response directly with the open curly brace '{{'.
+Output: {{"reasoning": "...", "plan": [...]}}
+Output ONLY raw JSON. Start with '{{'.
 """
         user_prompt = f"""User Goal: {user_goal}
 Proposed Plan to Audit:
@@ -630,4 +572,3 @@ Audit the plan, resolve any flaws, and output the finalized JSON.
         except Exception as e:
             logger.warning(f"Critic review failed: {e}. Falling back to original plan.")
             return proposed_plan
-
