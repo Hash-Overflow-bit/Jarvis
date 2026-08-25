@@ -508,11 +508,18 @@ class _Settings:
         # WSL detection helper: Check Windows user desktop directories first if in WSL
         if self.is_wsl or self.os_name.lower() == "linux":
             mnt_c_users = Path("/mnt/c/Users")
+            current_user = getpass.getuser()
             if mnt_c_users.exists():
+                # Check active user's folder first
+                active_win_user = mnt_c_users / current_user
+                if active_win_user.exists() and active_win_user.is_dir():
+                    paths_to_check.append(active_win_user / "Desktop")
+                    paths_to_check.append(active_win_user / "OneDrive" / "Desktop")
+
                 try:
                     for user_dir in mnt_c_users.iterdir():
                         try:
-                            if user_dir.is_dir() and user_dir.name.lower() not in ("public", "all users", "default", "defaultuser0"):
+                            if user_dir.is_dir() and user_dir.name.lower() not in ("public", "all users", "default", "defaultuser0", current_user.lower()):
                                 paths_to_check.append(user_dir / "Desktop")
                                 paths_to_check.append(user_dir / "OneDrive" / "Desktop")
                         except Exception:

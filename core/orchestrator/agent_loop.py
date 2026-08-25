@@ -646,6 +646,12 @@ Output ONLY raw JSON. Start with '{{'.
                         val = re.sub(pattern, replacement, val)
                     args[key] = val
 
+            # --- GUARDRAIL 3.5: Auto-resolve relative create_directory paths to Desktop ---
+            if tool_name == "create_directory":
+                dir_val = args.get("directory", "")
+                if dir_val and not dir_val.startswith("/") and ":" not in dir_val and not dir_val.startswith("\\"):
+                    args["directory"] = f"{desktop_path}/{dir_val}"
+
             step["arguments"] = args
 
             # --- GUARDRAIL 4: Check for Un-fixable Placeholders ---
