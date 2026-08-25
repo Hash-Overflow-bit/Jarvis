@@ -23,10 +23,14 @@ class ToolRegistry:
             raise ValueError(f"Tool with name '{tool.name}' is already registered.")
         self._tools[tool.name] = tool
 
+    def register_alias(self, alias_name: str, tool: BaseTool) -> None:
+        """Registers an alias name mapping to an existing tool instance."""
+        if alias_name in self._tools:
+            return
+        self._tools[alias_name] = tool
+
     def get(self, name: str) -> Optional[BaseTool]:
         """Retrieves a registered tool by its name."""
-        if name == "list_dir":
-            name = "file_scanner"
         return self._tools.get(name)
 
     def get_all_schemas(self) -> List[dict]:
@@ -131,7 +135,7 @@ class ToolRegistry:
                 details="Dry run simulation mode active"
             )
             # Ask for confirmation in dry-run mode too, if configured
-            if risk_classifier.should_confirm(name):
+            if risk_classifier.should_confirm(name, cleaned_args):
                 approved = run_async(confirmation_gate.confirm_action(name, cleaned_args, mode=mode))
                 if not approved:
                     audit_logger.log_action(
@@ -147,7 +151,7 @@ class ToolRegistry:
             return dry_run_wrapper.get_mock_response(name, cleaned_args)
 
         # Active Confirmation Check
-        if risk_classifier.should_confirm(name):
+        if risk_classifier.should_confirm(name, cleaned_args):
             approved = run_async(confirmation_gate.confirm_action(name, cleaned_args, mode=mode))
             if not approved:
                 audit_logger.log_action(
@@ -210,8 +214,15 @@ from core.tools.file_scanner import FileScanner
 from core.tools.file_cleanup import FileCleanup
 from core.tools.directory_audit import DirectoryAudit
 
-tool_registry.register(FileScanner())
-tool_registry.register(FileCleanup())
+file_scanner_tool = FileScanner()
+tool_registry.register(file_scanner_tool)
+tool_registry.register_alias("list_dir", file_scanner_tool)
+file_cleanup_tool = FileCleanup()
+tool_registry.register(file_cleanup_tool)
+tool_registry.register_alias("delete_directory", file_cleanup_tool)
+tool_registry.register_alias("delete_file", file_cleanup_tool)
+tool_registry.register_alias("remove_directory", file_cleanup_tool)
+tool_registry.register_alias("remove_file", file_cleanup_tool)
 tool_registry.register(DirectoryAudit())
 
 # Register Git and Poetry tools (M3+)

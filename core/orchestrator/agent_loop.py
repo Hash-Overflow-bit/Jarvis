@@ -187,6 +187,10 @@ class AgentExecutionLoop:
 
                 print(f"[❌ Failure] Step {step.get('step')} failed: {error_msg}")
 
+                if "denied" in str(error_msg).lower():
+                    print(f"[🚫 Confirmation Gate] Execution of '{tool_name}' was denied by user. Halting immediately.")
+                    return f"Execution of '{tool_name}' denied by user."
+
                 retry_count += 1
                 if retry_count >= MAX_RETRIES:
                     print(f"[❌ Reflection] Max retries ({MAX_RETRIES}) reached. Halting execution to prevent infinite loop.")
@@ -283,6 +287,18 @@ class AgentExecutionLoop:
         """
         import re
         cleaned = user_input.strip()
+        # --- Delete / Clean / Remove Folder or File ---
+        delete_match = re.search(
+            r'(?:delete|remove|trash|clean(?:up)?)\s+(?:the\s+)?(?:folder|directory|file|path)?\s*[\'\"]?([a-zA-Z0-9_\-\./]+)[\'\"]?',
+            cleaned, re.IGNORECASE
+        )
+        if delete_match:
+            target = delete_match.group(1).strip()
+            desktop_path = str(settings.desktop_dir.resolve()).replace("\\", "/")
+            if "desktop" in cleaned.lower() and not target.startswith("/"):
+                target = f"{desktop_path}/{target}"
+            return [{"step": 1, "tool": "file_cleanup", "arguments": {"directory": target}}]
+
         # --- Create Directory / Folder: "create folder X" / "create directory X" ---
         folder_match = re.search(
             r'(?:create|make|build)\s+(?:a\s+)?(?:new\s+)?(?:folder|directory)\s+(?:named\s+|called\s+)?[\'\"]?([a-zA-Z0-9_\-]+)[\'\"]?',
@@ -586,7 +602,7 @@ Output ONLY raw JSON. Start with '{{'.
 
         # Known registered tools in Jarvis
         registered_tool_names = set(tool_registry._tools.keys())
-        valid_builtin_tools = {"delegate_task", "agent_builder", "list_dir"}
+        valid_builtin_tools = {"delegate_task", "agent_builder"}
         valid_tools = registered_tool_names.union(valid_builtin_tools)
 
         # Get known dynamic sub-agents (e.g. LedgerBookkeeper, CaliforniaCPA)
@@ -613,7 +629,6 @@ Output ONLY raw JSON. Start with '{{'.
             r'/home/username/',
             r'your_username',
             r'<username>',
-            r'/tmp/',
         ]
 
         sanitized = []

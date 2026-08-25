@@ -50,16 +50,35 @@ class RiskClassifier:
         """Returns the risk level of the tool, defaulting to MEDIUM if unknown."""
         return TOOL_RISK_MAP.get(tool_name, RiskLevel.MEDIUM)
 
-    def should_confirm(self, tool_name: str) -> bool:
+    def should_confirm(self, tool_name: str, args: dict = None) -> bool:
         """
-        Determines if confirmation is required for a tool.
+        Determines if confirmation is required for a tool or action.
         If SAFE_MODE is 'off', no tools require confirmation.
-        Otherwise, only file deletion/cleanup and document forget actions require user confirmation
-        to keep the user experience seamless while protecting against data loss.
+        Otherwise:
+        - Any HIGH risk profile tool or deletion tool requires user confirmation.
+        - Any tool invocation (e.g. delegate_task) whose arguments contain destructive parameters/keywords requires confirmation.
         """
+        import json
         if settings.safe_mode == "off":
             return False
-        return tool_name in ("file_cleanup", "forget_document")
+
+        # Explicit destructive tool names or RiskLevel.HIGH
+        destructive_tools = {
+            "file_cleanup", "forget_document", "delete_directory",
+            "delete_file", "remove_file", "remove_directory"
+        }
+        if tool_name in destructive_tools:
+            return True
+        if self.get_risk_level(tool_name) == RiskLevel.HIGH:
+            return True
+
+        # Check arguments for destructive parameters/keywords (e.g. delegated tasks)
+        if args and isinstance(args, dict):
+            args_str = json.dumps(args).lower()
+            if any(w in args_str for w in ("delete", "remove", "trash", "purge", "erase", "destroy")):
+                return True
+
+        return False
 
 
 # Global risk classifier singleton

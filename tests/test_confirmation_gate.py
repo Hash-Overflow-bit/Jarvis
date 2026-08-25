@@ -74,3 +74,38 @@ async def test_audio_confirmation_approval():
         mock_stt.transcribe.return_value = "no cancel it"
         result = await confirmation_gate.confirm_action("git_push", {}, mode="audio")
         assert result is False
+
+
+def test_deletion_request_requires_confirmation():
+    """Verify that destructive file/directory actions and delegated deletion tasks require confirmation."""
+    with patch.dict(os.environ, {"SAFE_MODE": "strict"}):
+        assert risk_classifier.should_confirm("file_cleanup")
+        assert risk_classifier.should_confirm("delete_directory")
+        assert risk_classifier.should_confirm("delete_file")
+        assert risk_classifier.should_confirm("delegate_task", {"task_description": "Delete the smoke_test folder from Desktop"})
+        assert risk_classifier.should_confirm("delegate_task", {"task_description": "Remove temp files"})
+
+
+def test_confirmation_denial_halts_agent_execution(tmp_path):
+    """Verify that user denial ('no') halts execution immediately and prevents file/folder deletion."""
+    from core.orchestrator.agent_loop import AgentExecutionLoop
+    from core.config import settings
+
+    test_folder = settings.desktop_dir / "smoke_test_safety_verify"
+    test_folder.mkdir(exist_ok=True)
+    assert test_folder.exists()
+
+    loop = AgentExecutionLoop()
+    prompt = f"Delete the smoke_test_safety_verify folder from my Desktop"
+
+    with patch.dict(os.environ, {"SAFE_MODE": "strict"}):
+        with patch("builtins.input", return_value="no"):
+            res = loop.run(prompt)
+            assert "denied by user" in res.lower()
+            assert test_folder.exists(), "Folder must NOT be deleted when user denies confirmation!"
+
+    # Clean up test folder after test
+    if test_folder.exists():
+        import shutil
+        shutil.rmtree(test_folder)
+
