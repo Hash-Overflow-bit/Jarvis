@@ -191,11 +191,15 @@ class AgentExecutionLoop:
                 retry_count = 0  # Reset retries on success
             else:
                 result_obj = result.get("result", {})
-                error_msg = result.get("error") or result_obj.get("message")
-                
-                # If message is missing, fallback to the first string value (e.g. dependencies_tree)
+                error_msg = result.get("error") or (result_obj.get("message") if isinstance(result_obj, dict) else None)
                 if not error_msg and isinstance(result_obj, dict):
-                    for v in result_obj.values():
+                    error_msg = result_obj.get("warning") or result_obj.get("error")
+
+                # If message is missing, fallback to non-query string values
+                if not error_msg and isinstance(result_obj, dict):
+                    for k, v in result_obj.items():
+                        if k in ("query", "url", "title", "snippet", "directory", "filepath"):
+                            continue
                         if isinstance(v, str) and v.strip() and v != "False":
                             error_msg = v
                             break
@@ -663,6 +667,10 @@ Output ONLY raw JSON. Start with '{{'.
 
         # Path replacement rules for auto-fixing hallucinated path strings
         PATH_FIXES = [
+            (r'(?i)/mnt/[a-zA-Z]/Users/[a-zA-Z0-9_-]+/OneDrive/Desktop/?', desktop_path.rstrip('/') + '/'),
+            (r'(?i)/mnt/[a-zA-Z]/Users/[a-zA-Z0-9_-]+/Desktop/?', desktop_path.rstrip('/') + '/'),
+            (r'(?i)/home/[a-zA-Z0-9_-]+/(?:Jarvis/workspace|workspace)/?', workspace_path.rstrip('/') + '/'),
+            (r'(?i)/home/[a-zA-Z0-9_-]+/?', desktop_path.rstrip('/') + '/'),
             (r'(?i)/Users/(?:username|your_username|m2air)/Desktop/?', desktop_path.rstrip('/') + '/'),
             (r'(?i)/Users/(?:username|your_username|m2air)/?', desktop_path.rstrip('/') + '/'),
             (r'(?i)/path/to/desktop/?', desktop_path.rstrip('/') + '/'),
@@ -724,6 +732,18 @@ Output ONLY raw JSON. Start with '{{'.
             if tool_name not in valid_tools:
                 print(f"[🚫 Sanitizer] Rejected Step {step.get('step')} — tool '{tool_name}' is not in the tool registry.")
                 continue
+
+            # --- GUARDRAIL 3: Reject unrequested file system tools on research prompts ---
+            if user_input:
+                from core.writing.pipeline import WritingPipeline
+                intent = WritingPipeline.classify_intent(user_input)
+                if intent == "research":
+                    has_save_intent = any(w in user_input.lower() for w in (
+                        "save", "create file", "write to file", "export", "report.txt", "report.md", "to desktop", "save to", "output file"
+                    ))
+                    if not has_save_intent and tool_name in ("write_file", "read_file", "list_dir", "create_directory", "delete_directory"):
+                        print(f"[🛡️ Sanitizer] Rejected unrequested filesystem tool '{tool_name}' for research request without save intent.")
+                        continue
 
             # --- GUARDRAIL 2: Auto-populate missing agent_builder fields ---
             if tool_name == "agent_builder":

@@ -209,3 +209,83 @@ def test_previous_filesystem_results_do_not_leak_into_writing_request():
         assert "automation_demo" not in res2_lower
         assert "created directory" not in res2_lower
         assert "payment" in res2_lower
+
+
+def test_web_search_direct_execution():
+    """
+    Test 11: Direct tool execution of web_search through tool_registry.
+    """
+    from core.tools.tool_registry import tool_registry
+
+    # 1. Success case with results
+    res_success = tool_registry.execute("web_search", {"query": "AI agent frameworks"})
+    assert res_success["success"] is True
+    result_data = res_success["result"]
+    assert "results" in result_data
+    assert len(result_data["results"]) > 0
+    item = result_data["results"][0]
+    assert "title" in item and "url" in item and "snippet" in item
+    assert item["url"].startswith("http")
+
+    # 2. Empty query failure case
+    res_fail = tool_registry.execute("web_search", {"query": ""})
+    assert res_fail["success"] is False or (isinstance(res_fail.get("result"), dict) and res_fail["result"].get("success") is False)
+
+
+def test_research_request_performs_zero_file_writes():
+    """
+    Test 12: Research report request with no save intent performs ZERO write_file/read_file/list_dir calls.
+    """
+    user_input = "Research current AI agent frameworks suitable for local business automation and write a short comparison report with real sources and links."
+    loop = AgentExecutionLoop(use_tools=True)
+
+    mock_search_res = {
+        "success": True,
+        "results": [
+            {
+                "title": "Local AI Frameworks 2026",
+                "url": "https://example.com/local_ai_agents",
+                "snippet": "Frameworks like LangGraph, CrewAI, and AutoGen enable local automation."
+            }
+        ]
+    }
+
+    mock_llm_report = {
+        "role": "assistant",
+        "content": "AI Agent Frameworks Comparison:\nLangGraph and CrewAI are ideal.\nSources:\n- https://example.com/local_ai_agents"
+    }
+
+    executed_tools = []
+    def track_execute(tool_name, args, mode="text"):
+        executed_tools.append(tool_name)
+        if tool_name == "web_search":
+            return {"success": True, "result": mock_search_res}
+        return {"success": True, "result": {}}
+
+    with patch("core.tools.tool_registry.tool_registry.execute", side_effect=track_execute):
+        with patch("core.orchestrator.agent_loop.ollama.chat", return_value=mock_llm_report):
+            res = loop.run(user_input)
+            assert "web_search" in executed_tools
+            assert "write_file" not in executed_tools
+            assert "read_file" not in executed_tools
+            assert "list_dir" not in executed_tools
+            assert "skyvern_tool" not in executed_tools
+            assert "https://example.com/local_ai_agents" in res
+
+
+def test_research_acceptance_prompt():
+    """
+    Test 13: Full acceptance test for user research prompt.
+    """
+    user_input = "Research current AI agent frameworks suitable for local business automation and write a short comparison report with real sources and links."
+    loop = AgentExecutionLoop(use_tools=True)
+
+    res = loop.run(user_input)
+    assert isinstance(res, str)
+    assert len(res.strip()) > 0
+    res_lower = res.lower()
+
+    # Verify no unrequested filesystem or browser tool claims
+    assert "write_file" not in res_lower
+    assert "skyvern" not in res_lower
+    assert "list_dir" not in res_lower

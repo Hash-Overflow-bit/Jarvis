@@ -9,6 +9,7 @@ Rules:
 - If internet is unavailable or query fails, returns success=False with warning.
 """
 
+import re
 import json
 import logging
 import urllib.parse
@@ -51,23 +52,29 @@ class WebSearch(BaseTool):
     input_schema: type[BaseModel] = WebSearchInput
     output_schema: type[BaseModel] = WebSearchOutput
 
-    def run(self, input_data: WebSearchInput) -> WebSearchOutput:
-        query = input_data.query.strip()
-        if not query:
-            return WebSearchOutput(
-                success=False,
-                query=query,
-                results=[],
-                warning="Search query was empty."
-            )
+    @staticmethod
+    def _clean_query(raw_query: str) -> str:
+        """Strips conversational instruction filler words from search query."""
+        q = raw_query.strip()
+        patterns = [
+            r"\b(?:and\s+)?(?:write|generate|create|prepare|give\s+me)\s+(?:a\s+)?(?:short\s+)?(?:comparison\s+)?(?:report|summary|article|essay|email)\b.*$",
+            r"\b(?:with|including)\s+(?:real\s+)?(?:sources|links|references|citations)\b.*$",
+            r"\b(?:please|can\s+you|help\s+me)\b"
+        ]
+        for p in patterns:
+            q = re.sub(p, "", q, flags=re.IGNORECASE).strip()
 
+        q = q.rstrip(".!?,;: ")
+        return q if q else raw_query.strip()
+
+    def _fetch_ddg_results(self, search_term: str) -> List[Dict[str, str]]:
+        """Executes HTTP request to DuckDuckGo HTML endpoint and parses result items."""
         results: List[Dict[str, str]] = []
         try:
-            # DuckDuckGo Lite / HTML API endpoint
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             }
-            url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
+            url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(search_term)}"
             resp = requests.get(url, headers=headers, timeout=5)
             if resp.status_code == 200:
                 from bs4 import BeautifulSoup
@@ -93,19 +100,44 @@ class WebSearch(BaseTool):
                                 "snippet": snippet
                             })
         except Exception as e:
-            logger.warning(f"Web search HTTP query failed: {e}")
+            logger.warning(f"Web search HTTP query failed for '{search_term}': {e}")
+        return results
+
+    def run(self, input_data: WebSearchInput) -> WebSearchOutput:
+        raw_query = input_data.query.strip()
+        if not raw_query:
+            return WebSearchOutput(
+                success=False,
+                query=raw_query,
+                results=[],
+                warning="Search query was empty."
+            )
+
+        cleaned_query = self._clean_query(raw_query)
+        results = self._fetch_ddg_results(cleaned_query)
+
+        # Fallback: Try with raw query if cleaned query returned 0 results
+        if not results and cleaned_query != raw_query:
+            results = self._fetch_ddg_results(raw_query)
+
+        # Fallback: Try key nouns if still 0 results
+        if not results:
+            words = [w for w in re.findall(r"\b[a-zA-Z0-9_-]{3,}\b", cleaned_query) if w.lower() not in ("research", "current", "suitable", "write", "report", "with", "from", "and", "the", "for")]
+            if len(words) >= 2:
+                fallback_q = " ".join(words[:5])
+                results = self._fetch_ddg_results(fallback_q)
 
         if results:
             return WebSearchOutput(
                 success=True,
-                query=query,
+                query=raw_query,
                 results=results,
                 warning=None
             )
         else:
             return WebSearchOutput(
                 success=False,
-                query=query,
+                query=raw_query,
                 results=[],
-                warning=f"Could not retrieve online sources for '{query}'."
+                warning=f"Could not retrieve online sources for '{raw_query}'."
             )
