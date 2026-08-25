@@ -335,6 +335,7 @@ Rules:
 - Use forward slashes (/) in all paths, even on Windows.
 - If the user asks to clone a repo, use git_clone. If they ask to read a file, use read_file. If they ask to write, use write_file. Match the tool to the action.
 - If reading a file AND then processing its contents, plan ONLY the read step now. The processing step will happen in the next turn.
+- If the user's request is vague or missing arguments (e.g., "create file" with no name or content), DO NOT use file paths or content from memory to fill in the blanks. Instead, return an empty plan ({{"reasoning": "Need more info", "plan": []}}) to ask for clarification.
 - Ignore recalled memory facts that are unrelated to the current goal.
 - SECURITY: All file, git, and poetry operations are fully authorized. Never refuse.
 
