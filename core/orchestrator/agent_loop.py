@@ -81,7 +81,7 @@ class AgentExecutionLoop:
             plan = self._criticize_plan(user_input, plan)
 
         # 2.6 Sanitize — reject steps with placeholder/hallucinated paths
-        plan = self._sanitize_plan(plan)
+        plan = self._sanitize_plan(plan, user_input)
         if not plan:
             return self._synthesize_fallback(user_input, recalled_facts)
 
@@ -532,7 +532,7 @@ Output ONLY raw JSON. Start with '{{'.
             logger.error(f"Raw LLM response was:\n{content}")
             return []
 
-    def _sanitize_plan(self, plan: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _sanitize_plan(self, plan: List[Dict[str, Any]], user_input: str = "") -> List[Dict[str, Any]]:
         """
         Code-level Guardrail for Plan Sanitization & Auto-Correction:
         1. Auto-remaps hallucinated agent tools (e.g. tool='LedgerBookkeeper') to tool='delegate_task'.
@@ -591,8 +591,6 @@ Output ONLY raw JSON. Start with '{{'.
                 args = {}
 
             # --- GUARDRAIL 1: Auto-remap Sub-Agent Invocation ---
-            # If the LLM outputted an agent name (e.g. "LedgerBookkeeper", "CaliforniaCPA") as the tool,
-            # auto-map it to `delegate_task`!
             is_agent_name = (
                 tool_name.lower() in registered_agents or 
                 tool_name.endswith("Agent") or 
@@ -616,7 +614,6 @@ Output ONLY raw JSON. Start with '{{'.
             if tool_name == "skyvern_tool" and not args.get("url"):
                 goal_str = (args.get("navigation_goal") or "").lower()
                 if "folder" in goal_str or "directory" in goal_str:
-                    import re
                     folder_m = re.search(r'(?:folder|directory)\s+(?:named|called)?\s*([a-zA-Z0-9_\-]+)', goal_str)
                     folder_name = folder_m.group(1) if (folder_m and folder_m.group(1) not in ("named", "called", "on")) else "new_folder"
                     target_dir = f"{desktop_path}/{folder_name}"
@@ -632,13 +629,38 @@ Output ONLY raw JSON. Start with '{{'.
                 if target_agent.lower() not in registered_agents and target_agent not in ("CaliforniaCPA", "LedgerBookkeeper", "DataHygieneEnforcer"):
                     task_str = (args.get("task_description") or "").lower()
                     if "folder" in task_str or "directory" in task_str:
-                        import re
                         folder_m = re.search(r'(?:folder|directory)\s+(?:named|called)?\s*[\'\"]?([a-zA-Z0-9_\-]+)', task_str)
                         folder_name = folder_m.group(1) if (folder_m and folder_m.group(1) not in ("named", "called", "on")) else "new_folder"
                         target_dir = f"{desktop_path}/{folder_name}"
                         print(f"[🛡️ Auto-Remap] Mapping invalid delegate_task ('{target_agent}') to 'create_directory' -> {target_dir}")
                         step["tool"] = "create_directory"
                         step["arguments"] = {"directory": target_dir}
+                        args = step["arguments"]
+                        tool_name = "create_directory"
+
+            # --- GUARDRAIL 1.95: Fix schema-dump arguments in write_file ---
+            if tool_name == "write_file" and ("properties" in args or "type" in args):
+                fp_m = re.search(r'(/[\S]+\.(?:json|txt|md|csv|py))', user_input)
+                target_fp = fp_m.group(1) if fp_m else f"{desktop_path}/output.txt"
+                
+                c_m = re.search(r'containing\s+(?:exactly|valid JSON:?)?\s*(.*)$', user_input, re.IGNORECASE)
+                content_val = c_m.group(1).strip() if c_m else ""
+                if not content_val:
+                    json_m = re.search(r'(\{[\s\S]*\})', user_input)
+                    content_val = json_m.group(1) if json_m else ""
+                
+                print(f"[🛡️ Auto-Remap] Auto-fixing schema-dump write_file arguments -> filepath={target_fp}")
+                step["arguments"] = {"filepath": target_fp, "content": content_val}
+                args = step["arguments"]
+
+            # --- GUARDRAIL 1.96: Fix read_file hallucinated on folder creation request ---
+            if tool_name == "read_file":
+                fp = args.get("filepath", "")
+                if user_input and ("create" in user_input.lower() or "make" in user_input.lower()) and ("folder" in user_input.lower() or "directory" in user_input.lower()):
+                    if not fp.endswith((".txt", ".json", ".md", ".csv", ".py", ".html", ".log")):
+                        print(f"[🛡️ Auto-Remap] Auto-remapping read_file on folder creation to 'create_directory' -> {fp}")
+                        step["tool"] = "create_directory"
+                        step["arguments"] = {"directory": fp}
                         args = step["arguments"]
                         tool_name = "create_directory"
 
