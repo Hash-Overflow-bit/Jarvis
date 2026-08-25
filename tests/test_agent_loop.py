@@ -306,6 +306,34 @@ def test_agent_loop_sanitizer_auto_remap_agent_builder_local_folder():
     assert "hey" in sanitized[0]["arguments"]["directory"]
 
 
+def test_agent_loop_exec_board_config_auto_writer():
+    loop = AgentExecutionLoop()
+    mock_chat_res = {
+        "role": "assistant",
+        "content": '''{
+ "executive board_config": {
+   "CEO": {"role": "Chief Executive Officer"},
+   "PM": {"role": "Project Manager"}
+ },
+ "config files_created": [
+   {"file_name": "CEO_config.json"},
+   {"file_name": "PM_config.json"}
+ ]
+}'''
+    }
+    mock_empty_plan = {
+        "role": "assistant",
+        "content": ""
+    }
+
+    with patch("core.orchestrator.agent_loop.ollama.chat", side_effect=[mock_empty_plan, mock_chat_res]):
+        with patch("core.tools.tool_registry.tool_registry.execute", return_value={"success": True, "result": {}}) as mock_exec:
+            res = loop.run("Generate executive board configuration files")
+            assert "Successfully generated and saved" in res
+            assert "CEO_config.json" in res
+            assert mock_exec.call_count == 2
+
+
 def test_agent_loop_tool_call_leakage_recovery_directory():
     loop = AgentExecutionLoop()
     mock_chat_res = {

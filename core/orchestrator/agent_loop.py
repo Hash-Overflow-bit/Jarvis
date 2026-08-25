@@ -833,6 +833,36 @@ Executed Steps & Results:
                                 target_path = exec_args.get("directory") or exec_args.get("filepath") or t_name
                                 return prose_hook.filter_response(f"Successfully executed '{t_name}' ({target_path}).")
 
+            # Safety check: Catch raw Executive Board / Config JSON string outputs and auto-write files
+            if "config files_created" in raw_text or ("file_name" in raw_text and "config" in raw_text):
+                import re
+                json_m = re.search(r"(\{[\s\S]*\})", raw_text)
+                if json_m:
+                    try:
+                        cfg_data = json.loads(json_m.group(1), strict=False)
+                        board_cfg = cfg_data.get("executive board_config", {})
+                        created_files = cfg_data.get("config files_created", [])
+                        written_paths = []
+                        if isinstance(created_files, list) and created_files:
+                            for item in created_files:
+                                fname = item.get("file_name") if isinstance(item, dict) else str(item)
+                                if fname:
+                                    role_key = fname.replace("_config.json", "").replace(".json", "")
+                                    role_detail = board_cfg.get(role_key, item)
+                                    target_fp = f"agents/{fname}"
+                                    tool_registry.execute("write_file", {"filepath": target_fp, "content": json.dumps(role_detail, indent=2)})
+                                    written_paths.append(fname)
+                        elif isinstance(board_cfg, dict) and board_cfg:
+                            for r_name, r_val in board_cfg.items():
+                                fname = f"{r_name}_config.json"
+                                target_fp = f"agents/{fname}"
+                                tool_registry.execute("write_file", {"filepath": target_fp, "content": json.dumps(r_val, indent=2)})
+                                written_paths.append(fname)
+                        if written_paths:
+                            return prose_hook.filter_response(f"Successfully generated and saved {len(written_paths)} executive board configuration files in 'agents/': {', '.join(written_paths)}.")
+                    except Exception:
+                        pass
+
             return prose_hook.filter_response(raw_text)
         except Exception as e:
             raise OllamaError(f"Ollama chat failed: {e}")
