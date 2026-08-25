@@ -5,11 +5,13 @@ Pydantic input and output models for Git tools.
 """
 
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 # --- Git Clone ---
 class GitCloneInput(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
     url: str = Field(
         ...,
         description="The HTTPS URL of the Git repository to clone (e.g. 'https://github.com/tiangolo/fastapi').",
@@ -19,9 +21,6 @@ class GitCloneInput(BaseModel):
         None,
         description="Optional folder name inside the workspace. If omitted, uses the repository name."
     )
-
-    class Config:
-        populate_by_name = True  # Accept both 'url' and alias names
 
 
 class GitCloneOutput(BaseModel):

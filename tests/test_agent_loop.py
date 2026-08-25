@@ -152,7 +152,7 @@ def test_agent_loop_execution_with_reflection():
                 {
                     "step": 1,
                     "tool": "write_file",
-                    "arguments": {"filepath": "/sandbox/file.txt", "content": "hello"}
+                    "arguments": {"filepath": "/workspace/file.txt", "content": "hello"}
                 }
             ]
         })

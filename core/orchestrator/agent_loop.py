@@ -80,6 +80,11 @@ class AgentExecutionLoop:
             print(f"\n[🛡️ Critic] Proposed plan has {len(plan)} steps. Initiating internal critic review...")
             plan = self._criticize_plan(user_input, plan)
 
+        # 2.6 Sanitize — reject steps with placeholder/hallucinated paths
+        plan = self._sanitize_plan(plan)
+        if not plan:
+            return self._synthesize_fallback(user_input, recalled_facts)
+
         print(f"\n[📋 Plan] Decomposed into {len(plan)} steps:")
         for step in plan:
             print(f"  - Step {step.get('step')}: {step.get('tool')} with args: {step.get('arguments')}")
@@ -173,6 +178,9 @@ class AgentExecutionLoop:
                 )
                 
                 if revised_plan and isinstance(revised_plan, list) and len(revised_plan) > 0:
+                    # Sanitize the revised plan too
+                    revised_plan = self._sanitize_plan(revised_plan)
+                if revised_plan and isinstance(revised_plan, list) and len(revised_plan) > 0:
                     print(f"\n[🔄 Re-planning] Self-corrected! Revised remaining steps:")
                     # Replace remaining steps in the plan
                     plan = plan[:step_idx] + revised_plan
@@ -240,6 +248,50 @@ class AgentExecutionLoop:
         # Everything else → let the LLM planner decide
         return False
 
+    def _direct_route(self, user_input: str) -> Optional[List[Dict[str, Any]]]:
+        """
+        Deterministic shortcut router for obvious, unambiguous commands.
+        Returns a pre-built plan if the input clearly matches a known tool pattern,
+        bypassing the LLM planner entirely. Returns None if no match (falls through to LLM).
+        
+        This exists because small 8B models are inconsistent at tool selection — 
+        sometimes they pick git_clone, sometimes they simulate with write_file.
+        For clear-cut commands, deterministic routing is 100% reliable.
+        """
+        import re
+        cleaned = user_input.strip()
+
+        # --- Git Clone: "clone <URL>" ---
+        clone_match = re.search(
+            r'(?:git\s+)?clone\s+(https?://\S+\.git\b|https?://github\.com/\S+|https?://gitlab\.com/\S+|https?://bitbucket\.org/\S+)',
+            cleaned, re.IGNORECASE
+        )
+        if clone_match:
+            url = clone_match.group(1)
+            # Ensure .git suffix for GitHub URLs
+            if 'github.com' in url and not url.endswith('.git'):
+                url = url.rstrip('/') + '.git'
+            return [{"step": 1, "tool": "git_clone", "arguments": {"url": url}}]
+
+        # --- Git Pull: "pull <path>" or "git pull" ---
+        pull_match = re.search(r'(?:git\s+)?pull\s+(.+)', cleaned, re.IGNORECASE)
+        if pull_match:
+            repo_path = pull_match.group(1).strip().strip("'\"")
+            return [{"step": 1, "tool": "git_pull", "arguments": {"repo_path": repo_path}}]
+
+        # --- Git Status: "git status <path>" ---
+        status_match = re.search(r'git\s+status\s+(.+)', cleaned, re.IGNORECASE)
+        if status_match:
+            repo_path = status_match.group(1).strip().strip("'\"")
+            return [{"step": 1, "tool": "git_status", "arguments": {"repo_path": repo_path}}]
+
+        # --- Rebuild Knowledge Graph ---
+        if re.search(r'rebuild\s+(the\s+)?(knowledge\s+graph|memory|graph)', cleaned, re.IGNORECASE):
+            return [{"step": 1, "tool": "rebuild_knowledge_graph", "arguments": {}}]
+
+        # No deterministic match → fall through to LLM planner
+        return None
+
     def _generate_plan(self, user_input: str, recalled_facts: str) -> List[Dict[str, Any]]:
         """Asks the LLM to generate a serialized list of tool calls."""
         if not self.use_tools:
@@ -250,6 +302,12 @@ class AgentExecutionLoop:
         if "32b" not in settings.ollama_model.lower():
             if self._is_conversational_or_informative(user_input):
                 return []
+
+        # Try deterministic routing first (100% reliable for obvious commands)
+        direct_plan = self._direct_route(user_input)
+        if direct_plan is not None:
+            print(f"\n[⚡ Direct Route] Matched deterministic pattern — bypassing LLM planner.")
+            return direct_plan
 
         prompt = f"""User Goal: {user_input}
 
@@ -375,6 +433,34 @@ Output ONLY raw JSON. Start with '{{'.
             logger.error(f"Planning failed: {e}")
             logger.error(f"Raw LLM response was:\n{content}")
             return []
+
+    def _sanitize_plan(self, plan: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Strips steps that contain placeholder/hallucinated paths before execution.
+        This is a safety net — even if the LLM outputs bad paths, they never reach the tool.
+        """
+        import re
+        PLACEHOLDER_PATTERNS = [
+            r'/path/to/',
+            r'/home/username/',
+            r'your_username',
+            r'<username>',
+            r'/sandbox/',
+            r'/tmp/',
+        ]
+        sanitized = []
+        for step in plan:
+            args = step.get("arguments", {})
+            args_str = json.dumps(args)
+            is_bad = False
+            for pattern in PLACEHOLDER_PATTERNS:
+                if re.search(pattern, args_str, re.IGNORECASE):
+                    print(f"[🚫 Sanitizer] Rejected Step {step.get('step')} — contains placeholder path: {pattern}")
+                    is_bad = True
+                    break
+            if not is_bad:
+                sanitized.append(step)
+        return sanitized
 
     def _reflect_and_replan(
         self,
