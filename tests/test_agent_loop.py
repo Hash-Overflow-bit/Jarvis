@@ -478,3 +478,61 @@ def test_agent_loop_desktop_as_universal_default(tmp_path):
             assert len(sanitized_replan) == 1
             assert sanitized_replan[0]["arguments"]["filepath"] == str(desktop_dir / "automation_demo" / "report.md")
 
+
+def test_agent_loop_session_isolation():
+    """
+    Regression Test for Session Isolation:
+    Turn 1: 'Create yeah.txt with Hello Jsss' executes write_file.
+    Turn 2: 'Start a new interview and ask me one question about my current professional role.'
+    Expected Turn 2:
+    - plan is empty / conversational fallback
+    - response contains NO mention of 'yeah.txt', 'Hello Jsss', file paths, or execution summaries
+    - response contains interview question about professional role.
+    """
+    from core.state.session_manager import SessionManager
+    session = SessionManager(use_tools=True)
+
+    # Turn 1: Tool execution
+    with patch("core.tools.tool_registry.tool_registry.execute", return_value={"success": True, "result": {"message": "Created"}}):
+        with patch("core.orchestrator.agent_loop.ollama.chat", return_value={"role": "assistant", "content": "I created yeah.txt with Hello Jsss."}):
+            res1 = session.chat("Create yeah.txt with Hello Jsss")
+            assert "yeah.txt" in res1
+
+    # Turn 2: Isolated interview prompt
+    mock_interview_response = {
+        "role": "assistant",
+        "content": "What is your current professional role and what are your main responsibilities?"
+    }
+    with patch("core.orchestrator.agent_loop.ollama.chat", return_value=mock_interview_response):
+        res2 = session.chat("Start a new interview and ask me one question about my current professional role.")
+        res2_lower = res2.lower()
+        assert "yeah.txt" not in res2_lower
+        assert "hello jsss" not in res2_lower
+        assert "completed" not in res2_lower
+        assert "executed" not in res2_lower
+        assert "role" in res2_lower or "question" in res2_lower or "professional" in res2_lower
+
+
+def test_conversational_plan_empty_immediately_after_tool_execution():
+    """
+    Verify a conversational plan=[] turn immediately after a tool execution turn
+    does not synthesize previous completed steps.
+    """
+    from core.orchestrator.agent_loop import AgentExecutionLoop
+    history = []
+    loop = AgentExecutionLoop(use_tools=True, history=history)
+
+    # Turn 1: tool execution
+    with patch("core.tools.tool_registry.tool_registry.execute", return_value={"success": True, "result": {}}):
+        with patch("core.orchestrator.agent_loop.ollama.chat", return_value={"role": "assistant", "content": "File created."}):
+            res1 = loop.run("Create test12.txt with Hello World")
+            assert "test12.txt" in res1 or "created" in res1.lower()
+
+    # Turn 2: conversational inquiry
+    mock_conv_reply = {"role": "assistant", "content": "I am online and ready to assist you."}
+    with patch("core.orchestrator.agent_loop.ollama.chat", return_value=mock_conv_reply):
+        res2 = loop.run("Are you online?")
+        assert "test12.txt" not in res2
+        assert "created" not in res2.lower()
+        assert "online" in res2.lower()
+

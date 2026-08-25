@@ -267,7 +267,10 @@ class AgentExecutionLoop:
             r"can you hear me",
             r"are you online",
             r"testing audio",
-            r"test audio"
+            r"test audio",
+            r"(?:start|begin|run|do)\s+(?:a\s+)?(?:new\s+)?(?:isolated\s+)?interview",
+            r"ask\s+(?:me\s+)?(?:one\s+)?(?:question|interview\s+question)",
+            r"interview\s+me"
         ]
         for pattern in inquiries:
             if re.search(pattern, cleaned):
@@ -900,7 +903,10 @@ Executed Steps & Results:
     def _synthesize_fallback(self, user_input: str, recalled_facts: str) -> str:
         """Asks the LLM to reply directly when no tool plan is needed."""
         fallback_sys_prompt = settings.jarvis_system_prompt + (
-            "\n\nPATH TRUTH ENFORCEMENT: When answering questions about where a file or folder is located, state ONLY the exact verified path from Recalled Long-Term Memory or prior completed tool actions. Do NOT reconstruct, guess, or hallucinate a path from the user's original request or question. If no verified path is available in memory or prior turns, state: 'I don't have a verified path for that folder.'"
+            "\n\nCRITICAL CONVERSATIONAL ISOLATION & TRUTH RULES:\n"
+            "1. Focus strictly on the user's current conversational prompt (e.g., conducting an interview, asking a question, or discussing a topic).\n"
+            "2. DO NOT mention, summarize, or bring up past tool executions, completed steps, file names (e.g. yeah.txt, user_goal.txt, test.txt), or directory paths unless the user explicitly asks about them in the current prompt.\n"
+            "3. PATH TRUTH ENFORCEMENT: When answering questions about where a file or folder is located, state ONLY the exact verified path from Recalled Long-Term Memory or prior completed tool actions. Do NOT reconstruct, guess, or hallucinate a path from the user's original request or question. If no verified path is available in memory or prior turns, state: 'I don't have a verified path for that folder.'"
         )
         messages = [
             {"role": "system", "content": fallback_sys_prompt}
@@ -908,10 +914,17 @@ Executed Steps & Results:
         if recalled_facts:
             messages.append({"role": "system", "content": f"Recalled Long-Term Memory:\n{recalled_facts}"})
 
-        # Include prior conversation turns from current session history
+        # Include prior conversation turns from current session history (filtering out raw tool_calls and execution blobs)
         for msg in self.history:
-            if msg.get("role") != "system":
-                messages.append(msg)
+            if not isinstance(msg, dict):
+                continue
+            role = msg.get("role")
+            if role in ("user", "assistant"):
+                if "tool_calls" in msg or role == "tool":
+                    continue
+                content = msg.get("content")
+                if isinstance(content, str) and content.strip():
+                    messages.append({"role": role, "content": content})
 
         # Ensure user_input is appended if not already last message
         if not messages or messages[-1].get("content") != user_input:
