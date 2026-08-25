@@ -8,6 +8,7 @@ import pytest
 import json
 from unittest.mock import MagicMock, patch
 from core.orchestrator.agent_loop import AgentExecutionLoop
+from core.config import settings
 
 
 def test_agent_loop_generate_plan():
@@ -312,4 +313,68 @@ def test_agent_loop_tool_call_leakage_recovery_directory():
             res = loop.run("Please set up directory /Users/m2air/Desktop/test1122")
             assert "Successfully executed 'create_directory'" in res
             mock_exec.assert_called_once_with("create_directory", {"directory": "/Users/m2air/Desktop/test1122"})
+
+
+from unittest.mock import patch, MagicMock, PropertyMock
+
+
+def test_agent_loop_windows_path_normalization(tmp_path):
+    """
+    Requirements 8 & 9:
+    1. Input Windows workspace path is preserved in _sanitize_plan without rewriting to /home/wmjar/...
+    2. create_directory executes and physically creates the folder on disk.
+    """
+    loop = AgentExecutionLoop()
+    target_dir = tmp_path / "workspace" / "automation_demo"
+
+    raw_plan = [
+        {
+            "step": 1,
+            "tool": "create_directory",
+            "arguments": {"directory": str(target_dir)}
+        }
+    ]
+
+    with patch.object(type(settings), "desktop_dir", new_callable=PropertyMock, return_value=tmp_path):
+        with patch.object(type(settings), "default_workspace_dir", new_callable=PropertyMock, return_value=tmp_path / "workspace"):
+            sanitized = loop._sanitize_plan(raw_plan, "create a local project folder named automation_demo")
+            assert len(sanitized) == 1
+            assert "home/wmjar" not in sanitized[0]["arguments"]["directory"].replace("\\", "/")
+            assert "automation_demo" in sanitized[0]["arguments"]["directory"]
+
+            # Verify create_directory tool execution physically creates directory
+            from core.tools.create_directory import CreateDirectory
+            from schemas.create_directory_schema import CreateDirectoryInput
+            tool = CreateDirectory()
+            res = tool.run(CreateDirectoryInput(directory=str(target_dir)))
+            assert res.success is True
+            assert target_dir.exists()
+
+
+def test_agent_loop_wsl_path_conversion_on_windows(tmp_path):
+    """
+    Requirement 9:
+    WSL-style /mnt/c/... input path is converted to Windows drive path C:/... on Windows,
+    and NOT converted to /home/wmjar/...
+    """
+    loop = AgentExecutionLoop()
+    wsl_input_path = "/mnt/c/Users/wmjar/OneDrive/Desktop/automation_demo"
+
+    raw_plan = [
+        {
+            "step": 1,
+            "tool": "create_directory",
+            "arguments": {"directory": wsl_input_path}
+        }
+    ]
+
+    with patch.object(type(settings), "is_windows", new_callable=PropertyMock, return_value=True):
+        with patch.object(type(settings), "desktop_dir", new_callable=PropertyMock, return_value=tmp_path):
+            with patch.object(type(settings), "default_workspace_dir", new_callable=PropertyMock, return_value=tmp_path / "workspace"):
+                sanitized = loop._sanitize_plan(raw_plan, "create folder /mnt/c/Users/wmjar/OneDrive/Desktop/automation_demo")
+                assert len(sanitized) == 1
+                sanitized_dir = sanitized[0]["arguments"]["directory"].replace("\\", "/")
+                assert not sanitized_dir.startswith("/home/wmjar")
+                assert sanitized_dir.startswith("C:")
+                assert "automation_demo" in sanitized_dir
 

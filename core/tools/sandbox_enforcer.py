@@ -10,6 +10,7 @@ Sandbox Mode:
                                  on the filesystem that the OS user has permission to access.
 """
 
+import platform
 from pathlib import Path
 from typing import Union
 import re
@@ -72,26 +73,51 @@ class SandboxEnforcer:
             PermissionError: If sandbox is ON and the path escapes allowed roots.
             ValueError: If sandbox is ON but no roots are configured.
         """
-        # Intercept and sanitize LLM placeholder path hallucinations
-        target_str = str(target_path).replace("\\", "/")
-        
-        # Define a regex pattern that catches common fake paths
-        # Examples: /sandbox/, /path/to/, /Users/username/, /home/username/
-        fake_path_pattern = r"(?:^/?sandbox/|^/?path/to/|^/?Users/[^/]+/Desktop/|^/?Users/[^/]+/|^/?home/[^/]+/|<workspace_path>/|<workspace>/|<username>/?|your_username/?)"
-        
-        # Replace the fake prefix with the active workspace directory or desktop directory
-        if re.search(fake_path_pattern, target_str, re.IGNORECASE):
-            if "desktop" in target_str.lower() or target_str.lower().startswith("/sandbox/") or target_str.lower().startswith("sandbox/"):
-                desktop = str(settings.desktop_dir).replace("\\", "/") + "/"
-                target_str = re.sub(fake_path_pattern + r"(?:desktop|sandbox)/?", desktop, target_str, flags=re.IGNORECASE)
-            else:
-                workspace = str(settings.default_workspace_dir).replace("\\", "/") + "/"
-                target_str = re.sub(fake_path_pattern, workspace, target_str, flags=re.IGNORECASE)
-            # Normalize double slashes that might have been created
-            target_str = target_str.replace("//", "/")
-        
-        # Resolve to absolute path regardless of mode
-        resolved = Path(target_str).resolve()
+        target_str = str(target_path)
+        is_windows = settings.is_windows or (platform.system() == "Windows")
+
+        # Convert WSL drive paths (e.g. /mnt/c/Users/...) to Windows format on native Windows
+        if is_windows:
+            wsl_match = re.match(r"^/mnt/([a-zA-Z])/(.*)", target_str.replace("\\", "/"))
+            if wsl_match:
+                drive = wsl_match.group(1).upper()
+                rest = wsl_match.group(2)
+                target_str = f"{drive}:/{rest}"
+
+        target_str_slash = target_str.replace("\\", "/")
+
+        # Try resolving path directly
+        try:
+            resolved = Path(target_str).resolve()
+        except Exception:
+            resolved = Path(target_str)
+
+        # Check if resolved is ALREADY inside one of allowed_roots
+        is_already_allowed = False
+        if self.allowed_roots:
+            for root in self.allowed_roots:
+                try:
+                    resolved.relative_to(root.resolve())
+                    is_already_allowed = True
+                    break
+                except ValueError:
+                    continue
+
+        if not is_already_allowed:
+            # Catch actual fake placeholder path hallucinations
+            # DO NOT catch real user home directories or valid absolute paths
+            fake_path_pattern = r"(?:^/?sandbox/|^/?path/to/|<workspace_path>/|<workspace>/|<username>/?|your_username/?|/Users/(?:username|your_username)/|/home/(?:username|user)/)"
+
+            if re.search(fake_path_pattern, target_str_slash, re.IGNORECASE):
+                if "desktop" in target_str_slash.lower() or target_str_slash.lower().startswith("/sandbox/") or target_str_slash.lower().startswith("sandbox/"):
+                    desktop = str(settings.desktop_dir.resolve()).replace("\\", "/") + "/"
+                    target_str_slash = re.sub(fake_path_pattern + r"(?:desktop|sandbox)/?", desktop, target_str_slash, flags=re.IGNORECASE)
+                else:
+                    workspace = str(settings.default_workspace_dir.resolve()).replace("\\", "/") + "/"
+                    target_str_slash = re.sub(fake_path_pattern, workspace, target_str_slash, flags=re.IGNORECASE)
+                target_str_slash = target_str_slash.replace("//", "/")
+                target_str = target_str_slash
+                resolved = Path(target_str).resolve()
 
         # --- Unrestricted mode: allow any path ---
         if not self._sandbox_enabled:
@@ -106,8 +132,7 @@ class SandboxEnforcer:
 
         for root in self.allowed_roots:
             try:
-                # relative_to raises ValueError if resolved is not inside root
-                resolved.relative_to(root)
+                resolved.relative_to(root.resolve())
                 return resolved
             except ValueError:
                 continue

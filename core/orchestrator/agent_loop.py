@@ -313,13 +313,18 @@ class AgentExecutionLoop:
 
         # --- Create Directory / Folder: "create folder X" / "create directory X" ---
         folder_match = re.search(
-            r'(?:create|make|build)\s+(?:a\s+)?(?:new\s+)?(?:folder|directory)\s+(?:named\s+|called\s+)?[\'\"]?([a-zA-Z0-9_\-]+)[\'\"]?',
+            r'(?:create|make|build)\s+(?:a\s+)?(?:new\s+)?(?:local\s+)?(?:project\s+)?(?:folder|directory)\s+(?:named\s+|called\s+)?[\'\"]?([a-zA-Z0-9_\-\./\\]+)[\'\"]?',
             cleaned, re.IGNORECASE
         )
         if folder_match:
-            folder_name = folder_match.group(1)
-            desktop_path = str(settings.desktop_dir.resolve()).replace("\\", "/")
-            target_dir = f"{desktop_path}/{folder_name}" if "desktop" in cleaned.lower() else folder_name
+            folder_name = folder_match.group(1).strip()
+            is_absolute = folder_name.startswith("/") or ":" in folder_name or folder_name.startswith("\\")
+            if "desktop" in cleaned.lower():
+                target_dir = str(settings.desktop_dir / folder_name) if not is_absolute else folder_name
+            elif "project" in cleaned.lower() or "workspace" in cleaned.lower() or "local" in cleaned.lower():
+                target_dir = str(settings.default_workspace_dir / folder_name) if not is_absolute else folder_name
+            else:
+                target_dir = folder_name
             return [{"step": 1, "tool": "create_directory", "arguments": {"directory": target_dir}}]
 
         # --- Create / Write File: "write/create a file named X containing Y" ---
@@ -701,17 +706,44 @@ Output ONLY raw JSON. Start with '{{'.
             # --- GUARDRAIL 3: Auto-Fix Path Arguments & Deduplicate Desktop Paths ---
             for key, val in list(args.items()):
                 if isinstance(val, str):
-                    for pattern, replacement in PATH_FIXES:
-                        val = re.sub(pattern, replacement, val)
-                    while "/Desktop/Desktop/" in val:
-                        val = val.replace("/Desktop/Desktop/", "/Desktop/")
+                    is_windows = settings.is_windows or (platform.system() == "Windows")
+                    # Convert WSL drive paths (e.g. /mnt/c/Users/...) to Windows format on native Windows
+                    if is_windows:
+                        wsl_match = re.match(r"^/mnt/([a-zA-Z])/(.*)", val.replace("\\", "/"))
+                        if wsl_match:
+                            drive = wsl_match.group(1).upper()
+                            rest = wsl_match.group(2)
+                            val = f"{drive}:/{rest}"
+
+                    # Only apply fake placeholder replacements if val is NOT already an absolute path inside an allowed root
+                    is_real_path = False
+                    try:
+                        resolved_val = Path(val).resolve()
+                        for root in [settings.default_workspace_dir.resolve(), settings.desktop_dir.resolve()]:
+                            try:
+                                resolved_val.relative_to(root)
+                                is_real_path = True
+                                break
+                            except ValueError:
+                                pass
+                    except Exception:
+                        pass
+
+                    if not is_real_path:
+                        for pattern, replacement in PATH_FIXES:
+                            val = re.sub(pattern, replacement, val)
+                        while "/Desktop/Desktop/" in val:
+                            val = val.replace("/Desktop/Desktop/", "/Desktop/")
                     args[key] = val
 
-            # --- GUARDRAIL 3.5: Auto-resolve relative create_directory paths to Desktop ---
+            # --- GUARDRAIL 3.5: Auto-resolve relative create_directory paths ---
             if tool_name == "create_directory":
                 dir_val = args.get("directory", "")
                 if dir_val and not dir_val.startswith("/") and ":" not in dir_val and not dir_val.startswith("\\"):
-                    args["directory"] = f"{desktop_path}/{dir_val}"
+                    if "desktop" in user_input.lower():
+                        args["directory"] = str(settings.desktop_dir / dir_val)
+                    else:
+                        args["directory"] = str(settings.default_workspace_dir / dir_val)
 
             step["arguments"] = args
 
