@@ -497,8 +497,8 @@ class _Settings:
                     for user_dir in mnt_c_users.iterdir():
                         try:
                             if user_dir.is_dir() and user_dir.name.lower() not in ("public", "all users", "default", "defaultuser0"):
-                                paths_to_check.append(user_dir / "OneDrive" / "Desktop")
                                 paths_to_check.append(user_dir / "Desktop")
+                                paths_to_check.append(user_dir / "OneDrive" / "Desktop")
                         except Exception:
                             continue
                 except Exception:
@@ -506,9 +506,9 @@ class _Settings:
 
         # Then fall back to local home directory paths
         paths_to_check.extend([
+            home / "Desktop",
             home / "OneDrive" / "Desktop",
             home / "onedrive" / "Desktop",
-            home / "Desktop",
         ])
 
         for p in paths_to_check:
