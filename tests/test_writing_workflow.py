@@ -13,6 +13,7 @@ from core.writing.extractor import DataExtractor
 from core.writing.pipeline import WritingPipeline
 from core.orchestrator.agent_loop import AgentExecutionLoop
 from core.state.session_manager import SessionManager
+from core.tools.tool_registry import tool_registry
 
 
 def test_simple_email_writing_performs_zero_research_calls():
@@ -111,20 +112,38 @@ def test_failed_research_retrieval_produces_honest_warning():
 def test_local_file_summary_calls_file_reader_first(tmp_path):
     """
     Test 5: Local file summary calls the file reader before generating the answer.
+    Proves:
+    1. File reader (read_file) is invoked before synthesis.
+    2. Extracted content is supplied to the writer.
+    3. Summary is grounded strictly in mocked file contents (Alpha LLC revenue is $120,000. Sarah manages payroll.).
     """
-    report_file = tmp_path / "report.txt"
-    report_file.write_text("Q1 Revenue reached $100,000 with 15% growth.")
+    report_file = tmp_path / "company_notes.txt"
+    report_file.write_text("Alpha LLC revenue is $120,000. Sarah manages payroll.")
 
     loop = AgentExecutionLoop(use_tools=True)
-    mock_read_result = {"success": True, "result": {"content": "Q1 Revenue reached $100,000 with 15% growth."}}
-    mock_summary_reply = {"role": "assistant", "content": "Executive Summary: Q1 Revenue was $100,000."}
+    mock_read_result = {
+        "success": True,
+        "result": {"content": "Alpha LLC revenue is $120,000. Sarah manages payroll."}
+    }
+    mock_summary_reply = {
+        "role": "assistant",
+        "content": "Executive Summary: Alpha LLC generated $120,000 in revenue, and Sarah manages payroll operations."
+    }
 
-    with patch("core.tools.tool_registry.tool_registry.execute", return_value=mock_read_result) as mock_exec:
+    with patch.object(tool_registry, "execute", return_value=mock_read_result) as mock_exec:
         with patch("core.orchestrator.agent_loop.ollama.chat", return_value=mock_summary_reply):
-            res = loop.run(f"Read {report_file} and give me an executive summary.")
-            assert "Q1 Revenue" in res
+            res = loop.run(f"Read {report_file} and give me a concise executive summary.")
+            
+            # Assert file reader was invoked first
             mock_exec.assert_called_once()
-            assert mock_exec.call_args[0][0] == "read_file"
+            called_tool = mock_exec.call_args[0][0]
+            called_args = mock_exec.call_args[0][1]
+            assert called_tool == "read_file"
+            assert str(report_file) in str(called_args.get("filepath"))
+
+            # Assert output is grounded in returned mocked content
+            assert "$120,000" in res
+            assert "Sarah" in res or "payroll" in res
 
 
 def test_data_extraction_returns_only_supported_fields():
@@ -180,7 +199,7 @@ def test_writing_workflow_does_not_trigger_irrelevant_tools():
     loop = AgentExecutionLoop(use_tools=True)
     user_input = "Write a professional email asking for a payment update."
 
-    with patch("core.tools.tool_registry.tool_registry.execute") as mock_exec:
+    with patch.object(tool_registry, "execute") as mock_exec:
         with patch("core.orchestrator.agent_loop.ollama.chat", return_value={"role": "assistant", "content": "Email content."}):
             res = loop.run(user_input)
             assert "Email content" in res
@@ -196,7 +215,7 @@ def test_previous_filesystem_results_do_not_leak_into_writing_request():
     session = SessionManager(use_tools=True)
 
     # Turn 1: Directory creation
-    with patch("core.tools.tool_registry.tool_registry.execute", return_value={"success": True, "result": {}}):
+    with patch.object(tool_registry, "execute", return_value={"success": True, "result": {}}):
         with patch("core.orchestrator.agent_loop.ollama.chat", return_value={"role": "assistant", "content": "Created directory automation_demo."}):
             res1 = session.chat("Create folder automation_demo")
             assert "automation_demo" in res1
@@ -213,23 +232,51 @@ def test_previous_filesystem_results_do_not_leak_into_writing_request():
 
 def test_web_search_direct_execution():
     """
-    Test 11: Direct tool execution of web_search through tool_registry.
+    Test 11: Deterministic unit test for direct execution of web_search through tool_registry.
+    Mocks the underlying provider (_fetch_ddg_results) so the test does not depend on live internet.
     """
-    from core.tools.tool_registry import tool_registry
+    from core.tools.web_search import WebSearch
 
-    # 1. Success case with results
-    res_success = tool_registry.execute("web_search", {"query": "AI agent frameworks"})
-    assert res_success["success"] is True
-    result_data = res_success["result"]
-    assert "results" in result_data
-    assert len(result_data["results"]) > 0
-    item = result_data["results"][0]
-    assert "title" in item and "url" in item and "snippet" in item
-    assert item["url"].startswith("http")
+    mock_provider_results = [
+        {
+            "title": "Framework Documentation",
+            "url": "https://example.com/framework",
+            "snippet": "Local agent framework documentation"
+        }
+    ]
 
-    # 2. Empty query failure case
-    res_fail = tool_registry.execute("web_search", {"query": ""})
-    assert res_fail["success"] is False or (isinstance(res_fail.get("result"), dict) and res_fail["result"].get("success") is False)
+    with patch.object(WebSearch, "_fetch_ddg_results", return_value=mock_provider_results) as mock_fetch:
+        res = tool_registry.execute("web_search", {"query": "AI agent frameworks"})
+        mock_fetch.assert_called()
+
+        assert res["success"] is True
+        result_data = res["result"]
+        assert result_data["success"] is True
+        assert len(result_data["results"]) == 1
+        item = result_data["results"][0]
+        assert item["title"] == "Framework Documentation"
+        assert item["url"] == "https://example.com/framework"
+        assert item["snippet"] == "Local agent framework documentation"
+
+
+def test_web_search_provider_failure():
+    """
+    Test 11b: Deterministic test for provider failure / empty search results.
+    Verifies that when search provider is unavailable or returns 0 results,
+    Jarvis outputs a structured failure state with a warning and NEVER manufactures fake results.
+    """
+    from core.tools.web_search import WebSearch
+
+    with patch.object(WebSearch, "_fetch_ddg_results", return_value=[]) as mock_fetch:
+        res = tool_registry.execute("web_search", {"query": "Nonexistent secret query"})
+        mock_fetch.assert_called()
+
+        assert res["success"] is True  # Tool execution call succeeded
+        result_data = res["result"]
+        assert result_data["success"] is False
+        assert result_data["results"] == []
+        assert "warning" in result_data and result_data["warning"] is not None
+        assert "Could not retrieve online sources" in result_data["warning"]
 
 
 def test_research_request_performs_zero_file_writes():
