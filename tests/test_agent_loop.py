@@ -229,7 +229,8 @@ def test_agent_loop_tool_call_leakage_recovery():
     with patch("core.orchestrator.agent_loop.ollama.chat", side_effect=[mock_empty_plan, mock_chat_res]):
         with patch("core.tools.tool_registry.tool_registry.execute", return_value={"success": True, "result": {}}) as mock_exec:
             res = loop.run("Create agents/test_leak.json containing role CEO")
-            assert "Created file: agents/test_leak.json" in res
+            assert "Successfully executed 'write_file'" in res
+            assert "agents/test_leak.json" in res
             mock_exec.assert_called_once_with("write_file", {"filepath": "agents/test_leak.json", "content": '{"role": "CEO"}'})
 
 
@@ -303,4 +304,22 @@ def test_agent_loop_sanitizer_auto_remap_agent_builder_local_folder():
     assert len(sanitized) == 1
     assert sanitized[0]["tool"] == "create_directory"
     assert "hey" in sanitized[0]["arguments"]["directory"]
+
+
+def test_agent_loop_tool_call_leakage_recovery_directory():
+    loop = AgentExecutionLoop()
+    mock_chat_res = {
+        "role": "assistant",
+        "content": 'Jarvis: {"name": "create_directory", "parameters": {"directory": "/Users/m2air/Desktop/test1122"}}'
+    }
+    mock_empty_plan = {
+        "role": "assistant",
+        "content": ""
+    }
+
+    with patch("core.orchestrator.agent_loop.ollama.chat", side_effect=[mock_empty_plan, mock_chat_res]):
+        with patch("core.tools.tool_registry.tool_registry.execute", return_value={"success": True, "result": {}}) as mock_exec:
+            res = loop.run("create folder test1122")
+            assert "Successfully executed 'create_directory'" in res
+            mock_exec.assert_called_once_with("create_directory", {"directory": "/Users/m2air/Desktop/test1122"})
 

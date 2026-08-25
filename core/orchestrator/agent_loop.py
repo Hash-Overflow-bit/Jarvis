@@ -451,6 +451,37 @@ Output ONLY raw JSON. Start with '{{'.
                         "tool": data["name"],
                         "arguments": data.get("parameters", data.get("arguments", {}))
                     }]
+
+                # Dict with structured keys: {"folder": "...", "script": "...", "report": "..."}
+                if any(k in data for k in ("folder", "directory", "script", "report", "summary")):
+                    folder_val = data.get("folder") or data.get("directory") or "test1122"
+                    folder_path = folder_val if (folder_val.startswith("/") or ":" in folder_val) else f"{desktop_path}/{folder_val}"
+                    
+                    p_steps = [{
+                        "step": 1,
+                        "tool": "create_directory",
+                        "arguments": {"directory": folder_path}
+                    }]
+                    if "script" in data and isinstance(data["script"], str):
+                        p_steps.append({
+                            "step": 2,
+                            "tool": "write_file",
+                            "arguments": {
+                                "filepath": f"{folder_path}/script.py",
+                                "content": data["script"]
+                            }
+                        })
+                    report_content = data.get("report") or data.get("summary") or data.get("script")
+                    if report_content and isinstance(report_content, str):
+                        p_steps.append({
+                            "step": len(p_steps) + 1,
+                            "tool": "write_file",
+                            "arguments": {
+                                "filepath": f"{folder_path}/summary.md",
+                                "content": report_content
+                            }
+                        })
+                    return p_steps
                 
                 # OpenAI-style: {"tool_calls": [...]}
                 if "tool_calls" in data:
@@ -764,27 +795,37 @@ Executed Steps & Results:
             raw_text = resp.get("content", "").strip()
 
             # Safety check: Catch tool-call leakage where LLM outputs raw JSON tool call text instead of running it!
-            if ("\"name\":" in raw_text or "\"tool\":" in raw_text) and ("\"parameters\":" in raw_text or "\"filepath\":" in raw_text or "\"arguments\":" in raw_text):
+            if ("\"name\":" in raw_text or "\"tool\":" in raw_text) and ("\"parameters\":" in raw_text or "\"arguments\":" in raw_text or "\"directory\":" in raw_text or "\"filepath\":" in raw_text):
                 import re
                 name_m = re.search(r'"(?:name|tool)"\s*:\s*"([^"]+)"', raw_text)
-                fp_m = re.search(r'"filepath"\s*:\s*"([^"]+)"', raw_text)
                 if name_m:
                     t_name = name_m.group(1)
-                    t_fp = fp_m.group(1) if fp_m else ""
-                    c_m = re.search(r'"content"\s*:\s*("(?:[^"\\]|\\.)*"|\{[\s\S]*\}|\[[\s\S]*\])', raw_text)
-                    t_content = ""
-                    if c_m:
-                        raw_c = c_m.group(1)
-                        try:
-                            t_content = json.loads(raw_c) if raw_c.startswith('"') else raw_c
-                        except Exception:
-                            t_content = raw_c.strip('"')
-                    
                     if t_name in tool_registry._tools:
-                        exec_args = {"filepath": t_fp, "content": t_content} if t_fp else {}
-                        exec_res = tool_registry.execute(t_name, exec_args)
-                        if exec_res.get("success"):
-                            return prose_hook.filter_response(f"Created file: {t_fp}")
+                        exec_args = {}
+                        key_match = re.search(r'"(?:parameters|arguments)"\s*:\s*', raw_text)
+                        if key_match:
+                            param_substr = raw_text[key_match.end():].strip()
+                            end_idx = param_substr.rfind("}")
+                            if end_idx != -1:
+                                param_substr = param_substr[:end_idx].strip()
+                                try:
+                                    exec_args = json.loads(param_substr, strict=False)
+                                except Exception:
+                                    pass
+                        
+                        if not exec_args:
+                            dir_m = re.search(r'"directory"\s*:\s*"([^"]+)"', raw_text)
+                            fp_m = re.search(r'"filepath"\s*:\s*"([^"]+)"', raw_text)
+                            if dir_m:
+                                exec_args["directory"] = dir_m.group(1)
+                            if fp_m:
+                                exec_args["filepath"] = fp_m.group(1)
+
+                        if exec_args:
+                            exec_res = tool_registry.execute(t_name, exec_args)
+                            if exec_res.get("success"):
+                                target_path = exec_args.get("directory") or exec_args.get("filepath") or t_name
+                                return prose_hook.filter_response(f"Successfully executed '{t_name}' ({target_path}).")
 
             return prose_hook.filter_response(raw_text)
         except Exception as e:
