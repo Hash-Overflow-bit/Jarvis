@@ -317,7 +317,7 @@ CRITICAL PATH & TOOL INSTRUCTIONS:
 8. DO NOT invoke 'rebuild_knowledge_graph' when answering questions. Memory facts are provided automatically.
 9. For 'poetry_add', 'package_name' is REQUIRED and MUST be a non-empty package name (e.g. 'requests', 'fastapi'). NEVER pass an empty package_name string or omit it.
 10. DO NOT run 'poetry_add' or 'poetry_install' on a directory unless 'pyproject.toml' or 'requirements.txt' exists in that folder.
-
+11. CRITICAL MULTI-TURN RULE: If the user request requires reading or scanning a file (using read_file, file_scanner) AND performing an action based on its contents (such as writing a report, calculating totals, or modifying another file), you MUST ONLY plan the read/scan step in this turn. Do NOT generate the write or modification step in the same plan, as you cannot statically predict the file contents. Return a plan containing ONLY the read_file/file_scanner step. The subsequent steps will be handled in the next turn once the file contents are loaded into memory.
 Each step in the plan must have:
 - "step": integer index (starting from 1)
 - "tool": name of the tool to execute
