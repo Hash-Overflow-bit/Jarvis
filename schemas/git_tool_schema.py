@@ -12,12 +12,16 @@ from pydantic import BaseModel, Field
 class GitCloneInput(BaseModel):
     url: str = Field(
         ...,
-        description="The HTTPS URL of the Git repository to clone (e.g. 'https://github.com/tiangolo/fastapi')."
+        description="The HTTPS URL of the Git repository to clone (e.g. 'https://github.com/tiangolo/fastapi').",
+        alias="url"
     )
     target_dir_name: Optional[str] = Field(
         None,
         description="Optional folder name inside the workspace. If omitted, uses the repository name."
     )
+
+    class Config:
+        populate_by_name = True  # Accept both 'url' and alias names
 
 
 class GitCloneOutput(BaseModel):

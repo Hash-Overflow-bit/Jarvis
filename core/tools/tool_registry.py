@@ -62,6 +62,37 @@ class ToolRegistry:
                 continue
             cleaned_args[k] = v
 
+        # 1.1 Argument normalization — map common LLM naming variants to schema fields
+        # LLMs frequently output slightly different parameter names than the schema expects.
+        # This mapping catches the most common mismatches to prevent validation errors.
+        _ARG_ALIASES = {
+            "repo_url": "url",
+            "repository_url": "url",
+            "clone_url": "url",
+            "filepath": "file_path",
+            "file": "file_path",
+            "path": "file_path",
+            "dir": "directory",
+            "dir_path": "directory",
+            "folder": "directory",
+            "folder_path": "directory",
+            "msg": "commit_message",
+            "message": "commit_message",
+            "pkg": "package_name",
+            "package": "package_name",
+        }
+        # Only remap if the schema doesn't already have the key but does have the alias target
+        schema_fields = set(tool.input_schema.model_fields.keys())
+        normalized_args = {}
+        for k, v in cleaned_args.items():
+            if k not in schema_fields and k in _ARG_ALIASES:
+                target = _ARG_ALIASES[k]
+                if target in schema_fields and target not in cleaned_args:
+                    normalized_args[target] = v
+                    continue
+            normalized_args[k] = v
+        cleaned_args = normalized_args
+
         try:
             input_data = tool.input_schema(**cleaned_args)
         except ValidationError as e:
