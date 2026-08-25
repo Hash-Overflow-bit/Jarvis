@@ -309,7 +309,7 @@ def test_agent_loop_tool_call_leakage_recovery_directory():
 
     with patch("core.orchestrator.agent_loop.ollama.chat", side_effect=[mock_empty_plan, mock_chat_res]):
         with patch("core.tools.tool_registry.tool_registry.execute", return_value={"success": True, "result": {}}) as mock_exec:
-            res = loop.run("create folder test1122")
+            res = loop.run("Please set up directory /Users/m2air/Desktop/test1122")
             assert "Successfully executed 'create_directory'" in res
             mock_exec.assert_called_once_with("create_directory", {"directory": "/Users/m2air/Desktop/test1122"})
 

@@ -33,9 +33,17 @@ class AgentExecutionLoop:
         self.history = history if history is not None else []
 
     def _get_tool_schemas_str(self) -> str:
-        """Returns JSON representations of all registered tools."""
-        schemas = tool_registry.get_all_schemas()
-        return json.dumps(schemas, indent=2)
+        """Returns clean, human-readable tool definitions mapping user intents to exact tool names."""
+        tools_summary = [
+            "- create_directory: Use when user wants to create a new folder or directory. Arguments: {'directory': '<absolute_path>'}",
+            "- write_file: Use when user wants to create a new file or write/modify file contents. Arguments: {'filepath': '<absolute_path>', 'content': '<text>'}",
+            "- read_file: Use when user wants to read an existing file's text. Arguments: {'filepath': '<absolute_path>'}",
+            "- list_dir: Use when user wants to view or list files in a folder. Arguments: {'directory': '<absolute_path>'}",
+            "- delegate_task: Use when assigning a task to a sub-agent. Arguments: {'agent_name': '<name>', 'task_description': '<desc>'}",
+            "- agent_builder: Use when building a new sub-agent. Arguments: {'name': '<Name>', 'role': '...', 'goal': '...', 'backstory': '...'}",
+            "- skyvern_tool: ONLY use when user explicitly asks to navigate a web portal or URL. Arguments: {'url': '<url>', 'navigation_goal': '<goal>'}"
+        ]
+        return "\n".join(tools_summary)
 
     def run(self, user_input: str, mode: str = "text") -> str:
         """
@@ -275,6 +283,29 @@ class AgentExecutionLoop:
         """
         import re
         cleaned = user_input.strip()
+        # --- Create Directory / Folder: "create folder X" / "create directory X" ---
+        folder_match = re.search(
+            r'(?:create|make|build)\s+(?:a\s+)?(?:new\s+)?(?:folder|directory)\s+(?:named\s+|called\s+)?[\'\"]?([a-zA-Z0-9_\-]+)[\'\"]?',
+            cleaned, re.IGNORECASE
+        )
+        if folder_match:
+            folder_name = folder_match.group(1)
+            desktop_path = str(settings.desktop_dir.resolve()).replace("\\", "/")
+            target_dir = f"{desktop_path}/{folder_name}" if "desktop" in cleaned.lower() else folder_name
+            return [{"step": 1, "tool": "create_directory", "arguments": {"directory": target_dir}}]
+
+        # --- Create / Write File: "write/create a file named X containing Y" ---
+        write_match = re.search(
+            r'(?:create|write|save)\s+(?:a\s+)?(?:new\s+)?file\s+(?:named\s+|called\s+)?[\'\"]?([a-zA-Z0-9_\-]+\.[a-zA-Z0-9]+)[\'\"]?',
+            cleaned, re.IGNORECASE
+        )
+        if write_match:
+            fn = write_match.group(1)
+            desktop_path = str(settings.desktop_dir.resolve()).replace("\\", "/")
+            c_m = re.search(r'containing\s+(?:exactly|valid JSON:?)?\s*(.*)$', cleaned, re.IGNORECASE)
+            content_val = c_m.group(1).strip() if c_m else ""
+            target_fp = f"{desktop_path}/{fn}" if "desktop" in cleaned.lower() else fn
+            return [{"step": 1, "tool": "write_file", "arguments": {"filepath": target_fp, "content": content_val}}]
 
         # --- Git Clone: "clone ... <URL>" ---
         clone_match = re.search(
