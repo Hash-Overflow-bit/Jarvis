@@ -212,3 +212,23 @@ def test_agent_loop_sanitizer_reject_invalid_tool():
     sanitized = loop._sanitize_plan(raw_plan)
     assert len(sanitized) == 0
 
+
+def test_agent_loop_tool_call_leakage_recovery():
+    loop = AgentExecutionLoop()
+    # Mock LLM returning a raw tool call string in fallback mode
+    mock_chat_res = {
+        "role": "assistant",
+        "content": 'Jarvis: {"name": "write_file", "parameters": {"filepath": "agents/test_leak.json", "content": "{\\"role\\": \\"CEO\\"}"}}'
+    }
+
+    mock_empty_plan = {
+        "role": "assistant",
+        "content": ""
+    }
+
+    with patch("core.orchestrator.agent_loop.ollama.chat", side_effect=[mock_empty_plan, mock_chat_res]):
+        with patch("core.tools.tool_registry.tool_registry.execute", return_value={"success": True, "result": {}}) as mock_exec:
+            res = loop.run("Create agents/test_leak.json containing role CEO")
+            assert "Created file: agents/test_leak.json" in res
+            mock_exec.assert_called_once_with("write_file", {"filepath": "agents/test_leak.json", "content": '{"role": "CEO"}'})
+

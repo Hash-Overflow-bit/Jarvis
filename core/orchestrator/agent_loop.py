@@ -381,8 +381,37 @@ Output ONLY raw JSON. Start with '{{'.
             if not content:
                 return []
 
-            data = json.loads(content, strict=False)
-            
+            data = None
+            try:
+                data = json.loads(content, strict=False)
+            except Exception:
+                import re
+                json_match = re.search(r"(\{[\s\S]*\})", content)
+                if json_match:
+                    try:
+                        data = json.loads(json_match.group(1), strict=False)
+                    except Exception:
+                        pass
+                if not data:
+                    name_match = re.search(r'"(?:name|tool)"\s*:\s*"([^"]+)"', content)
+                    fp_match = re.search(r'"filepath"\s*:\s*"([^"]+)"', content)
+                    if name_match:
+                        tool_name = name_match.group(1)
+                        filepath = fp_match.group(1) if fp_match else ""
+                        c_match = re.search(r'"content"\s*:\s*("(?:[^"\\]|\\.)*"|\{[\s\S]*\}|\[[\s\S]*\])', content)
+                        c_val = ""
+                        if c_match:
+                            raw_c = c_match.group(1)
+                            try:
+                                c_val = json.loads(raw_c) if raw_c.startswith('"') else raw_c
+                            except Exception:
+                                c_val = raw_c.strip('"')
+                        return [{
+                            "step": 1,
+                            "tool": tool_name,
+                            "arguments": {"filepath": filepath, "content": c_val}
+                        }]
+
             # If the LLM returned a raw list instead of a dict
             if isinstance(data, list):
                 plan = []
@@ -677,7 +706,32 @@ Executed Steps & Results:
             )
             if not isinstance(resp, dict):
                 raise OllamaError("Ollama chat returned an invalid response type.")
-            return prose_hook.filter_response(resp.get("content", "").strip())
+            raw_text = resp.get("content", "").strip()
+
+            # Safety check: Catch tool-call leakage where LLM outputs raw JSON tool call text instead of running it!
+            if ("\"name\":" in raw_text or "\"tool\":" in raw_text) and ("\"parameters\":" in raw_text or "\"filepath\":" in raw_text or "\"arguments\":" in raw_text):
+                import re
+                name_m = re.search(r'"(?:name|tool)"\s*:\s*"([^"]+)"', raw_text)
+                fp_m = re.search(r'"filepath"\s*:\s*"([^"]+)"', raw_text)
+                if name_m:
+                    t_name = name_m.group(1)
+                    t_fp = fp_m.group(1) if fp_m else ""
+                    c_m = re.search(r'"content"\s*:\s*("(?:[^"\\]|\\.)*"|\{[\s\S]*\}|\[[\s\S]*\])', raw_text)
+                    t_content = ""
+                    if c_m:
+                        raw_c = c_m.group(1)
+                        try:
+                            t_content = json.loads(raw_c) if raw_c.startswith('"') else raw_c
+                        except Exception:
+                            t_content = raw_c.strip('"')
+                    
+                    if t_name in tool_registry._tools:
+                        exec_args = {"filepath": t_fp, "content": t_content} if t_fp else {}
+                        exec_res = tool_registry.execute(t_name, exec_args)
+                        if exec_res.get("success"):
+                            return prose_hook.filter_response(f"Created file: {t_fp}")
+
+            return prose_hook.filter_response(raw_text)
         except Exception as e:
             raise OllamaError(f"Ollama chat failed: {e}")
 
