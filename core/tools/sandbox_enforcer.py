@@ -109,12 +109,8 @@ class SandboxEnforcer:
             fake_path_pattern = r"(?:^/?sandbox/|^/?path/to/|<workspace_path>/|<workspace>/|<username>/?|your_username/?|/Users/(?:username|your_username)/|/home/(?:username|user)/)"
 
             if re.search(fake_path_pattern, target_str_slash, re.IGNORECASE):
-                if "desktop" in target_str_slash.lower() or target_str_slash.lower().startswith("/sandbox/") or target_str_slash.lower().startswith("sandbox/"):
-                    desktop = str(settings.desktop_dir.resolve()).replace("\\", "/") + "/"
-                    target_str_slash = re.sub(fake_path_pattern + r"(?:desktop|sandbox)/?", desktop, target_str_slash, flags=re.IGNORECASE)
-                else:
-                    workspace = str(settings.default_workspace_dir.resolve()).replace("\\", "/") + "/"
-                    target_str_slash = re.sub(fake_path_pattern, workspace, target_str_slash, flags=re.IGNORECASE)
+                desktop = str(settings.desktop_dir.resolve()).replace("\\", "/") + "/"
+                target_str_slash = re.sub(fake_path_pattern + r"(?:desktop|sandbox|workspace)?/?", desktop, target_str_slash, flags=re.IGNORECASE)
                 target_str_slash = target_str_slash.replace("//", "/")
                 target_str = target_str_slash
                 resolved = Path(target_str).resolve()

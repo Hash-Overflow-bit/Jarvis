@@ -306,10 +306,9 @@ class AgentExecutionLoop:
         )
         if delete_match:
             target = delete_match.group(1).strip()
-            desktop_path = str(settings.desktop_dir.resolve()).replace("\\", "/")
-            if "desktop" in cleaned.lower() and not target.startswith("/"):
-                target = f"{desktop_path}/{target}"
-            return [{"step": 1, "tool": "delete_directory", "arguments": {"directory": target}}]
+            is_absolute = target.startswith("/") or ":" in target or target.startswith("\\")
+            target_path = str(settings.desktop_dir / target) if not is_absolute else target
+            return [{"step": 1, "tool": "delete_directory", "arguments": {"directory": target_path}}]
 
         # --- Create Directory / Folder: "create folder X" / "create directory X" ---
         folder_match = re.search(
@@ -335,25 +334,20 @@ class AgentExecutionLoop:
 
             if folder_name.lower() not in ("named", "called", "folder", "directory"):
                 is_absolute = folder_name.startswith("/") or ":" in folder_name or folder_name.startswith("\\")
-                if "desktop" in cleaned.lower():
-                    target_dir = str(settings.desktop_dir / folder_name) if not is_absolute else folder_name
-                elif "project" in cleaned.lower() or "workspace" in cleaned.lower() or "local" in cleaned.lower():
-                    target_dir = str(settings.default_workspace_dir / folder_name) if not is_absolute else folder_name
-                else:
-                    target_dir = folder_name
+                target_dir = str(settings.desktop_dir / folder_name) if not is_absolute else folder_name
                 return [{"step": 1, "tool": "create_directory", "arguments": {"directory": target_dir}}]
 
         # --- Create / Write File: "write/create a file named X containing Y" ---
         write_match = re.search(
-            r'(?:create|write|save)\s+(?:a\s+)?(?:new\s+)?file\s+(?:named\s+|called\s+)?[\'\"]?([a-zA-Z0-9_\-]+\.[a-zA-Z0-9]+)[\'\"]?',
+            r'(?:create|write|save)\s+(?:a\s+)?(?:new\s+)?(?:file\s+)?(?:named\s+|called\s+)?[\'\"]?([a-zA-Z0-9_\-]+\.[a-zA-Z0-9]+)[\'\"]?',
             cleaned, re.IGNORECASE
         )
         if write_match:
-            fn = write_match.group(1)
-            desktop_path = str(settings.desktop_dir.resolve()).replace("\\", "/")
+            fn = write_match.group(1).strip()
             c_m = re.search(r'containing\s+(?:exactly|valid JSON:?)?\s*(.*)$', cleaned, re.IGNORECASE)
             content_val = c_m.group(1).strip() if c_m else ""
-            target_fp = f"{desktop_path}/{fn}" if "desktop" in cleaned.lower() else fn
+            is_absolute = fn.startswith("/") or ":" in fn or fn.startswith("\\")
+            target_fp = str(settings.desktop_dir / fn) if not is_absolute else fn
             return [{"step": 1, "tool": "write_file", "arguments": {"filepath": target_fp, "content": content_val}}]
 
         # --- Git Clone: "clone ... <URL>" ---
@@ -653,8 +647,9 @@ Output ONLY raw JSON. Start with '{{'.
             (r'(?i)/sandbox/?', workspace_path.rstrip('/') + '/'),
             (r'(?i)/path/to/knowledge/?', workspace_path.rstrip('/') + '/knowledge/'),
             (r'(?i)/path/to/', desktop_path.rstrip('/') + '/'),
-            (r'(?i)/home/(?:user|username|<username>)/project/?', workspace_path.rstrip('/') + '/'),
+            (r'(?i)/home/(?:user|username|<username>)/project/?', desktop_path.rstrip('/') + '/'),
             (r'(?i)/home/(?:user|username|<username>)/desktop/?', desktop_path.rstrip('/') + '/'),
+            (r'(?i)/home/(?:user|username|<username>)/workspace/?', workspace_path.rstrip('/') + '/'),
             (r'(?i)/home/(?:user|username|<username>)/?', desktop_path.rstrip('/') + '/'),
         ]
 
@@ -752,14 +747,13 @@ Output ONLY raw JSON. Start with '{{'.
                             val = val.replace("/Desktop/Desktop/", "/Desktop/")
                     args[key] = val
 
-            # --- GUARDRAIL 3.5: Auto-resolve relative create_directory paths ---
-            if tool_name == "create_directory":
-                dir_val = args.get("directory", "")
-                if dir_val and not dir_val.startswith("/") and ":" not in dir_val and not dir_val.startswith("\\"):
-                    if "desktop" in user_input.lower():
-                        args["directory"] = str(settings.desktop_dir / dir_val)
-                    else:
-                        args["directory"] = str(settings.default_workspace_dir / dir_val)
+            # --- GUARDRAIL 3.5: Auto-resolve relative file and directory paths to Desktop ---
+            if tool_name in ("create_directory", "write_file", "file_cleanup", "delete_directory", "read_file", "list_dir"):
+                path_key = "directory" if tool_name in ("create_directory", "delete_directory", "list_dir") else "filepath"
+                if path_key in args:
+                    val = args.get(path_key, "")
+                    if isinstance(val, str) and val and not val.startswith("/") and ":" not in val and not val.startswith("\\"):
+                        args[path_key] = str(settings.desktop_dir / val)
 
             step["arguments"] = args
 

@@ -425,3 +425,56 @@ def test_agent_loop_synthesis_no_unexecuted_file_claims():
         assert "automation_summary" not in res_lower
         assert "automation_demo" in res_lower
 
+
+def test_agent_loop_desktop_as_universal_default(tmp_path):
+    """
+    Requirements 1-8:
+    Verify Desktop is the universal default destination for user-created local files and folders.
+    1. Input: 'Create a folder named automation_demo' -> <settings.desktop_dir>/automation_demo
+    2. Input: 'Create automation_demo and write report.md inside it' -> <settings.desktop_dir>/automation_demo/report.md
+    3. Input: 'Create test.txt' -> <settings.desktop_dir>/test.txt
+    4. Replanning keeps the exact same canonical Desktop path.
+    """
+    loop = AgentExecutionLoop()
+    desktop_dir = tmp_path / "Desktop"
+    desktop_dir.mkdir(parents=True, exist_ok=True)
+
+    with patch.object(type(settings), "desktop_dir", new_callable=PropertyMock, return_value=desktop_dir):
+        # Case 1: Folder creation
+        route1 = loop._direct_route("Create a folder named automation_demo")
+        assert route1 is not None
+        expected_dir = str(desktop_dir / "automation_demo")
+        assert route1[0]["arguments"]["directory"] == expected_dir
+
+        # Case 2: Multi-step plan with file inside folder
+        raw_plan = [
+            {"step": 1, "tool": "create_directory", "arguments": {"directory": "automation_demo"}},
+            {"step": 2, "tool": "write_file", "arguments": {"filepath": "automation_demo/report.md", "content": "Hello"}}
+        ]
+        sanitized2 = loop._sanitize_plan(raw_plan, "Create automation_demo and write report.md inside it")
+        assert len(sanitized2) == 2
+        assert sanitized2[0]["arguments"]["directory"] == str(desktop_dir / "automation_demo")
+        assert sanitized2[1]["arguments"]["filepath"] == str(desktop_dir / "automation_demo" / "report.md")
+
+        # Case 3: Simple file creation
+        route3 = loop._direct_route("Create test.txt")
+        assert route3 is not None
+        assert route3[0]["arguments"]["filepath"] == str(desktop_dir / "test.txt")
+
+        # Case 4: Replanning / reflection preserves Desktop root
+        failed_step = {"step": 2, "tool": "write_file", "arguments": {"filepath": "automation_demo/report.md"}}
+        replan_raw = [
+            {"step": 1, "tool": "write_file", "arguments": {"filepath": "automation_demo/report.md", "content": "Retry content"}}
+        ]
+        mock_replan_res = {"role": "assistant", "content": json.dumps({"plan": replan_raw})}
+        with patch("core.orchestrator.agent_loop.ollama.chat", return_value=mock_replan_res):
+            revised_plan = loop._reflect_and_replan(
+                "Create automation_demo and write report.md inside it",
+                failed_step,
+                "Permission denied",
+                [sanitized2[0]]
+            )
+            sanitized_replan = loop._sanitize_plan(revised_plan, "Create automation_demo and write report.md inside it")
+            assert len(sanitized_replan) == 1
+            assert sanitized_replan[0]["arguments"]["filepath"] == str(desktop_dir / "automation_demo" / "report.md")
+
