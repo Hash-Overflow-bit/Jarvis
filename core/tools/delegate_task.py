@@ -66,9 +66,19 @@ class DelegateTask(BaseTool[DelegateTaskInput, DelegateTaskOutput]):
                 error=f"Sub-agent '{input_data.agent_name}' is corrupted or missing its CrewAI instance."
             )
 
+        # Build the task description with system environment context
+        from core.config import settings
+        env_context = (
+            f"\n\n[SYSTEM ENVIRONMENT CONTEXT]:\n"
+            f"- OS Desktop Directory: '{settings.desktop_dir}'\n"
+            f"- Default Workspace Directory: '{settings.default_workspace_dir}'\n"
+            f"Note: When writing or saving output files requested for Desktop, write them directly to the OS Desktop Directory absolute path above."
+        )
+        full_task_desc = input_data.task_description + env_context
+
         # Build the task and crew
         task = Task(
-            description=input_data.task_description,
+            description=full_task_desc,
             expected_output=input_data.expected_output,
             agent=agent_instance
         )

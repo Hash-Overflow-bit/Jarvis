@@ -441,43 +441,99 @@ Output ONLY raw JSON. Start with '{{'.
 
     def _sanitize_plan(self, plan: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Strips steps that contain placeholder/hallucinated paths before execution.
-        This is a safety net — even if the LLM outputs bad paths, they never reach the tool.
-        If a path hallucination resembles a known directory (e.g. /path/to/Desktop), 
-        it attempts to map it to the actual path before rejecting.
+        Code-level Guardrail for Plan Sanitization & Auto-Correction:
+        1. Auto-remaps hallucinated agent tools (e.g. tool='LedgerBookkeeper') to tool='delegate_task'.
+        2. Rejects hallucinated tool names that do not exist in the tool registry.
+        3. Auto-fixes placeholder paths (/path/to/Desktop -> actual Desktop path) instead of blindly rejecting steps.
+        4. Strips steps containing un-fixable placeholder path patterns.
         """
         import re
+        from core.tools.tool_registry import tool_registry
+        from core.orchestrator.agent_registry import agent_registry
+
         desktop_path = str(settings.desktop_dir).replace("\\", "/")
         workspace_path = str(settings.default_workspace_dir).replace("\\", "/")
 
-        # Auto-fix common LLM hallucinated path roots
+        # Known registered tools in Jarvis
+        registered_tool_names = set(tool_registry._tools.keys())
+        valid_builtin_tools = {"delegate_task", "agent_builder"}
+        valid_tools = registered_tool_names.union(valid_builtin_tools)
+
+        # Get known dynamic sub-agents (e.g. LedgerBookkeeper, CaliforniaCPA)
+        registered_agents = set()
+        for a in agent_registry.list_all():
+            if isinstance(a, dict) and "name" in a:
+                registered_agents.add(a["name"].lower())
+
+        # Path replacement rules for auto-fixing hallucinated path strings
         PATH_FIXES = [
             (r'(?i)/path/to/desktop/?', desktop_path.rstrip('/') + '/'),
             (r'(?i)/path/to/workspace/?', workspace_path.rstrip('/') + '/'),
-            (r'(?i)/sandbox/?', workspace_path.rstrip('/') + '/')
+            (r'(?i)/sandbox/?', workspace_path.rstrip('/') + '/'),
+            (r'(?i)/path/to/knowledge/?', workspace_path.rstrip('/') + '/knowledge/'),
+            (r'(?i)/path/to/', desktop_path.rstrip('/') + '/'),
+            (r'(?i)/home/(?:user|username|<username>)/project/?', workspace_path.rstrip('/') + '/'),
+            (r'(?i)/home/(?:user|username|<username>)/desktop/?', desktop_path.rstrip('/') + '/'),
+            (r'(?i)/home/(?:user|username|<username>)/?', desktop_path.rstrip('/') + '/'),
         ]
 
         PLACEHOLDER_PATTERNS = [
-            r'/path/to/',
             r'/home/username/',
             r'your_username',
             r'<username>',
             r'/tmp/',
         ]
-        
+
         sanitized = []
         for step in plan:
+            if not isinstance(step, dict):
+                continue
+
+            tool_name = step.get("tool")
+            if not isinstance(tool_name, str) or not tool_name:
+                continue
+
             args = step.get("arguments", {})
-            
-            # Apply auto-fixes to string arguments
-            for key, val in args.items():
+            if not isinstance(args, dict):
+                args = {}
+
+            # --- GUARDRAIL 1: Auto-remap Sub-Agent Invocation ---
+            # If the LLM outputted an agent name (e.g. "LedgerBookkeeper", "CaliforniaCPA") as the tool,
+            # auto-map it to `delegate_task`!
+            is_agent_name = (
+                tool_name.lower() in registered_agents or 
+                tool_name.endswith("Agent") or 
+                "cpa" in tool_name.lower() or 
+                "bookkeeper" in tool_name.lower()
+            )
+            if is_agent_name and tool_name not in valid_tools:
+                print(f"[🛡️ Auto-Remap] Auto-mapping hallucinated tool '{tool_name}' to 'delegate_task'.")
+                step["tool"] = "delegate_task"
+                task_desc = args.get("task_description") or args.get("task") or args.get("description") or f"Execute task assigned to {tool_name}"
+                exp_out = args.get("expected_output") or "Task completion report"
+                step["arguments"] = {
+                    "agent_name": tool_name,
+                    "task_description": task_desc,
+                    "expected_output": exp_out
+                }
+                args = step["arguments"]
+                tool_name = "delegate_task"
+
+            # --- GUARDRAIL 2: Reject Invalid Unregistered Tools ---
+            if tool_name not in valid_tools:
+                print(f"[🚫 Sanitizer] Rejected Step {step.get('step')} — tool '{tool_name}' is not in the registry.")
+                continue
+
+            # --- GUARDRAIL 3: Auto-Fix Path Arguments ---
+            for key, val in list(args.items()):
                 if isinstance(val, str):
                     for pattern, replacement in PATH_FIXES:
                         val = re.sub(pattern, replacement, val)
                     args[key] = val
-                    
+
             step["arguments"] = args
-            
+
+            # --- GUARDRAIL 4: Check for Un-fixable Placeholders ---
             args_str = json.dumps(args)
             is_bad = False
             for pattern in PLACEHOLDER_PATTERNS:
@@ -487,6 +543,7 @@ Output ONLY raw JSON. Start with '{{'.
                     break
             if not is_bad:
                 sanitized.append(step)
+
         return sanitized
 
     def _reflect_and_replan(

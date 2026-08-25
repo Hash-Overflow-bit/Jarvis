@@ -182,3 +182,33 @@ def test_agent_loop_execution_with_reflection():
             res = loop.run("Save hello to file")
             assert "written successfully" in res
             assert mock_exec.call_count == 2
+
+
+def test_agent_loop_sanitizer_auto_remap_subagent():
+    loop = AgentExecutionLoop()
+    raw_plan = [
+        {
+            "step": 1,
+            "tool": "LedgerBookkeeper",
+            "arguments": {"task": "Scan transactions"}
+        }
+    ]
+    sanitized = loop._sanitize_plan(raw_plan)
+    assert len(sanitized) == 1
+    assert sanitized[0]["tool"] == "delegate_task"
+    assert sanitized[0]["arguments"]["agent_name"] == "LedgerBookkeeper"
+    assert sanitized[0]["arguments"]["task_description"] == "Scan transactions"
+
+
+def test_agent_loop_sanitizer_reject_invalid_tool():
+    loop = AgentExecutionLoop()
+    raw_plan = [
+        {
+            "step": 1,
+            "tool": "csv_parser",
+            "arguments": {}
+        }
+    ]
+    sanitized = loop._sanitize_plan(raw_plan)
+    assert len(sanitized) == 0
+

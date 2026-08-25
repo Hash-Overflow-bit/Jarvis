@@ -24,7 +24,12 @@ class AgentRegistry:
         }
 
     def get(self, name: str) -> Any:
-        return self._agents.get(name)
+        if name in self._agents:
+            return self._agents[name]
+        for k, v in self._agents.items():
+            if k.lower() == name.lower():
+                return v
+        return None
 
     def list_all(self) -> List[Dict[str, Any]]:
         # Omit raw agent object when listing for clean JSON audits
