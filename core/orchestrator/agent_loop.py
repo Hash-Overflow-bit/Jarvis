@@ -698,6 +698,17 @@ Output ONLY raw JSON. Start with '{{'.
                     args = step["arguments"]
                     tool_name = "write_file"
 
+            # --- GUARDRAIL 1.97: Fix write_file misclassified on folder creation request ---
+            if tool_name == "write_file":
+                fp = args.get("filepath", "")
+                if user_input and ("folder" in user_input.lower() or "directory" in user_input.lower()) and ("create" in user_input.lower() or "make" in user_input.lower()):
+                    if not fp.endswith((".txt", ".json", ".md", ".csv", ".py", ".html", ".log")):
+                        print(f"[🛡️ Auto-Remap] Auto-remapping write_file on folder creation to 'create_directory' -> {fp}")
+                        step["tool"] = "create_directory"
+                        step["arguments"] = {"directory": fp}
+                        args = step["arguments"]
+                        tool_name = "create_directory"
+
             # --- GUARDRAIL 1.9: Auto-remap / Auto-populate agent_builder calls ---
             if tool_name == "agent_builder":
                 goal_str = (args.get("goal") or args.get("backstory") or "").lower()

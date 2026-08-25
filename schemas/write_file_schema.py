@@ -13,7 +13,7 @@ class WriteFileInput(BaseModel):
         description="Absolute path to the file to write. Must reside inside an approved sandbox root.",
     )
     content: str = Field(
-        ...,
+        default="",
         description="Text content to write to the file.",
     )
 
