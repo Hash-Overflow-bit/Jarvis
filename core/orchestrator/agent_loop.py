@@ -261,9 +261,9 @@ class AgentExecutionLoop:
         import re
         cleaned = user_input.strip()
 
-        # --- Git Clone: "clone <URL>" ---
+        # --- Git Clone: "clone ... <URL>" ---
         clone_match = re.search(
-            r'(?:git\s+)?clone\s+(https?://\S+\.git\b|https?://github\.com/\S+|https?://gitlab\.com/\S+|https?://bitbucket\.org/\S+)',
+            r'\bclone\b.*?(https?://\S+\.git\b|https?://github\.com/\S+|https?://gitlab\.com/\S+|https?://bitbucket\.org/\S+)',
             cleaned, re.IGNORECASE
         )
         if clone_match:
