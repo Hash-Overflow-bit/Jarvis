@@ -146,7 +146,8 @@ class _Settings:
             if self.is_windows:
                 safe_base = Path.home() / "Jarvis"
             else:
-                safe_base = Path.home() / ".jarvis"
+                # WSL/Linux fallback
+                safe_base = Path.home() / "Jarvis"
             
             # Preserve filename if path is a file
             if path.suffix:
