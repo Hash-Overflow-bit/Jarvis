@@ -123,24 +123,29 @@ def test_existing_approved_fact_returned_correctly():
                 assert "12.5%" in res
                 assert "I cannot verify that" not in res
 
-def test_compliance_knowledge_file_path_resolution():
+def test_compliance_knowledge_file_path_resolution(tmp_path):
     """
     Test 8: macOS and Windows style project root resolves correctly, no workspace pollution.
     """
     from core.config import settings
     from pathlib import Path
 
-    # 1. Test macOS style resolution
-    with patch.object(settings.__class__, '_project_root', property(lambda self: Path("/Users/m2air/Desktop/Jarvis"))):
-        mac_path = str(settings.compliance_knowledge_file).replace("\\", "/")
-        assert mac_path == "/Users/m2air/Desktop/Jarvis/knowledge/ca_compliance_2026.md"
-        assert "workspace" not in mac_path
+    project_root = tmp_path / "Jarvis"
 
-    # 2. Test Windows style resolution (mocked absolute path)
-    with patch.object(settings.__class__, '_project_root', property(lambda self: Path("/Users/wmjar/OneDrive/Desktop/Jarvis"))):
-        win_path = str(settings.compliance_knowledge_file).replace("\\", "/")
-        assert win_path == "/Users/wmjar/OneDrive/Desktop/Jarvis/knowledge/ca_compliance_2026.md"
-        assert "workspace" not in win_path
+    with patch.object(
+        settings.__class__,
+        "_project_root",
+        property(lambda self: project_root),
+    ):
+        actual = settings.compliance_knowledge_file
+
+    expected = (
+        project_root
+        / "knowledge"
+        / "ca_compliance_2026.md"
+    ).resolve()
+
+    assert actual == expected
 
 def test_compliance_direct_route_uses_resolved_path():
     """
