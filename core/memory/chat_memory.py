@@ -301,6 +301,19 @@ Your job is to read the user's message and extract any persistent personal facts
 
 DO NOT extract action requests, workflow commands, or transient task intents (e.g. 'The user requests creation of folder X', 'Delete file Y', 'Make a file named Z'). Workflow intents are NOT persistent facts.
 
+CRITICAL: The following are TRANSIENT TASK INSTRUCTIONS, NOT persistent facts. Do NOT extract them:
+- Formatting instructions (e.g. "structured report", "comparison table", "executive summary")
+- Requested filenames (e.g. "save as report.md", "local_agent_framework_comparison.md")
+- Requested output structure (e.g. "with introduction, conclusion, recommendation")
+- Research constraints (e.g. "use official documentation", "compare architecture and setup complexity")
+- Tool actions (e.g. "save the complete report", "write to desktop", "end with a recommendation")
+- Temporary task goals (e.g. "research CrewAI", "compare frameworks", "investigate AI agents")
+- Source/citation display instructions (e.g. "with real sources and links", "clearly mark anything not established")
+
+Regression rule: A command/request is NOT a user fact. Do not persist execution instructions (e.g. "create folder X", "write file Y", "generate visual Z") as long-term semantic facts. user request ≠ durable user fact.
+
+ONLY extract ENDURING personal or project facts that are explicitly stated as stable information (e.g. "My name is John", "I work at Acme Corp", "Our server runs on port 8080").
+
 Output ONLY a JSON object containing a "facts" key, which is a list of extracted facts.
 If no persistent facts are found, return: {"facts": []}
 
@@ -334,7 +347,33 @@ Each fact object in the list MUST contain:
 
             data = json.loads(content)
             facts = data.get("facts", [])
+            
+            # Programmatic guard: reject task-instruction facts before persistence
+            TASK_INSTRUCTION_PATTERNS = [
+                r"\brequires?\b.*\b(?:official\s+documentation|structured\s+report|comparison\s+table|executive\s+summary)\b",
+                r"\brequires?\b.*\b(?:saving|writing|creating)\b.*\b(?:report|file|document)\b",
+                r"\brequires?\b.*\b(?:recommendation|conclusion|introduction|analysis)\b",
+                r"\bsave\b.*\b(?:report|file|\.md|\.txt|desktop)\b",
+                r"\b(?:research|compare|investigate)\b.*\b(?:framework|agent|tool)\b",
+                r"\bformatting\b|\bstructured\b|\bcomparison\b.*\btable\b",
+                r"\bofficial\s+(?:documentation|repositories)\b",
+                r"\b(?:write|generate|create|produce|draft)\b.*\breport\b",
+                r"\bclearly\s+mark\b",
+                r"\bend\s+with\b.*\brecommendation\b",
+            ]
+            
             for f in facts:
+                desc = f.get("description", "").lower()
+                target = f.get("target_name", "").lower()
+                is_task_instruction = False
+                for pattern in TASK_INSTRUCTION_PATTERNS:
+                    if re.search(pattern, desc, re.IGNORECASE) or re.search(pattern, target, re.IGNORECASE):
+                        is_task_instruction = True
+                        print(f"[🧠 Memory] REJECTED task instruction (not a stable fact): {f.get('description')}")
+                        break
+                if is_task_instruction:
+                    continue
+                    
                 save_conversational_fact(
                     source_name=f.get("source_name", "User"),
                     source_type=f.get("source_type", "PERSON"),

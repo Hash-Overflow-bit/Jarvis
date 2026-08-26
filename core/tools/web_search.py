@@ -54,18 +54,106 @@ class WebSearch(BaseTool):
 
     @staticmethod
     def _clean_query(raw_query: str) -> str:
-        """Strips conversational instruction filler words from search query."""
+        """
+        Aggressively strips writing instructions, save-to-file directives,
+        formatting/output structure requests, recommendation/conclusion clauses,
+        and source-display instructions from the search query.
+        
+        Goal: The search engine should only receive topical search terms,
+        never output/formatting instructions.
+        """
         q = raw_query.strip()
-        patterns = [
-            r"\b(?:and\s+)?(?:write|generate|create|prepare|give\s+me)\s+(?:a\s+)?(?:short\s+)?(?:comparison\s+)?(?:report|summary|article|essay|email)\b.*$",
-            r"\b(?:with|including)\s+(?:real\s+)?(?:sources|links|references|citations)\b.*$",
-            r"\b(?:please|can\s+you|help\s+me)\b"
+        # Strip leading action verbs
+        q = re.sub(r"^(?:research|investigate|find\s+info\s+on|search\s+for|look\s+up)\s+", "", q, flags=re.IGNORECASE).strip()
+
+        # Iteratively strip directive clauses (order matters: broadest last)
+        directive_patterns = [
+            # Save/file instructions
+            r"\.\s*save\s+.*$",
+            r"\s+save\s+(?:the\s+)?(?:complete\s+)?(?:report|file|document|result).*$",
+            r"\s+(?:as|to)\s+\S+\.(?:md|txt|json|csv|pdf)(?:\s+.*)?$",
+            r"\s+on\s+my\s+(?:desktop|documents?).*$",
+            r"\s+to\s+(?:my\s+)?desktop.*$",
+            r"\s+(?:export|output)\s+(?:to|as)\s+.*$",
+            # Writing/report structure instructions
+            r"\s+(?:and\s+)?(?:write|generate|create|prepare|give\s+me|make|build|produce|draft)\s+.*$",
+            r"\.\s*(?:write|generate|create|prepare|give\s+me|make|build|produce|draft)\s+.*$",
+            # Formatting/structure instructions
+            r"\s+with\s+(?:executive\s+)?summary.*$",
+            r"\s+with\s+(?:an?\s+)?(?:introduction|conclusion|recommendation|limitation).*$",
+            r"\s+with\s+(?:a\s+)?(?:comparison\s+)?table.*$",
+            r"\s+with\s+(?:detailed\s+)?analysis.*$",
+            r"\s+with\s+(?:real\s+)?(?:sources|links|references|citations).*$",
+            # Conclusion/recommendation clauses
+            r"\s+end\s+with\s+.*$",
+            r"\s+conclude\s+with\s+.*$",
+            r"\s+recommend\s+the\s+best.*$",
+            # "Clearly mark" instructions
+            r"\.\s*clearly\s+mark\s+.*$",
+            r"\s+clearly\s+mark\s+.*$",
+            # Filler
+            r"\b(?:please|can\s+you|help\s+me)\b",
+            # "Use official documentation" instructions (task meta, not search terms)
+            r"\.\s*use\s+official\s+(?:documentation|repositories).*$",
+            r"\s+use\s+official\s+(?:documentation|repositories)\s+(?:or\s+official\s+repositories\s+)?wherever\s+possible.*$",
         ]
-        for p in patterns:
-            q = re.sub(p, "", q, flags=re.IGNORECASE).strip()
+        for d in directive_patterns:
+            q = re.sub(d, "", q, flags=re.IGNORECASE).strip()
+
+        # Strip comparison criteria lists that follow "compare" (these are for output, not search)
+        q = re.sub(r"\.\s*compare\s+.*$", "", q, flags=re.IGNORECASE).strip()
 
         q = q.rstrip(".!?,;: ")
         return q if q else raw_query.strip()
+
+    @staticmethod
+    def decompose_multi_entity_queries(raw_query: str) -> List[str]:
+        """
+        For multi-entity comparison requests, decomposes into targeted per-entity
+        search queries. Returns a list of search queries (one per entity).
+        If no known entities are detected, returns a single cleaned query.
+        """
+        cleaned = WebSearch._clean_query(raw_query)
+        known_frameworks = {
+            "crewai": "CrewAI", "langgraph": "LangGraph", "autogen": "AutoGen",
+            "llamaindex": "LlamaIndex", "semantic kernel": "Semantic Kernel",
+            "ag2": "AG2", "botpress": "Botpress"
+        }
+        detected = []
+        combined = (cleaned + " " + raw_query).lower()
+        for key, name in known_frameworks.items():
+            if key in combined:
+                detected.append(name)
+
+        if len(detected) >= 2:
+            # Generate targeted per-entity queries
+            queries = []
+            for entity in detected:
+                queries.append(f"{entity} official documentation local models offline multi-agent")
+                queries.append(f"{entity} github repository")
+            return queries
+        elif cleaned:
+            return [cleaned]
+        return [raw_query.strip()]
+
+    @staticmethod
+    def _rank_sources_by_priority(results: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """
+        Sorts search results by source priority hierarchy:
+        Priority 1: Official docs / GitHub repositories (e.g. docs.*, *.github.io, github.com)
+        Priority 2: Primary vendor/project domains (e.g. crewai.com, langchain.com, llamaindex.ai)
+        Priority 3: Secondary sources
+        """
+        def get_priority(item: Dict[str, str]) -> int:
+            url = item.get("url", "").lower()
+            title = item.get("title", "").lower()
+            if "docs." in url or "github.io" in url or "github.com" in url or "documentation" in title:
+                return 1
+            if any(domain in url for domain in ("crewai.com", "langchain.com", "llamaindex.ai", "microsoft.com", "autogen")):
+                return 2
+            return 3
+
+        return sorted(results, key=get_priority)
 
     def _fetch_ddg_results(self, search_term: str) -> List[Dict[str, str]]:
         """Executes HTTP request to DuckDuckGo HTML endpoint and parses result items."""
@@ -113,25 +201,29 @@ class WebSearch(BaseTool):
                 warning="Search query was empty."
             )
 
-        cleaned_query = self._clean_query(raw_query)
-        results = self._fetch_ddg_results(cleaned_query)
+        all_results = self._fetch_ddg_results(raw_query)
 
-        # Fallback: Try with raw query if cleaned query returned 0 results
-        if not results and cleaned_query != raw_query:
-            results = self._fetch_ddg_results(raw_query)
-
-        # Fallback: Try key nouns if still 0 results
-        if not results:
-            words = [w for w in re.findall(r"\b[a-zA-Z0-9_-]{3,}\b", cleaned_query) if w.lower() not in ("research", "current", "suitable", "write", "report", "with", "from", "and", "the", "for")]
+        # Deterministic retry: try shorter key-noun query
+        if not all_results:
+            cleaned_query = self._clean_query(raw_query)
+            words = [w for w in re.findall(r"\b[a-zA-Z0-9_-]{3,}\b", cleaned_query) if w.lower() not in (
+                "research", "current", "suitable", "write", "report", "with", "from",
+                "and", "the", "for", "official", "documentation", "save", "complete",
+                "structured", "executive", "summary", "recommendation", "conclusion",
+                "comparison", "detailed", "analysis", "sources", "real"
+            )]
             if len(words) >= 2:
                 fallback_q = " ".join(words[:5])
-                results = self._fetch_ddg_results(fallback_q)
+                all_results = self._fetch_ddg_results(fallback_q)
 
-        if results:
+        # Sort results by official docs -> official repo -> primary vendor -> secondary sources
+        all_results = self._rank_sources_by_priority(all_results)
+
+        if all_results:
             return WebSearchOutput(
                 success=True,
                 query=raw_query,
-                results=results,
+                results=all_results,
                 warning=None
             )
         else:

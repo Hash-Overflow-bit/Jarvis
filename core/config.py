@@ -383,6 +383,10 @@ class _Settings:
         return self._check_onedrive_and_redirect(path, "workspace")
 
     @property
+    def compliance_knowledge_file(self) -> Path:
+        return (self._project_root / "knowledge" / "ca_compliance_2026.md").resolve()
+
+    @property
     def poetry_venv_path(self) -> Path:
         val = os.getenv("POETRY_VENV_PATH")
         path = normalize_path(val) if val else (self._project_root / ".venvs").resolve()

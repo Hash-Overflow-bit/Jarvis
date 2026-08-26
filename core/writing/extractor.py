@@ -85,14 +85,14 @@ class DataExtractor:
         fields_to_extract = [f.lower().strip() for f in (requested_fields or [])]
 
         # Deterministic extractions for standard fields
-        if not fields_to_extract or "dollar amounts" in fields_to_extract or "amounts" in fields_to_extract or "amounts" in content_clean.lower():
+        if not fields_to_extract or any(f in ("dollar_amounts", "dollar amounts", "amounts", "price") for f in fields_to_extract) or "amounts" in content_clean.lower():
             amounts = re.findall(r"\$\s*\d+(?:,\d{3})*(?:\.\d{2})?", content_clean)
             if amounts:
                 extracted_data["dollar_amounts"] = list(dict.fromkeys(amounts))
-            elif fields_to_extract and ("dollar amounts" in fields_to_extract or "amounts" in fields_to_extract):
+            elif fields_to_extract and any(f in ("dollar_amounts", "dollar amounts", "amounts", "price") for f in fields_to_extract):
                 extracted_data["dollar_amounts"] = None
 
-        if not fields_to_extract or "dates" in fields_to_extract or "dates" in content_clean.lower():
+        if not fields_to_extract or any(f in ("dates", "date") for f in fields_to_extract) or "dates" in content_clean.lower():
             dates = re.findall(r"\b(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* \d{1,2},? \d{4})\b", content_clean, re.IGNORECASE)
             if dates:
                 extracted_data["dates"] = list(dict.fromkeys(dates))
