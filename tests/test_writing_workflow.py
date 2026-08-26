@@ -91,10 +91,10 @@ def test_writing_intent_parsing(prompt, expected):
     assert intent.sources_required == expected["sources_required"]
     assert intent.minimum_words == expected["minimum_words"]
     assert intent.save_required == expected["save_required"]
-    assert intent.destination == expected["destination"]
+    assert intent.destination_root == expected.get("destination_root", expected.get("destination"))
     assert intent.output_format == expected["output_format"]
     if "source_files" in expected:
-        assert set(intent.source_files or []) == set(expected["source_files"])
+        assert set(s.filename for s in (intent.source_files or [])) == set(expected["source_files"])
     else:
         assert not intent.source_files
 

@@ -26,6 +26,11 @@ from core.writing.writer import StructuredWriter, WritingType
 logger = logging.getLogger("jarvis_writing_pipeline")
 
 @dataclass
+class SourceFileRef:
+    filename: str
+    location: str
+
+@dataclass
 class WritingIntent:
     task_type: str
     topic: str
@@ -33,9 +38,10 @@ class WritingIntent:
     sources_required: bool
     minimum_words: Optional[int]
     save_required: bool
-    destination: Optional[str]
+    destination_root: Optional[str]
+    destination_subpath: Optional[List[str]]
     output_format: str
-    source_files: Optional[List[str]] = None
+    source_files: Optional[List[SourceFileRef]] = None
 
     def to_dict(self):
         return {
@@ -45,9 +51,10 @@ class WritingIntent:
             "sources_required": self.sources_required,
             "minimum_words": self.minimum_words,
             "save_required": self.save_required,
-            "destination": self.destination,
+            "destination_root": self.destination_root,
+            "destination_subpath": self.destination_subpath,
             "output_format": self.output_format,
-            "source_files": self.source_files or []
+            "source_files": [vars(s) for s in self.source_files] if self.source_files else []
         }
 
 @dataclass
@@ -191,36 +198,88 @@ class WritingPipeline:
             min_words = val
                 
         sources_req = any(w in cleaned for w in ["source", "citation", "reference", "sourced", "evidence"])
-        destination = "desktop" if "desktop" in cleaned else None
-        save_req = any(w in cleaned for w in ["save", "write to", "export to", "create file", "put it on", "into "]) or (destination is not None)
         
+        # ---------------------------------------------
+        # 1. Parse Destination (Nested paths)
+        # ---------------------------------------------
+        destination_root = None
+        destination_subpath = None
+        save_req = any(w in cleaned for w in ["save", "write to", "export to", "create file", "put it on", "into ", "under ", "in "])
+
+        if "desktop" in cleaned:
+            destination_root = "desktop"
+            save_req = True
+
         format_match = re.search(r'\.(md|txt|json|pdf|csv)', cleaned)
         output_format = format_match.group(1) if format_match else "markdown"
+
+        target_fname = None
+        destination_subpath = None
         
-        # Extract source files
+        # Try specific nested subpath pattern first
+        subpath_match = re.search(r'(?:inside|under|in)\s+([a-zA-Z0-9_\-\./]+)(?:\s+(?:on|to)\s+.*?desktop)?\s+(?:as|named|called)\s+([a-zA-Z0-9_\-\.]+\.(?:md|txt|json|pdf|csv))', user_input_no_vocative, re.IGNORECASE)
+        if subpath_match:
+            subpath_raw = subpath_match.group(1).strip()
+            target_fname = subpath_match.group(2).strip()
+            destination_subpath = [p for p in subpath_raw.split('/') if p]
+        else:
+            # Fallback to general file assignment
+            fn_match = re.search(
+                r'(?:save|write|to|as|into|inside|under|in|create)\s+(?:a\s+)?(?:file\s+)?(?:named\s+|called\s+|as\s+)?([a-zA-Z0-9_\-\.\/]+(?:/[a-zA-Z0-9_\-\.]+)*\.(?:md|txt|json|pdf|csv))', 
+                user_input_no_vocative, re.IGNORECASE
+            )
+            if fn_match:
+                full_path = fn_match.group(1).strip()
+                parts = full_path.split('/')
+                target_fname = parts[-1]
+                if len(parts) > 1:
+                    destination_subpath = parts[:-1]
+
+        if target_fname:
+            save_req = True
+            fmt = target_fname.split('.')[-1].lower()
+            if fmt in ('md', 'txt', 'json', 'pdf', 'csv'):
+                output_format = fmt
+        
+        # ---------------------------------------------
+        # 2. Parse Source Files with Locational Context
+        # ---------------------------------------------
         source_files = []
-        # Find all files with extensions in the prompt that might be sources
-        src_matches = re.finditer(r'\b([a-zA-Z0-9_\-\./\\]+\.(?:txt|md|csv|pdf|json))\b', user_input_no_vocative, re.IGNORECASE)
+        # Find all files with extensions in the prompt that might be sources, and their context
+        # Pattern captures optional leading context (like "from my Desktop")
+        src_pattern = re.compile(
+            r'(?:(?:from|on|inside|use|read|summarize(?:\s+the\s+file)?)\s+(?:my\s+|the\s+)?(desktop|workspace)\b.*?)*'
+            r'\b([a-zA-Z0-9_\-\.\/]+\.(?:txt|md|csv|pdf|json))\b'
+            r'(?:.*?(?:from|on|located\s+on)\s+(?:my\s+|the\s+)?(desktop|workspace)\b)?', 
+            re.IGNORECASE
+        )
+        
+        # We need a simpler approach because regex overlapping is tricky. Let's find all files, then check proximity.
+        src_matches = re.finditer(r'\b([a-zA-Z0-9_\-\.\/]+\.(?:txt|md|csv|pdf|json))\b', user_input_no_vocative, re.IGNORECASE)
         for m in src_matches:
             fname = m.group(1)
-            # If it's the target save file, skip it
-            if save_req and format_match and format_match.group(0).lower() in fname.lower():
-                # Let's do a stricter check: if 'save' or 'write' is right before it, skip.
-                # Just skip if it matches the output format suffix and we're saving to it
-                pass
-            source_files.append(fname)
+            # Skip if it's the target file
+            if target_fname and target_fname.lower() == fname.lower().split('/')[-1]:
+                continue
+                
+            # Extract surrounding context (e.g. 30 chars before and after)
+            start_idx = max(0, m.start() - 40)
+            end_idx = min(len(user_input_no_vocative), m.end() + 40)
+            context = user_input_no_vocative[start_idx:end_idx].lower()
             
-        # Deduplicate and filter save destination if it was captured
-        source_files = list(set(source_files))
-        if save_req:
-            # Extract destination filename
-            fn_match = re.search(r'(?:create|save|write|to|as|into)\s+(?:a\s+)?(?:file\s+)?(?:named\s+|called\s+|as\s+)?[\'\"]?([a-zA-Z0-9_\-\.\/]+\.(?:md|txt|json|pdf|csv))[\'\"]?', user_input, re.IGNORECASE)
-            if fn_match:
-                target_fname = fn_match.group(1)
-                source_files = [f for f in source_files if f.lower() != target_fname.lower()]
-                fmt = target_fname.split('.')[-1].lower()
-                if fmt in ('md', 'txt', 'json', 'pdf', 'csv'):
-                    output_format = fmt
+            loc = "workspace"
+            if "desktop" in context:
+                loc = "desktop"
+                
+            source_files.append(SourceFileRef(filename=fname, location=loc))
+            
+        # Deduplicate
+        unique_sources = []
+        seen = set()
+        for sf in source_files:
+            if sf.filename not in seen:
+                seen.add(sf.filename)
+                unique_sources.append(sf)
         
         return WritingIntent(
             task_type=task_type,
@@ -229,9 +288,10 @@ class WritingPipeline:
             sources_required=sources_req,
             minimum_words=min_words,
             save_required=save_req,
-            destination=destination,
+            destination_root=destination_root,
+            destination_subpath=destination_subpath,
             output_format=output_format,
-            source_files=source_files
+            source_files=unique_sources
         )
 
     @classmethod

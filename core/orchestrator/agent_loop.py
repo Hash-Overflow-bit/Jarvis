@@ -128,7 +128,8 @@ class AgentExecutionLoop:
         plan = valid_plan
         
         # 2.5 Critic/Verification loop for multi-step operations
-        if len(plan) > 1 and not any(s.get("tool") == "generate_document" for s in plan):
+        is_deterministic = self._direct_route(user_input, recalled_facts) is not None
+        if len(plan) > 1 and not any(s.get("tool") == "generate_document" for s in plan) and not is_deterministic:
             print(f"\n[🛡️ Critic] Proposed plan has {len(plan)} steps. Initiating internal critic review...")
             plan = self._criticize_plan(user_input, plan)
 
@@ -159,6 +160,7 @@ class AgentExecutionLoop:
         retry_count = 0
         MAX_RETRIES = 3
         consecutive_search_timeouts = 0
+        attempted_queries = set()
 
         while step_idx < len(plan):
             step = plan[step_idx]
@@ -225,8 +227,8 @@ class AgentExecutionLoop:
                         ))
                 
                 if tool_name == "extract_data":
-                    print(f"[📝 Extraction] Starting data extraction for topic '{topic}'...")
-                    full_report = WritingPipeline.run_extraction_workflow(topic, sources)
+                    print(f"[📝 Extraction] Starting data extraction...")
+                    full_report = WritingPipeline.run_extraction_workflow(user_input, sources)
                     word_count = len(full_report.split())
                 else:
                     print(f"[📝 Generation] Starting document generation for topic '{topic}'...")
@@ -416,36 +418,42 @@ class AgentExecutionLoop:
                     
                     retry_count += 1
                     if retry_count >= MAX_RETRIES:
-                        print(f"[❌ Search] Max search retries ({MAX_RETRIES}) reached. Skipping to synthesis.")
-                        # Skip this step and continue; synthesis will handle missing evidence
-                        step_idx += 1
-                        retry_count = 0
-                        continue
-                    # Deterministic retry with shorter query
-                    from core.tools.web_search import WebSearch
-                    original_query = args.get("query", "")
-                    shorter = WebSearch._clean_query(original_query)
+                        print(f"[❌ Search] Max search retries ({MAX_RETRIES}) reached. Aborting research.")
+                        return prose_hook.filter_response("I couldn't retrieve enough current sources to produce a grounded report.")
                         
-                    # Extract just key nouns for retry
+                    # Deterministic retry with better query cleaning
+                    original_query = args.get("query", "")
+                    if original_query.lower().strip() not in attempted_queries:
+                        attempted_queries.add(original_query.lower().strip())
+                        
                     import re as _re
-                    words = [w for w in _re.findall(r"\b[a-zA-Z0-9_-]{3,}\b", shorter) if w.lower() not in (
-                        "research", "current", "suitable", "write", "report", "with", "from",
-                        "and", "the", "for", "official", "documentation", "save", "complete",
-                        "structured", "executive", "summary", "recommendation", "conclusion"
+                    shorter = original_query
+                    for w in ["write", "report", "save", "using real sources", "using", "real", "sources", "current uses of", "current", "detailed", "comprehensive", "analysis", "research", "investigate", "tell me about", "look up"]:
+                        shorter = _re.sub(rf'\b{w}\b', '', shorter, flags=_re.IGNORECASE)
+                    
+                    words = [w for w in _re.findall(r"\b[a-zA-Z0-9_-]{2,}\b", shorter) if w.lower() not in (
+                        "with", "from", "and", "the", "for", "official", "documentation", "complete",
+                        "structured", "executive", "summary", "recommendation", "conclusion", "about", "how", "what", "why"
                     )]
+                    
                     if words:
-                        retry_query = " ".join(words[:5])
-                        if retry_query.lower().strip() == original_query.lower().strip():
-                            print("[🔄 Search Retry] Retry query is identical to original. Skipping retry.")
-                            step_idx += 1
-                            retry_count = 0
-                            continue
+                        retry_query = " ".join(words)
+                        if len(retry_query.split()) > 6:
+                            retry_query = " ".join(retry_query.split()[:6])
                             
-                        print(f"[🔄 Search Retry] Retrying with shorter query: '{retry_query}'")
+                        if retry_query.lower().strip() in attempted_queries:
+                            retry_query = " ".join(words[:2]) # last ditch effort
+                            
+                        if retry_query.lower().strip() in attempted_queries or retry_query.lower().strip() == original_query.lower().strip():
+                            print(f"[❌ Search Retry] Exhausted unique query variants.")
+                            return prose_hook.filter_response("I couldn't retrieve enough current sources to produce a grounded report.")
+                            
+                        print(f"[🔄 Search Retry] Retrying with query: '{retry_query}'")
+                        attempted_queries.add(retry_query.lower().strip())
                         plan[step_idx] = {"step": step.get("step"), "tool": "web_search", "arguments": {"query": retry_query}}
                     else:
-                        step_idx += 1
-                        retry_count = 0
+                        print(f"[❌ Search Retry] Could not extract keywords for retry.")
+                        return prose_hook.filter_response("I couldn't retrieve enough current sources to produce a grounded report.")
                     continue
 
                 retry_count += 1
@@ -694,9 +702,12 @@ class AgentExecutionLoop:
             # 1. Read local source files if required
             if intent.source_files:
                 for f in intent.source_files:
-                    target_fp = f
+                    target_fp = f.filename
                     if not (target_fp.startswith(("/", "\\")) or ":" in target_fp):
-                        target_fp = str(settings.default_workspace_dir / target_fp)
+                        if f.location == "desktop":
+                            target_fp = str(settings.desktop_dir / target_fp)
+                        else:
+                            target_fp = str(settings.default_workspace_dir / target_fp)
                     plan.append({"step": step, "tool": "read_file", "arguments": {"filepath": target_fp}})
                     step += 1
             
@@ -716,17 +727,23 @@ class AgentExecutionLoop:
             # 4. Save to disk if required
             if intent.save_required:
                 filename = "output.md" if intent.task_type != "extraction" else "extraction.json"
+                
                 # Extract filename if specified
                 fn_match = re.search(r'(?:save|write|to|as|into)\s+(?:a\s+)?(?:file\s+)?(?:named\s+|called\s+|as\s+)?[\'\"]?([a-zA-Z0-9_\-\.\/]+\.(?:md|txt|json|pdf|csv))[\'\"]?', user_input, re.IGNORECASE)
                 if fn_match:
-                    filename = fn_match.group(1).strip()
+                    parts = fn_match.group(1).strip().split('/')
+                    filename = parts[-1]
                     
-                target_fp = filename
-                if intent.destination == "desktop":
-                    target_fp = str(settings.desktop_dir / filename)
-                elif not (target_fp.startswith(("/", "\\")) or ":" in target_fp):
-                    target_fp = str(settings.desktop_dir / filename) # Default to desktop
+                root_dir = settings.desktop_dir if intent.destination_root == "desktop" else settings.default_workspace_dir
+                dest_path = root_dir
+                
+                if getattr(intent, 'destination_subpath', None):
+                    for p in intent.destination_subpath:
+                        dest_path = dest_path / p
+                    plan.append({"step": step, "tool": "create_directory", "arguments": {"directory": str(dest_path)}})
+                    step += 1
                     
+                target_fp = str(dest_path / filename)
                 plan.append({"step": step, "tool": "write_file", "arguments": {"filepath": target_fp, "content": "<USE_GENERATED_ARTIFACT>"}})
             
             return plan
@@ -1221,7 +1238,7 @@ Output ONLY raw JSON. Start with '{{'.
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
                 ],
-                options={"temperature": 0.0},
+                temperature=0.0,
                 format="json"
             )
             print(f"\n[🤖 Planner Raw Response]\n{json.dumps(resp, indent=2)}\n")
@@ -1639,7 +1656,7 @@ Failure Context:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": "Reflect and generate a revised plan."}
                 ],
-                options={"temperature": 0.0},
+                temperature=0.0,
                 format="json"
             )
             if not isinstance(resp, dict):
@@ -2031,7 +2048,7 @@ Audit the plan, resolve any flaws, and output the finalized JSON.
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                options={"temperature": 0.0},
+                temperature=0.0,
                 format="json"
             )
             if not isinstance(resp, dict):
