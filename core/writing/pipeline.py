@@ -82,8 +82,8 @@ class WritingPipeline:
     """
 
     RESEARCH_KEYWORDS = {
-        "research", "investigate", "latest", "current", "sources", "references", "evidence", "compare based on current",
-        "citations", "evidence-based", "look up", "current information", "sourced"
+        "research", "investigate", "latest", "sources", "references", "evidence", "compare using official documentation",
+        "citations", "evidence-based", "look up", "current information", "sourced", "with sources", "referenced"
     }
 
     EXTRACTION_KEYWORDS = {
@@ -167,9 +167,14 @@ class WritingPipeline:
             task_type = "simple"
             
         topic = user_input_no_vocative
-        research_required = bool(re.search(r'\b(research|investigate|search|find sources|gather info|sourced|sources|citations|evidence-based|look up|current information)\b', user_input_no_vocative, re.IGNORECASE))
+        research_required = bool(re.search(r'\b(research|investigate|search|find current information|latest|compare using official documentation|sourced|sources|with sources|citations|referenced|evidence-based|look up)\b', user_input_no_vocative, re.IGNORECASE))
         if cleaned.startswith("save this research") or cleaned == "save this research on my desktop":
             research_required = False
+            
+        if any(w in cleaned for w in ["sample data", "placeholder", "fictional", "example", "demo content", "sample"]):
+            task_type = "simple"
+            research_required = False
+            
         # Using a simple greedy approach for topic might be too broad. Let's just strip common prefixes.
         topic_clean = re.sub(r'^(please\s+)?(prepare\s+a\s+comprehensive,?\s*sourced\s+analysis\s+of|investigate|research|write.*?about|tell me about|produce\s+an?\s+evidence-based.*?report\s+on|draft\s+a\s+detailed\s+paper\s+on)\s+', '', user_input_no_vocative, flags=re.IGNORECASE)
         # Split by sentence-ending periods, commas, or 'and save' to get the core topic

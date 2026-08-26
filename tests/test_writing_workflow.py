@@ -62,7 +62,7 @@ from core.writing.pipeline import WritingPipeline, WritingIntent
     ),
     (
         "Create a referenced analysis of automation in accounting, minimum 1500 words, and put it on Desktop.",
-        {"task_type": "simple", "topic": "automation in accounting", "research_required": False, "sources_required": True, "minimum_words": 1500, "save_required": True, "destination": "desktop", "output_format": "markdown"}
+        {"task_type": "research_write", "topic": "automation in accounting", "research_required": True, "sources_required": True, "minimum_words": 1500, "save_required": True, "destination": "desktop", "output_format": "markdown"}
     ),
     (
         "Draft a detailed paper on AI cybersecurity using credible sources and save it as cyber_ai.txt.",

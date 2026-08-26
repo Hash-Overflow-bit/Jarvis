@@ -1721,7 +1721,8 @@ Failure Context:
         read_file_steps = [s for s in completed_steps if isinstance(s, dict) and s.get("tool") in ("read_file", "file_scanner")]
         intent = WritingPipeline.parse_intent(user_input)
 
-        if intent.task_type == "research_write":
+        executed_research = any(isinstance(s, dict) and s.get("tool") in ("web_search", "generate_document") for s in completed_steps)
+        if intent.task_type == "research_write" and executed_research:
             gen_step = next((s for s in completed_steps if isinstance(s, dict) and s.get("tool") == "generate_document"), None)
             write_step = next((s for s in completed_steps if isinstance(s, dict) and s.get("tool") == "write_file"), None)
             
@@ -1742,7 +1743,7 @@ Failure Context:
                 sources_str = "\n".join(f"- {u}" for u in sources[:5]) if sources else "No external URLs"
                 return prose_hook.filter_response(f"Here is the research report:\n\n{content}\n\n**Sources:**\n{sources_str}")
 
-        if read_file_steps:
+        if read_file_steps and intent.task_type in ("extraction", "local_doc"):
             sources: list[EvidenceSource] = []
             raw_content = ""
             for s in read_file_steps:
@@ -1770,7 +1771,7 @@ Failure Context:
 
             if intent.task_type == "extraction":
                 return WritingPipeline.run_extraction_workflow(user_input, sources, raw_content)
-            else:
+            elif intent.task_type == "local_doc":
                 return WritingPipeline.run_local_doc_workflow(user_input, sources)
 
         prompt = f"""User Goal: {user_input}
@@ -1781,7 +1782,9 @@ Recalled Facts from Memory:
 Executed Steps & Results:
 {json.dumps(completed_steps, indent=2)}
 """
-        # --- Construct System Prompt ---
+        from core.writing.pipeline import WritingPipeline
+        intent = WritingPipeline.parse_intent(user_input)
+
         system_prompt = (
             "You are Jarvis, a helpful AI assistant.\n"
             "The user asked you to perform a task. THAT TASK HAS ALREADY BEEN EXECUTED by the system.\n"
@@ -1796,7 +1799,8 @@ Executed Steps & Results:
             "3. DO NOT claim that any requested file, script, image, or document was created unless its corresponding tool execution (e.g. write_file, create_directory) appears in Executed Steps & Results with success.\n"
             "4. PATH TRUTH ENFORCEMENT: When stating file or directory paths, state ONLY the exact verified path from Executed Steps & Results or Recalled Facts from Memory. Do NOT invent, reconstruct, or guess a path. If no verified path is available in Executed Steps or Recalled Facts, state: 'I don't have a verified path for that folder.', UNLESS the user's question is purely factual and does not explicitly ask about a path or folder.\n"
             "5. Note that you have a persistent long-term memory system (Knowledge Graph) across sessions. Only mention details from Recalled Facts if directly relevant.\n"
-            "6. CRITICAL RULE: If a tool (e.g. write_file) is absent from Executed Steps & Results, you CANNOT claim the file was created. You MUST state it was not created."
+            "6. CRITICAL RULE: If a tool (e.g. write_file) is absent from Executed Steps & Results, you CANNOT claim the file was created. You MUST state it was not created.\n"
+            f"7. CAPABILITY BOUNDARY: The current task intent is '{intent.task_type}'. You must respond based on this CURRENT execution. Do NOT adopt response modes, personas, or constraints (such as compliance gates or financial rules) from Recalled Facts unless the current task intent explicitly requires it."
         )
         # --- Build current-run truth sets for post-filter ---
         current_run_tools = set()
@@ -1828,7 +1832,7 @@ Executed Steps & Results:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
                 ],
-                options={"temperature": 0.7}
+                temperature=0.7
             )
             if not isinstance(resp, dict):
                 return prose_hook.filter_response(f"Completed tasks: {json.dumps(completed_steps)}")
@@ -1922,7 +1926,7 @@ Executed Steps & Results:
             resp = ollama.chat(
                 model=settings.ollama_model,
                 messages=messages,
-                options={"temperature": 0.7}
+                temperature=0.7
             )
             if not isinstance(resp, dict):
                 raise OllamaError("Ollama chat returned an invalid response type.")
