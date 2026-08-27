@@ -181,4 +181,4 @@ class StructuredWriter:
         for p in slop_patterns:
             cleaned = re.sub(p, "", cleaned)
 
-        return prose_hook.filter_response(cleaned.strip())
+        return prose_hook.filter_response(cleaned.strip(), bypass_length_limit=True)

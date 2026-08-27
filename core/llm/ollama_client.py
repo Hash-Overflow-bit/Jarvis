@@ -138,6 +138,8 @@ class OllamaClient:
         temperature: float = 0.7,
         format: str | None = None,
         tools: list[dict] | None = None,
+        options: dict | None = None,
+        **kwargs: Any,
     ) -> dict[str, Any]: ...
 
     @overload
@@ -149,6 +151,8 @@ class OllamaClient:
         temperature: float = 0.7,
         format: str | None = None,
         tools: list[dict] | None = None,
+        options: dict | None = None,
+        **kwargs: Any,
     ) -> Generator[str, None, None]: ...
 
     def chat(
@@ -159,6 +163,8 @@ class OllamaClient:
         temperature: float = 0.7,
         format: str | None = None,
         tools: list[dict] | None = None,
+        options: dict | None = None,
+        **kwargs: Any,
     ) -> dict[str, Any] | Generator[str, None, None]:
         """
         Send a multi-turn chat request via /api/chat.
@@ -175,16 +181,21 @@ class OllamaClient:
             temperature: Sampling temperature.
             format:   If "json", forces JSON output (for tool calling in M6).
             tools:    Optional list of tool schemas for function calling.
+            options:  Optional options dictionary.
 
         Returns:
             The message dict containing 'content' and optional 'tool_calls' (or generator if stream=True).
         """
+        payload_options = {"temperature": temperature}
+        if options:
+            payload_options.update(options)
+
         payload = {
             "model": model or self.model,
             "messages": messages,
             "stream": stream,
             "keep_alive": settings.ollama_keep_alive,
-            "options": {"temperature": temperature},
+            "options": payload_options,
         }
         if format:
             payload["format"] = format

@@ -74,7 +74,7 @@ class NoSlopLinter:
                 consecutive_count = 1
         return False
 
-    def lint(self, text: str) -> str:
+    def lint(self, text: str, bypass_length_limit: bool = False) -> str:
         """
         Runs the full linter on LLM output.
         Cleans slop, checks bounds, and truncates if repetition is detected.
@@ -83,7 +83,7 @@ class NoSlopLinter:
             return ""
 
         # 1. Bounded stop hook: Truncate if extreme length (prevent resource hogging)
-        if len(text) > self.max_chars:
+        if not bypass_length_limit and len(text) > self.max_chars:
             logger.warning(f"Response length {len(text)} exceeds limit {self.max_chars}. Truncating.")
             text = text[: self.max_chars] + "\n[Truncated due to length bounds]"
 

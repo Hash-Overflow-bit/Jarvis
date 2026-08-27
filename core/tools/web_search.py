@@ -52,8 +52,11 @@ class DuckDuckGoLiteProvider(SearchProvider):
         results = []
         try:
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                "Content-Type": "application/x-www-form-urlencoded"
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
+                "Referer": "https://duckduckgo.com/",
             }
             url = "https://lite.duckduckgo.com/lite/"
             data = {"q": query}
@@ -99,7 +102,10 @@ class DuckDuckGoHTMLProvider(SearchProvider):
         results = []
         try:
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
+                "Referer": "https://duckduckgo.com/",
             }
             url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
             resp = requests.get(url, headers=headers, timeout=timeout)
@@ -316,3 +322,41 @@ class WebSearch(BaseTool):
                 results=[],
                 warning=f"Could not retrieve online sources for '{raw_query}'."
             )
+
+if __name__ == "__main__":
+    import sys
+    query = "AI warehouse inventory optimization"
+    print(f"Python Version: {sys.version}")
+    print(f"Testing Query: {query}\n")
+    
+    providers = [
+        ("DuckDuckGoLite", DuckDuckGoLiteProvider()),
+        ("DuckDuckGoHTML", DuckDuckGoHTMLProvider())
+    ]
+    
+    for name, provider in providers:
+        print(f"=== Provider: {name} ===")
+        try:
+            # We bypass the default timeout for the diagnostic or keep it standard
+            results = provider.search(query)
+            # To get HTTP status and response size, we perform a manual log-like call
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            }
+            if name == "DuckDuckGoLite":
+                resp = requests.post("https://lite.duckduckgo.com/lite/", headers=headers, data={"q": query}, timeout=10)
+            else:
+                resp = requests.get(f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}", headers=headers, timeout=10)
+            
+            print(f"HTTP Status: {resp.status_code}")
+            print(f"Response Size: {len(resp.content)} bytes")
+            print(f"Parsed Result Count: {len(results)}")
+            if results:
+                print("First 3 URLs:")
+                for r in results[:3]:
+                    print(f"  - {r.get('url')}")
+            else:
+                print("No results parsed.")
+        except Exception as e:
+            print(f"Exact Exception: {type(e).__name__}: {e}")
+        print()

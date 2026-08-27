@@ -19,6 +19,7 @@ from typing import Optional
 from dotenv import load_dotenv
 import os
 import re
+import getpass
 
 # ---------------------------------------------------------------------------
 # Load .env from the project root (parent of this file's directory)

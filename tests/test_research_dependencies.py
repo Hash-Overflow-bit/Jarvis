@@ -82,9 +82,11 @@ def test_simple_generation_bypasses_evidence():
         ]
         
         with patch.object(tool_registry, 'execute') as mock_exec, \
-             patch('core.writing.pipeline.WritingPipeline.run_research_workflow') as mock_write:
+             patch('core.writing.pipeline.WritingPipeline.run_research_workflow') as mock_write, \
+             patch('core.writing.pipeline.WritingPipeline.run_simple_workflow') as mock_write_simple:
             
             mock_write.return_value = "Word " * 1300
+            mock_write_simple.return_value = "Word " * 1300
             mock_exec.return_value = {"success": True, "result": "Saved"}
             
             loop.run(prompt)

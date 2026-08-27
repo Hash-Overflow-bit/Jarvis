@@ -51,7 +51,7 @@ class ProseQualityHook:
             (r"(?i)\s*Let me know if you need help with anything else.*$", ""),
         ]
 
-    def filter_response(self, text: str) -> str:
+    def filter_response(self, text: str, bypass_length_limit: bool = False) -> str:
         """
         Filters and cleans up response text if NOPUS_PROSE_FILTER is enabled.
         """
@@ -78,9 +78,9 @@ class ProseQualityHook:
         
         # If the resulting text is empty or fully stripped, fallback to original to prevent blank responses
         if not cleaned or len(cleaned.strip(" .\n\t,;")) == 0:
-            return no_slop_linter.lint(text.strip())
+            return no_slop_linter.lint(text.strip(), bypass_length_limit=bypass_length_limit)
 
-        return no_slop_linter.lint(cleaned)
+        return no_slop_linter.lint(cleaned, bypass_length_limit=bypass_length_limit)
 
 
 prose_hook = ProseQualityHook()

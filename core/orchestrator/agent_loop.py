@@ -296,6 +296,10 @@ class AgentExecutionLoop:
                     print(f"[📝 Extraction] Starting data extraction...")
                     full_report = WritingPipeline.run_extraction_workflow(user_input, sources)
                     word_count = len(full_report.split())
+                elif intent_dict.get("task_type") == "simple":
+                    print(f"[📝 Generation] Starting simple document generation for topic '{topic}'...")
+                    full_report = WritingPipeline.run_simple_workflow(topic)
+                    word_count = len(full_report.split())
                 else:
                     if intent_dict.get("research_required") and intent_dict.get("sources_required") and not sources:
                         print(f"[🚫 Evidence Gate] Halting: 'generate_document' requires verified sources, but none were retrieved.")
