@@ -208,7 +208,19 @@ class AgentExecutionLoop:
                                         target_fp = str(settings.desktop_dir / filename)
                                     else:
                                         target_fp = str(settings.default_workspace_dir / filename)
-                                required_paths.append(str(Path(target_fp).resolve()))
+                                try:
+                                    from core.config import normalize_path
+                                    resolved_req = str(Path(normalize_path(target_fp)).resolve())
+                                except Exception as e:
+                                    print(f"[DIAGNOSTIC] Exception resolving target_fp '{target_fp}': {type(e).__name__}: {e}")
+                                    resolved_req = str(Path(target_fp))
+                                required_paths.append(resolved_req)
+
+                    print(f"[DIAGNOSTIC] tool_name: {tool_name}")
+                    print(f"[DIAGNOSTIC] required_paths: {required_paths}")
+                    print(f"[DIAGNOSTIC] current completed_steps: {completed_steps}")
+                    failed_steps = [er for er in execution_results if not er["success"]]
+                    print(f"[DIAGNOSTIC] current failed_steps: {failed_steps}")
 
                     for path in required_paths:
                         attempts = []
@@ -217,19 +229,34 @@ class AgentExecutionLoop:
                                 er_path = er["arguments"].get("filepath")
                                 if er_path:
                                     try:
-                                        if Path(er_path).resolve() == Path(path).resolve():
-                                            attempts.append(er)
-                                    except Exception:
-                                        if str(er_path) == str(path):
-                                            attempts.append(er)
+                                        from core.config import normalize_path
+                                        er_path_resolved = str(Path(normalize_path(er_path)).resolve())
+                                    except Exception as e:
+                                        print(f"[DIAGNOSTIC] Exception resolving er_path '{er_path}': {type(e).__name__}: {e}")
+                                        er_path_resolved = str(Path(er_path))
+                                    
+                                    # Normalize paths for comparison (especially for Windows/WSL drive letters & slashes)
+                                    p1 = er_path_resolved.lower().replace("\\", "/").strip()
+                                    p2 = path.lower().replace("\\", "/").strip()
+                                    print(f"[DIAGNOSTIC] Comparing er_path '{p1}' with required '{p2}'")
+                                    if p1 == p2:
+                                        attempts.append(er)
                         
-                        if attempts and not attempts[-1]["success"]:
-                            error_msg = attempts[-1]["result"].get("error") or "File read failed."
-                            print(f"[🚫 Prerequisite Failed] Prerequisite read of '{path}' failed: {error_msg}")
-                            return f"Execution halted at Step {step.get('step')} ({tool_name}) because the source file could not be read: {error_msg}"
-                        elif not attempts:
+                        print(f"[DIAGNOSTIC] read_file requested path: '{path}' | attempts found: {len(attempts)}")
+                        if attempts:
+                            latest_attempt = attempts[-1]
+                            print(f"[DIAGNOSTIC] latest attempt tool: {latest_attempt['tool']} | success: {latest_attempt['success']} | result: {latest_attempt['result']}")
+                            if not latest_attempt["success"]:
+                                error_msg = latest_attempt["result"].get("error") or "File read failed."
+                                print(f"[DIAGNOSTIC] extract_data allowed: FALSE | write_file allowed: FALSE | reason: failed prerequisite read")
+                                print(f"[🚫 Prerequisite Failed] Prerequisite read of '{path}' failed: {error_msg}")
+                                return f"Execution halted at Step {step.get('step')} ({tool_name}) because the source file could not be read: {error_msg}"
+                        else:
+                            print(f"[DIAGNOSTIC] extract_data allowed: FALSE | write_file allowed: FALSE | reason: prerequisite read never attempted")
                             print(f"[🚫 Prerequisite Missing] Prerequisite read of '{path}' was never attempted.")
                             return f"Execution halted at Step {step.get('step')} ({tool_name}) because the source file could not be read: {Path(path).name} was not successfully read."
+
+                    print(f"[DIAGNOSTIC] extract_data allowed: TRUE")
 
                 intent_dict.get("task_type", "")
                 topic = intent_dict.get("topic", "research topic")
@@ -510,6 +537,17 @@ class AgentExecutionLoop:
                         print(f"[❌ Search Retry] Could not extract keywords for retry.")
                         return prose_hook.filter_response("I couldn't retrieve enough current sources to produce a grounded report.")
                     continue
+
+                # --- Prerequisite Failure Guard ---
+                # If read_file fails and downstream steps depend on it (extract_data / generate_document),
+                # halt immediately. A missing/unreadable source file is unrecoverable — do NOT allow
+                # the LLM reflector to replan around it, which would produce empty extractions.
+                if tool_name == "read_file":
+                    downstream_tools = {s.get("tool") for s in plan[step_idx + 1:] if isinstance(s, dict)}
+                    if downstream_tools & {"extract_data", "generate_document"}:
+                        failed_filepath = args.get("filepath") or args.get("file_path") or "unknown file"
+                        print(f"[🚫 Prerequisite Failure] read_file failed for '{failed_filepath}' — downstream extraction/generation depends on it. Halting.")
+                        return f"Execution halted at Step {step.get('step')} (read_file) because the source file could not be read: {error_msg}"
 
                 retry_count += 1
                 if retry_count >= MAX_RETRIES:
