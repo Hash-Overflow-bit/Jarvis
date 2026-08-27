@@ -17,8 +17,8 @@ class BaselineRunner:
     async def test(self, agent: Agent) -> Dict[str, Any]:
         # Assign a simple diagnostic task to the agent
         test_task = Task(
-            description="Say the word 'success' and nothing else.",
-            expected_output="The word success.",
+            description="Return exactly the text: success\nDo not use any tools.",
+            expected_output="exactly success",
             agent=agent
         )
 
@@ -36,6 +36,20 @@ class BaselineRunner:
                 asyncio.to_thread(crew.kickoff),
                 timeout=settings.agent_baseline_timeout
             )
+            
+            cleaned_res = str(result).strip(" '\".").lower()
+            # Catch ReAct parsing / Action errors that get captured in final response
+            if "action" in cleaned_res and ("exist" in cleaned_res or "error" in cleaned_res or "invalid" in cleaned_res):
+                return {
+                    "success": False,
+                    "error": f"Baseline test triggered a tool/action error: '{result}'"
+                }
+            if cleaned_res != "success":
+                return {
+                    "success": False,
+                    "error": f"Baseline test returned unexpected output: '{result}'"
+                }
+
             return {
                 "success": True,
                 "result": str(result)

@@ -36,7 +36,14 @@ class HotLoader:
         # Use CrewAI's native LLM wrapper and route via ollama_chat/ to enable true tool-calling
         crew_llm = LLM(
             model=f"ollama_chat/{settings.ollama_model}",
-            base_url=settings.ollama_base_url
+            base_url=settings.ollama_base_url,
+            api_key="NA"
+        )
+
+        react_rule = (
+            "3. Do NOT output raw JSON as your final answer. You must use the 'Action:' and 'Action Input:' syntax strictly.\n"
+            if allowed_tools else
+            "3. No tools are assigned to you. Do NOT emit 'Action:' or 'Action Input:'. Answer directly in plain text with the final response.\n"
         )
 
         # Inject Workspace Context and strict ReAct Instructions for Local LLMs
@@ -47,7 +54,8 @@ class HotLoader:
             f"[CRITICAL EXECUTION RULES]\n"
             f"1. You MUST always use your available tools to interact with the file system. Never assume or hallucinate file contents.\n"
             f"2. You MUST parse tool outputs carefully. If a tool returns a list of files or file content, read it and use that exact data in your next steps.\n"
-            f"3. Do NOT output raw JSON as your final answer. You must use the 'Action:' and 'Action Input:' syntax strictly.\n"
+            f"{react_rule}"
+            f"4. CRITICAL: You MUST NOT invent, pretend, or claim that any installation, package download, model training, or external system action occurred unless you have successfully executed a tool that directly performed it and verified its output. If the task is simple summarization, simply summarize the text without proposing or claiming any model training or package setup."
         )
 
         dynamic_agent = Agent(

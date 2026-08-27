@@ -282,6 +282,14 @@ def learn_from_message(user_message: str) -> None:
     if cleaned.lower() in ("quit", "exit", "reset", "clear", "yes", "no", "confirm") or cleaned.startswith("/"):
         return
 
+    # Questions, inquiries, and delegation prompts are NOT persistent user facts
+    cleaned_lower = cleaned.lower()
+    if "?" in cleaned or any(cleaned_lower.startswith(q) for q in (
+        "what ", "how ", "why ", "when ", "where ", "who ", "which ",
+        "is ", "are ", "can ", "could ", "would ", "does ", "do ", "did ", "ask "
+    )):
+        return
+
     # 1. Instant deterministic rule-based extraction (0ms)
     rule_facts = _rule_based_fact_extraction(cleaned)
     for f in rule_facts:

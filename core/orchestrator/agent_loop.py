@@ -703,6 +703,79 @@ class AgentExecutionLoop:
         # 3. Fallback: Prepend Desktop
         return str(settings.desktop_dir / target_path)
 
+    def _extract_capabilities_from_prompt(self, user_input: str) -> list[str]:
+        """Extracts generalized capability descriptions from build prompts."""
+        import re
+        # Stop capability parsing at transition phrase boundary
+        transition_pattern = r'(?i),?\s*\b(?:and\s+)?(?:then\s+)?(?:ask(?:\s+it)?(?:\s+to)?|have\s+it|delegate|use\s+it\s+to|run)\b.*$'
+        clean_input = re.sub(transition_pattern, '', user_input).strip()
+
+        trigger_pattern = r'(?i)\b(?:that\s+can|with\s+capabilities?\s+(?:to|for)|able\s+to|responsible\s+for|capable\s+of)\s+(.+)'
+        match = re.search(trigger_pattern, clean_input)
+        
+        if not match:
+            caps = []
+            for kw in ("summarize", "analyze", "classify", "extract", "search"):
+                if kw in clean_input.lower():
+                    caps.append(kw)
+            return caps
+
+        raw_clause = match.group(1).strip()
+        raw_clause = re.sub(r'(?i)\busing\s+(?:crewai|langgraph|crew_ai|lang_graph)\b', '', raw_clause)
+        raw_clause = re.sub(r'(?i)\bfor\s+(?:a|an|the)?\s*([a-zA-Z0-9_\s]+?)\b(?:company|organization|firm|department|team)\b.*$', '', raw_clause)
+        raw_clause = raw_clause.strip('. ,;')
+
+        parts = re.split(r',|\b(?:and|or)\b|;', raw_clause)
+        
+        capabilities = []
+        for part in parts:
+            cleaned_part = part.strip().strip('. ,;')
+            cleaned_part = re.sub(r'^(?:to|that|can)\s+', '', cleaned_part, flags=re.IGNORECASE).strip()
+            if cleaned_part.lower() in ("summarize text", "summarize documents", "summarize data", "text summarization"):
+                cleaned_part = "summarize"
+            if cleaned_part and len(cleaned_part) > 2:
+                capabilities.append(cleaned_part)
+
+        seen = set()
+        unique_caps = []
+        for cap in capabilities:
+            cap_lower = cap.lower()
+            if cap_lower not in seen:
+                seen.add(cap_lower)
+                unique_caps.append(cap)
+
+        return unique_caps if unique_caps else (["summarize"] if "summarize" in clean_input.lower() else [])
+
+    def _derive_agent_specs(self, agent_name: str, user_input: str, capabilities: list[str]) -> tuple[str, str]:
+        """Derives specialized role and goal based on prompt context and extracted capabilities."""
+        import re
+        clean_name = re.sub(r'Agent$', '', agent_name)
+        clean_name_spaced = re.sub(r'([a-z0-9])([A-Z])', r'\1 \2', clean_name)
+        clean_name_spaced = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1 \2', clean_name_spaced).strip()
+        
+        domain_match = re.search(r'(?i)\bfor\s+(?:a|an|the)?\s*([a-zA-Z0-9_\s]+?\b(?:company|organization|firm|department|team|project|system))\b', user_input)
+        domain = domain_match.group(1).strip() if domain_match else None
+        
+        if domain:
+            role = f"{domain.title()} {clean_name_spaced}"
+        else:
+            role = f"{clean_name_spaced} Specialist"
+            
+        if capabilities:
+            if len(capabilities) == 1:
+                cap_str = capabilities[0]
+            else:
+                cap_str = ", ".join(capabilities[:-1]) + ", and " + capabilities[-1]
+            
+            goal = cap_str[0].upper() + cap_str[1:]
+            if domain and not goal.lower().endswith(domain.lower()):
+                goal += f" for {domain}"
+            goal += "."
+        else:
+            goal = f"Execute specialized domain tasks for {clean_name_spaced}."
+            
+        return role, goal
+
     def _direct_route(self, user_input: str, recalled_facts: str = "") -> str | list[dict[str, Any]] | None:
         """
         Deterministic shortcut router for obvious, unambiguous commands.
@@ -717,6 +790,155 @@ class AgentExecutionLoop:
 
         from core.writing.pipeline import WritingPipeline, ContentWorkflowIntent
         cleaned = user_input.strip()
+
+        # --- Explicit Agent Builder Routing ---
+        is_build = False
+        if any(cleaned.lower().startswith(p) for p in ("build ", "create ", "make ", "generate ")):
+            if "agent" in cleaned.lower() and not any(ext in cleaned.lower() for ext in (".json", ".py", ".yaml", ".yml", "/agents", "agents/")):
+                is_build = True
+
+        if is_build:
+            transition_match = re.search(r'(?i),?\s*\b(?:and\s+)?(?:then\s+)?(?:ask(?:\s+it)?(?:\s+to)?|have\s+it|delegate|use\s+it\s+to|run)\b\s*(.*)', cleaned)
+            delegated_task_desc = transition_match.group(1).strip() if transition_match else ""
+
+            name_match = re.search(r'(?i)\b(?:build|create|make|generate)(?:\s+me)?(?:\s+a)?(?:\s+an)?(?:\s+simple)?(?:\s+new)?\s+([a-zA-Z0-9_-]+?Agent)\b', cleaned)
+            agent_name = "CustomSubAgent"
+            if name_match:
+                agent_name = name_match.group(1).strip()
+            else:
+                name_match_gen = re.search(r'(?i)\b([a-zA-Z0-9_-]+?)\s+agent\b', cleaned)
+                if name_match_gen:
+                    raw_name = name_match_gen.group(1).strip()
+                    agent_name = "".join(w.capitalize() for w in re.split(r'[-_\s]+', raw_name))
+                    if not agent_name.endswith("Agent"):
+                        agent_name += "Agent"
+
+            framework = "crewai"
+            if "langgraph" in cleaned.lower():
+                framework = "langgraph"
+            elif "crewai" in cleaned.lower():
+                framework = "crewai"
+
+            capabilities = self._extract_capabilities_from_prompt(cleaned)
+            role, goal = self._derive_agent_specs(agent_name, cleaned, capabilities)
+
+            print(f"[🛡️ Direct Route] Planning agent build: name={agent_name}, framework={framework}, capabilities={capabilities}")
+            plan = [{
+                "step": 1,
+                "tool": "agent_builder",
+                "arguments": {
+                    "name": agent_name,
+                    "framework": framework,
+                    "capabilities": capabilities,
+                    "role": role,
+                    "goal": goal,
+                    "backstory": f"An autonomous specialist sub-agent built for {role} operations."
+                }
+            }]
+            if delegated_task_desc:
+                plan.append({
+                    "step": 2,
+                    "tool": "delegate_task",
+                    "arguments": {
+                        "agent_name": agent_name,
+                        "task_description": delegated_task_desc,
+                        "expected_output": "Final result of the assigned task."
+                    }
+                })
+            return plan
+
+        # --- Explicit Agent Delegation Routing ---
+        known_agents = set()
+        from core.orchestrator.agent_registry import agent_registry
+        for a in agent_registry.list_all():
+            known_agents.add(a["name"])
+
+        import yaml
+        if settings.agents_blueprint_path.exists():
+            try:
+                with open(settings.agents_blueprint_path, "r") as f:
+                    config = yaml.safe_load(f) or {}
+                for a in config.get("custom_sub_agents", []):
+                    known_agents.add(a["name"])
+            except Exception:
+                pass
+
+        matched_agent = None
+        task_description = None
+
+        for agent in known_agents:
+            norm_agent = agent_registry._normalize(agent)
+            norm_cleaned = agent_registry._normalize(cleaned)
+            
+            if norm_agent in norm_cleaned:
+                esc_agent = re.escape(agent)
+                words = re.findall(r"[A-Z][a-z]*|[a-z]+|[A-Za-z0-9]+", agent)
+                agent_pattern = rf'\b{esc_agent}\b|\b{" ".join(words)}\b|\b{"_".join(words)}\b'
+                agent_pattern = rf'(?:{agent_pattern})(?:\s+[aA]gent)?'
+
+                m = re.search(rf'(?i)\bask\s+(?:the\s+)?({agent_pattern})\s+(?:to\s+)?(.*)', cleaned)
+                if m:
+                    matched_agent = agent
+                    task_description = m.group(2).strip()
+                    break
+
+                m = re.search(rf'(?i)\bdelegate\s+(.*)\s+to\s+(?:the\s+)?({agent_pattern})\b', cleaned)
+                if m:
+                    matched_agent = agent
+                    task_description = m.group(1).strip()
+                    break
+
+                m = re.search(rf'(?i)\bgive\s+(?:this\s+)?task\s+to\s+(?:the\s+)?({agent_pattern})\b(?:\s*:\s*|\s+to\s+)?(.*)', cleaned)
+                if m:
+                    matched_agent = agent
+                    task_description = m.group(2).strip() or cleaned
+                    break
+                m = re.search(rf'(?i)\bgive\s+(?:the\s+)?({agent_pattern})\s+the\s+task\s+to\s+(.*)', cleaned)
+                if m:
+                    matched_agent = agent
+                    task_description = m.group(2).strip()
+                    break
+
+                m = re.search(rf'(?i)\blet\s+(?:the\s+)?({agent_pattern})\s+handle\s+(.*)', cleaned)
+                if m:
+                    matched_agent = agent
+                    task_description = m.group(2).strip()
+                    break
+
+                m = re.search(rf'(?i)\bhave\s+(?:the\s+)?({agent_pattern})\s+(?:analyze|review|do|summarize)\s+(.*)', cleaned)
+                if m:
+                    matched_agent = agent
+                    task_description = m.group(2).strip()
+                    break
+
+                m = re.search(rf'(?i)\blet\s+(?:the\s+)?({agent_pattern})\s+do\s+(.*)', cleaned)
+                if m:
+                    matched_agent = agent
+                    task_description = m.group(2).strip()
+                    break
+
+        if not matched_agent:
+            m_generic = re.search(r'(?i)\bask\s+(?:the\s+)?([a-zA-Z0-9_-]+[aA]gent)\s+(?:to\s+)?(.*)', cleaned)
+            if m_generic:
+                matched_agent = m_generic.group(1).strip()
+                task_description = m_generic.group(2).strip()
+            else:
+                m_generic = re.search(r'(?i)\bdelegate\s+(.*)\s+to\s+(?:the\s+)?([a-zA-Z0-9_-]+[aA]gent)\b', cleaned)
+                if m_generic:
+                    matched_agent = m_generic.group(2).strip()
+                    task_description = m_generic.group(1).strip()
+
+        if matched_agent and task_description:
+            print(f"[🛡️ Direct Route] Delegating task to '{matched_agent}': {task_description}")
+            return [{
+                "step": 1,
+                "tool": "delegate_task",
+                "arguments": {
+                    "agent_name": matched_agent,
+                    "task_description": task_description,
+                    "expected_output": "Final result of the assigned task."
+                }
+            }]
 
         # --- Local Compliance Grounding (Read-only) ---
         if any(k in cleaned.lower() for k in ("approved local knowledge", "local compliance knowledge", "local compliance only", "ca_compliance_2026.md")):
@@ -1509,6 +1731,42 @@ Output ONLY raw JSON. Start with '{{'.
         from core.orchestrator.agent_registry import agent_registry
         from core.tools.tool_registry import tool_registry
 
+        # --- BUILD vs DELEGATE Sanitization ---
+        has_builder = any(step.get("tool") == "agent_builder" for step in plan if isinstance(step, dict))
+        if has_builder:
+            is_build_and_run = any(w in user_input.lower() for w in ("then ask", "and ask", "and run", "and delegate", "and test", "then run"))
+            sanitized_builder_steps = []
+            for step in plan:
+                if not isinstance(step, dict):
+                    continue
+                tool_name = step.get("tool")
+                if tool_name == "agent_builder":
+                    args = step.setdefault("arguments", {})
+                    name_val = args.get("name", "")
+                    if name_val.lower() in ("crewai", "langgraph", "crew_ai", "lang_graph", ""):
+                        name_match = re.search(r'(?i)\b(?:build|create|make|generate)(?:\s+me)?(?:\s+a)?(?:\s+simple)?(?:\s+new)?\s+([a-zA-Z0-9_-]+?Agent)\b', user_input)
+                        if name_match:
+                            args["name"] = name_match.group(1).strip()
+                        else:
+                            args["name"] = "ResearchAgent" if "research" in user_input.lower() else "CustomSubAgent"
+                    
+                    if "langgraph" in user_input.lower():
+                        args["framework"] = "langgraph"
+                    else:
+                        args["framework"] = "crewai"
+                        
+                    if "capabilities" not in args or not args["capabilities"]:
+                        args["capabilities"] = self._extract_capabilities_from_prompt(user_input)
+                    role, goal = self._derive_agent_specs(args.get("name", "CustomSubAgent"), user_input, args.get("capabilities", []))
+                    args["role"] = role
+                    args["goal"] = goal
+                    args["backstory"] = f"An autonomous specialist sub-agent built for {role} operations."
+                    sanitized_builder_steps.append(step)
+                elif is_build_and_run:
+                    sanitized_builder_steps.append(step)
+            if not is_build_and_run and sanitized_builder_steps:
+                plan = [sanitized_builder_steps[0]]
+
         desktop_path = str(settings.desktop_dir).replace("\\", "/")
         workspace_path = str(settings.default_workspace_dir).replace("\\", "/")
 
@@ -1722,6 +1980,10 @@ Output ONLY raw JSON. Start with '{{'.
         str(Path.home())
         workspace_path = str(settings.default_workspace_dir)
 
+        if isinstance(failed_step, dict) and failed_step.get("tool") == "agent_builder":
+            print("[🔄 Build Replan] Retrying agent_builder with original arguments to prevent corruption.")
+            return [{"step": failed_step.get("step", 1), "tool": "agent_builder", "arguments": failed_step.get("arguments", {})}]
+
         system_prompt = f"""You are Jarvis's Reflector. A step failed during execution.
 Inspect the error, think about what went wrong, and output a revised plan to fix it.
 
@@ -1913,10 +2175,13 @@ Executed Steps & Results:
             "1. You must ONLY report actions and artifacts that were ACTUALLY executed in Executed Steps & Results.\n"
             "2. If the user requested multiple files, scripts, images, or folders, but only some (or one) appear in Executed Steps & Results, state ONLY what was executed. For example, if 'create_directory' succeeded but 'write_file' is missing, you MUST say 'The folder was created, but the file was not created.'\n"
             "3. DO NOT claim that any requested file, script, image, or document was created unless its corresponding tool execution (e.g. write_file, create_directory) appears in Executed Steps & Results with success.\n"
-            "4. PATH TRUTH ENFORCEMENT: When stating file or directory paths, state ONLY the exact verified path from Executed Steps & Results or Recalled Facts from Memory. Do NOT invent, reconstruct, or guess a path. If no verified path is available in Executed Steps or Recalled Facts, state: 'I don't have a verified path for that folder.', UNLESS the user's question is purely factual and does not explicitly ask about a path or folder.\n"
+            "4. PATH TRUTH ENFORCEMENT: If and only if the user's request explicitly asks about a file or folder path, state ONLY the exact verified path from Executed Steps & Results. If no verified path is available in Executed Steps or Recalled Facts, and the user explicitly asked about a path, state: 'I don't have a verified path for that folder.' Do NOT append any path disclaimers if the user did not ask about files, directories, or paths.\n"
             "5. Note that you have a persistent long-term memory system (Knowledge Graph) across sessions. Only mention details from Recalled Facts if directly relevant.\n"
             "6. CRITICAL RULE: If a tool (e.g. write_file) is absent from Executed Steps & Results, you CANNOT claim the file was created. You MUST state it was not created.\n"
-            f"7. CAPABILITY BOUNDARY: The current task intent is '{intent.task_type}'. You must respond based on this CURRENT execution. Do NOT adopt response modes, personas, or constraints (such as compliance gates or financial rules) from Recalled Facts unless the current task intent explicitly requires it."
+            f"7. CAPABILITY BOUNDARY: The current task intent is '{intent.task_type}'. You must respond based on this CURRENT execution. Do NOT adopt response modes, personas, or constraints (such as compliance gates or financial rules) from Recalled Facts unless the current task intent explicitly requires it.\n"
+            "8. CRITICAL: For delegated sub-agent tasks, if delegate_task did not execute any tools/actions that physically modified the system, you MUST NOT claim or report that any installation, package download, model training, or system setup occurred. Ignore any unsubstantiated claims by the delegated agent.\n"
+            "9. For agent building requests, if the agent was successfully built via agent_builder, you may state that the agent is configured with the requested capabilities as specified ONLY in the tool arguments (in the 'capabilities' list). CRITICAL: If 'capabilities' in the tool arguments is empty ([]), you MUST NOT claim or invent any capability configuration (such as summarize, analyze, or operations). State only that the agent was successfully built, hot-loaded, and verified.\n"
+            "10. DELEGATED TASK SYNTHESIS: For a successful delegate_task step, the delegated task description and its output result are fully present in current-run Executed Steps & Results. Report the delegated result directly. Do NOT claim that the request was missing, unstated, or not available in Executed Steps."
         )
         # --- Build current-run truth sets for post-filter ---
         current_run_tools = set()
@@ -1930,6 +2195,14 @@ Executed Steps & Results:
                     for path_key in ("filepath", "directory", "url"):
                         if path_key in step_args:
                             current_run_paths.add(str(step_args[path_key]))
+
+        has_successful_delegation = "delegate_task" in current_run_tools
+
+        builder_steps = [s for s in completed_steps if isinstance(s, dict) and s.get("tool") == "agent_builder"]
+        builder_has_empty_caps = any(
+            isinstance(s.get("arguments"), dict) and not s.get("arguments", {}).get("capabilities")
+            for s in builder_steps
+        )
 
         # Build an explicit enumeration of what was done for the system prompt
         executed_summary_lines = []
@@ -1963,6 +2236,37 @@ Executed Steps & Results:
                 # Check for negation in line (e.g. "was not created", "failed to save", "could not generate")
                 is_negation = any(neg in line_lower for neg in ("not ", "n't", "failed", "unable", "could not", "no ", "without"))
 
+                # Filter false disclaimers for successful delegated tasks or when files/paths were not requested
+                if has_successful_delegation or not any(w in prompt.lower() for w in ("file", "path", "directory", "folder")):
+                    if any(phrase in line_lower for phrase in (
+                        "request was not explicitly",
+                        "was not explicitly stated",
+                        "not available in executed steps",
+                        "original user request for the summary was not",
+                        "i don't have information about the request",
+                        "i don't have any information about files",
+                        "i don't have information about files",
+                        "no information about files",
+                        "no files, directories, or paths"
+                    )):
+                        skip = True
+
+                if builder_has_empty_caps:
+                    if any(phrase in line_lower for phrase in (
+                        "configured with the capability",
+                        "configured with capabilities",
+                        "configured with the requested capability",
+                        "configured with the capability to"
+                    )):
+                        skip = True
+
+                # If only builder executed (no delegate_task), block affirmative claims that agent performed analysis/task
+                if "agent_builder" in current_run_tools and "delegate_task" not in current_run_tools and not is_negation:
+                    if any(phrase in line_lower for phrase in (
+                        "analyzed", "conducted an analysis", "performed the task", "completed the analysis", "evaluated the risks"
+                    )):
+                        skip = True
+
                 # If affirmative line claims a generation that didn't happen
                 if not is_negation and any(w in line_lower for w in ("generated", "i also generated", "produced a", "composed a", "drafted a")):
                     if "generate_document" not in current_run_tools and "extract_data" not in current_run_tools:
@@ -1995,7 +2299,16 @@ Executed Steps & Results:
             filtered_synthesis = "\n".join(filtered_lines).strip()
             if not filtered_synthesis:
                 # If everything was filtered, produce a safe fallback
-                filtered_synthesis = f"Completed {len(completed_steps)} step(s): {', '.join(s.get('tool', '?') for s in completed_steps if isinstance(s, dict))}."
+                if has_successful_delegation:
+                    del_steps = [s for s in completed_steps if isinstance(s, dict) and s.get("tool") == "delegate_task"]
+                    if del_steps:
+                        agent_nm = del_steps[0].get("arguments", {}).get("agent_name", "sub-agent")
+                        del_res = del_steps[0].get("result", "")
+                        filtered_synthesis = f"The {agent_nm} successfully completed the delegated task: {del_res}"
+                    else:
+                        filtered_synthesis = f"Completed {len(completed_steps)} step(s): {', '.join(s.get('tool', '?') for s in completed_steps if isinstance(s, dict))}."
+                else:
+                    filtered_synthesis = f"Completed {len(completed_steps)} step(s): {', '.join(s.get('tool', '?') for s in completed_steps if isinstance(s, dict))}."
             
             return prose_hook.filter_response(filtered_synthesis)
         except Exception:

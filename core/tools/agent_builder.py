@@ -39,6 +39,14 @@ class AgentBuilderInput(BaseModel):
         default_factory=list,
         description="List of tool names allowed (e.g. ['FileManagementToolkit.list_dir', 'file_scanner'])"
     )
+    framework: str = Field(
+        default="crewai",
+        description="The framework to use (e.g. crewai or langgraph)"
+    )
+    capabilities: List[str] = Field(
+        default_factory=list,
+        description="List of capabilities specializing in"
+    )
 
 
 class AgentBuilderOutput(BaseModel):
@@ -101,7 +109,9 @@ class AgentBuilder(BaseTool[AgentBuilderInput, AgentBuilderOutput]):
             "backstory": input_data.backstory,
             "verbose": True,
             "allow_delegation": False,
-            "tools": input_data.tools
+            "tools": input_data.tools,
+            "framework": input_data.framework,
+            "capabilities": input_data.capabilities
         }
         updated_list.append(new_agent)
         config["custom_sub_agents"] = updated_list
@@ -129,7 +139,8 @@ class AgentBuilder(BaseTool[AgentBuilderInput, AgentBuilderOutput]):
             )
 
         # 4. Register dynamically
-        agent_registry.register(input_data.name, agent_instance, input_data.tools)
+        caps = input_data.capabilities if input_data.capabilities else input_data.tools
+        agent_registry.register(input_data.name, agent_instance, caps)
 
         # 5. Run baseline smoke test execution
         try:
