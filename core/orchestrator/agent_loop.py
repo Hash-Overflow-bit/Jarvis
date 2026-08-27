@@ -231,6 +231,11 @@ class AgentExecutionLoop:
                     full_report = WritingPipeline.run_extraction_workflow(user_input, sources)
                     word_count = len(full_report.split())
                 else:
+                    if intent_dict.get("research_required") and intent_dict.get("sources_required") and not sources:
+                        print(f"[🚫 Evidence Gate] Halting: 'generate_document' requires verified sources, but none were retrieved.")
+                        # We must abort the generation and the write_file step
+                        return "[❌ Failure] Execution halted: I couldn't retrieve enough current sources to produce a grounded report."
+
                     print(f"[📝 Generation] Starting document generation for topic '{topic}'...")
                     full_report = WritingPipeline.run_research_workflow(topic, sources)
                     word_count = len(full_report.split())
@@ -401,9 +406,11 @@ class AgentExecutionLoop:
                     return f"Execution of '{tool_name}' denied by user."
 
                 # --- LOCAL COMPLIANCE FAILURE INTERCEPT ---
-                if any(k in user_input.lower() for k in ("approved local knowledge", "local compliance knowledge", "local compliance only", "ca_compliance_2026.md")):
-                    return prose_hook.filter_response("I cannot verify that from the approved local compliance knowledge.")
-
+                if tool_name in ("read_file", "generate_document", "web_search", "extract_data"):
+                    if any(k in user_input.lower() for k in ("approved local knowledge", "local compliance knowledge", "local compliance only", "ca_compliance_2026.md")):
+                        # Verify it's not a mutating command containing the word "verify" (e.g. verify the file was deleted)
+                        if "delete" not in user_input.lower() and "remove" not in user_input.lower() and "create" not in user_input.lower():
+                            return prose_hook.filter_response("I cannot verify that from the approved local compliance knowledge.")
                 # --- RESEARCH FAILURE FALLBACK: Deterministic retry for web_search ---
                 # Do NOT invoke expensive LLM reflection for search failures.
                 # Use deterministic shorter-query retry logic instead.
@@ -621,6 +628,11 @@ class AgentExecutionLoop:
         from core.writing.pipeline import WritingPipeline, ContentWorkflowIntent
         cleaned = user_input.strip()
 
+        # --- Local Compliance Grounding (Read-only) ---
+        if any(k in cleaned.lower() for k in ("approved local knowledge", "local compliance knowledge", "local compliance only", "ca_compliance_2026.md")):
+            target_fp = str(settings.compliance_knowledge_file)
+            return [{"step": 1, "tool": "read_file", "arguments": {"filepath": target_fp}}]
+
         # --- WritingIntent Routing (Research + Write + Save) ---
         intent = WritingPipeline.parse_intent(user_input)
         
@@ -691,9 +703,10 @@ class AgentExecutionLoop:
             
             return plan
 
-        if intent.task_type in ("research_write", "local_doc", "extraction"):
+        if getattr(intent, 'task_type', '') in ("research_write", "local_doc", "extraction"):
             # Fall back to LLM for conversational questions instead of forcing a document generation command
-            if re.match(r'^(did|are|is|why|what|how|who|when|where)\b', cleaned, re.IGNORECASE):
+            is_compliance = any(k in cleaned.lower() for k in ("approved local knowledge", "local compliance knowledge", "local compliance only", "ca_compliance_2026.md"))
+            if not is_compliance and re.match(r'^(did|are|is|why|what|how|who|when|where)\b', cleaned, re.IGNORECASE):
                 return None
             
             plan = []
@@ -726,13 +739,9 @@ class AgentExecutionLoop:
             
             # 4. Save to disk if required
             if intent.save_required:
-                filename = "output.md" if intent.task_type != "extraction" else "extraction.json"
-                
-                # Extract filename if specified
-                fn_match = re.search(r'(?:save|write|to|as|into)\s+(?:a\s+)?(?:file\s+)?(?:named\s+|called\s+|as\s+)?[\'\"]?([a-zA-Z0-9_\-\.\/]+\.(?:md|txt|json|pdf|csv))[\'\"]?', user_input, re.IGNORECASE)
-                if fn_match:
-                    parts = fn_match.group(1).strip().split('/')
-                    filename = parts[-1]
+                filename = getattr(intent, 'filename', None)
+                if not filename:
+                    filename = "output.md" if intent.task_type != "extraction" else "extraction.json"
                     
                 root_dir = settings.desktop_dir if intent.destination_root == "desktop" else settings.default_workspace_dir
                 dest_path = root_dir

@@ -39,18 +39,128 @@ class WebSearchOutput(BaseModel):
     warning: Optional[str] = Field(None, description="Warning or error message if search failed.")
 
 
+from abc import ABC, abstractmethod
+from bs4 import BeautifulSoup
+
+class SearchProvider(ABC):
+    @abstractmethod
+    def search(self, query: str, timeout: tuple = (5, 15)) -> List[Dict[str, str]]:
+        pass
+
+class DuckDuckGoLiteProvider(SearchProvider):
+    def search(self, query: str, timeout: tuple = (5, 15)) -> List[Dict[str, str]]:
+        results = []
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Content-Type": "application/x-www-form-urlencoded"
+            }
+            url = "https://lite.duckduckgo.com/lite/"
+            data = {"q": query}
+            resp = requests.post(url, headers=headers, data=data, timeout=timeout)
+            logger.debug(f"Search provider=DDG_Lite query={query!r} status={resp.status_code} bytes={len(resp.content)}")
+            
+            if resp.status_code == 200:
+                soup = BeautifulSoup(resp.text, "html.parser")
+                for tr in soup.find_all("tr"):
+                    td = tr.find("td", class_="result-snippet")
+                    if td:
+                        snippet = td.get_text(strip=True)
+                        # The title and URL are usually in the PREVIOUS tr
+                        prev_tr = tr.find_previous_sibling("tr")
+                        if prev_tr:
+                            a_tag = prev_tr.find("a", class_="result-link")
+                            if a_tag:
+                                title = a_tag.get_text(strip=True)
+                                clean_url = a_tag.get("href", "")
+                                if clean_url.startswith("//"):
+                                    clean_url = "https:" + clean_url
+                                if clean_url.startswith("http"):
+                                    results.append({
+                                        "title": title,
+                                        "url": clean_url,
+                                        "snippet": snippet,
+                                        "provider": "DuckDuckGoLite"
+                                    })
+                                    if len(results) >= 5:
+                                        break
+            elif resp.status_code == 202:
+                logger.warning(f"DDG Lite returned HTTP 202 (Bot Challenge) for query '{query}'.")
+            
+            if not results and resp.status_code == 200:
+                logger.debug(f"DDG Lite returned 0 results. HTML prefix: {resp.text[:500]!r}")
+                
+        except Exception as e:
+            logger.warning(f"DDG Lite HTTP query failed for '{query}': {type(e).__name__}: {e}")
+        return results
+
+class DuckDuckGoHTMLProvider(SearchProvider):
+    def search(self, query: str, timeout: tuple = (5, 15)) -> List[Dict[str, str]]:
+        results = []
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            }
+            url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
+            resp = requests.get(url, headers=headers, timeout=timeout)
+            logger.debug(f"Search provider=DDG_HTML query={query!r} status={resp.status_code} bytes={len(resp.content)}")
+            
+            if resp.status_code == 200:
+                soup = BeautifulSoup(resp.text, "html.parser")
+                for a in soup.find_all("a", class_="result__url", limit=5):
+                    raw_href = a.get("href", "")
+                    title_node = a.find_parent("div", class_="result__body")
+                    if title_node:
+                        title_elt = title_node.find("a", class_="result__a")
+                        snippet_elt = title_node.find("a", class_="result__snippet")
+                        title = title_elt.get_text(strip=True) if title_elt else "Search Result"
+                        snippet = snippet_elt.get_text(strip=True) if snippet_elt else ""
+                        clean_url = raw_href
+                        if "uddg=" in raw_href:
+                            try:
+                                clean_url = urllib.parse.unquote(raw_href.split("uddg=")[1].split("&")[0])
+                            except Exception:
+                                pass
+                        if clean_url and clean_url.startswith("http"):
+                            results.append({
+                                "title": title,
+                                "url": clean_url,
+                                "snippet": snippet,
+                                "provider": "DuckDuckGoHTML"
+                            })
+            elif resp.status_code == 202:
+                logger.warning(f"DDG HTML returned HTTP 202 (Bot Challenge) for query '{query}'.")
+            
+            if not results and resp.status_code == 200:
+                logger.debug(f"DDG HTML returned 0 results. HTML prefix: {resp.text[:500]!r}")
+                
+        except Exception as e:
+            logger.warning(f"DDG HTML HTTP query failed for '{query}': {type(e).__name__}: {e}")
+        return results
+
 class WebSearch(BaseTool):
     """
     Searches the web for real-time information, documentation, and sources.
     """
 
-    name: str = "web_search"
-    description: str = (
-        "Use when user wants to research online topics, current information, or retrieve external sources. "
-        "Arguments: {'query': '<search_query>'}"
-    )
-    input_schema: type[BaseModel] = WebSearchInput
-    output_schema: type[BaseModel] = WebSearchOutput
+    @property
+    def name(self) -> str:
+        return "web_search"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Use when user wants to research online topics, current information, or retrieve external sources. "
+            "Arguments: {'query': '<search_query>'}"
+        )
+
+    @property
+    def input_schema(self) -> type[BaseModel]:
+        return WebSearchInput
+
+    @property
+    def output_schema(self) -> type[BaseModel]:
+        return WebSearchOutput
 
     @staticmethod
     def _clean_query(raw_query: str) -> str:
@@ -155,42 +265,6 @@ class WebSearch(BaseTool):
 
         return sorted(results, key=get_priority)
 
-    def _fetch_ddg_results(self, search_term: str) -> List[Dict[str, str]]:
-        """Executes HTTP request to DuckDuckGo HTML endpoint and parses result items."""
-        results: List[Dict[str, str]] = []
-        try:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            }
-            url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(search_term)}"
-            resp = requests.get(url, headers=headers, timeout=5)
-            if resp.status_code == 200:
-                from bs4 import BeautifulSoup
-                soup = BeautifulSoup(resp.text, "html.parser")
-                for a in soup.find_all("a", class_="result__url", limit=5):
-                    raw_href = a.get("href", "")
-                    title_node = a.find_parent("div", class_="result__body")
-                    if title_node:
-                        title_elt = title_node.find("a", class_="result__a")
-                        snippet_elt = title_node.find("a", class_="result__snippet")
-                        title = title_elt.get_text(strip=True) if title_elt else "Search Result"
-                        snippet = snippet_elt.get_text(strip=True) if snippet_elt else ""
-                        clean_url = raw_href
-                        if "uddg=" in raw_href:
-                            try:
-                                clean_url = urllib.parse.unquote(raw_href.split("uddg=")[1].split("&")[0])
-                            except Exception:
-                                pass
-                        if clean_url and clean_url.startswith("http"):
-                            results.append({
-                                "title": title,
-                                "url": clean_url,
-                                "snippet": snippet
-                            })
-        except Exception as e:
-            logger.warning(f"Web search HTTP query failed for '{search_term}': {e}")
-        return results
-
     def run(self, input_data: WebSearchInput) -> WebSearchOutput:
         raw_query = input_data.query.strip()
         if not raw_query:
@@ -201,8 +275,14 @@ class WebSearch(BaseTool):
                 warning="Search query was empty."
             )
 
-        all_results = self._fetch_ddg_results(raw_query)
-
+        providers = [DuckDuckGoLiteProvider(), DuckDuckGoHTMLProvider()]
+        all_results = []
+        
+        for provider in providers:
+            all_results = provider.search(raw_query)
+            if all_results:
+                break
+            
         # Deterministic retry: try shorter key-noun query
         if not all_results:
             cleaned_query = self._clean_query(raw_query)
@@ -214,7 +294,10 @@ class WebSearch(BaseTool):
             )]
             if len(words) >= 2:
                 fallback_q = " ".join(words[:5])
-                all_results = self._fetch_ddg_results(fallback_q)
+                for provider in providers:
+                    all_results = provider.search(fallback_q)
+                    if all_results:
+                        break
 
         # Sort results by official docs -> official repo -> primary vendor -> secondary sources
         all_results = self._rank_sources_by_priority(all_results)

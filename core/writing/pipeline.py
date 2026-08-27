@@ -41,6 +41,7 @@ class WritingIntent:
     destination_root: Optional[str]
     destination_subpath: Optional[List[str]]
     output_format: str
+    filename: Optional[str] = None
     source_files: Optional[List[SourceFileRef]] = None
 
     def to_dict(self):
@@ -54,6 +55,7 @@ class WritingIntent:
             "destination_root": self.destination_root,
             "destination_subpath": self.destination_subpath,
             "output_format": self.output_format,
+            "filename": self.filename,
             "source_files": [vars(s) for s in self.source_files] if self.source_files else []
         }
 
@@ -182,11 +184,28 @@ class WritingPipeline:
             task_type = "simple"
             research_required = False
             
-        # Using a simple greedy approach for topic might be too broad. Let's just strip common prefixes.
-        topic_clean = re.sub(r'^(please\s+)?(prepare\s+a\s+comprehensive,?\s*sourced\s+analysis\s+of|investigate|research|write.*?about|tell me about|produce\s+an?\s+evidence-based.*?report\s+on|draft\s+a\s+detailed\s+paper\s+on)\s+', '', user_input_no_vocative, flags=re.IGNORECASE)
-        # Split by sentence-ending periods, commas, or 'and save' to get the core topic
-        topic = re.split(r'\.\s+|,| and save', topic_clean, flags=re.IGNORECASE)[0].strip()
+        # Remove common verbs/prefixes
+        topic_clean = re.sub(r'^(?:please\s+)?(?:prepare\s+(?:a\s+)?(?:comprehensive,?\s*)?(?:sourced\s+)?analysis\s+of|investigate|research|find\s+current\s+information\s+about|find\s+current\s+information|write.*?about|tell me about|produce\s+an?\s+evidence-based.*?report\s+on|draft\s+a\s+detailed\s+paper\s+on|find\s+out\s+about)\s+', '', user_input_no_vocative, flags=re.IGNORECASE)
+        # Remove "current uses of" or "current applications of"
+        topic_clean = re.sub(r'^(?:current\s+)?(?:uses|applications|impact)\s+of\s+', '', topic_clean, flags=re.IGNORECASE)
+        
+        # Remove constraints from the end or middle
+        constraints = [
+            r'\s+using\s+(?:real\s+)?sources.*$',
+            r'\s+with\s+(?:real\s+)?sources.*$',
+            r'\s+(?:and\s+)?write\s+(?:at\s+least\s+)?[\d,]+(?:k)?\s*words?.*$',
+            r'\s+(?:and\s+)?save\s+it\s+(?:as|on|to).*$',
+            r'\s+(?:and\s+)?save\s+the\s+document.*$',
+            r'\s+(?:and\s+)?export\s+it.*$',
+        ]
+        for c in constraints:
+            topic_clean = re.sub(c, '', topic_clean, flags=re.IGNORECASE)
             
+        topic = topic_clean.strip('.!?,; ')
+        
+        # Fallback to basic splitting if too long
+        if len(topic.split()) > 15:
+            topic = re.split(r'\.\s+|,| and save', topic, flags=re.IGNORECASE)[0].strip()
         min_words = None
         # Handle formats like 2,000, 2000, 2k, 1800-word
         word_m = re.search(r'(?:no\s+shorter\s+than|at\s+least|minimum|no\s+less\s+than|more\s+than)?\s*([\d,]+)(k)?\+?(?:\s*|-?)words?', cleaned)
@@ -291,6 +310,7 @@ class WritingPipeline:
             destination_root=destination_root,
             destination_subpath=destination_subpath,
             output_format=output_format,
+            filename=target_fname,
             source_files=unique_sources
         )
 
