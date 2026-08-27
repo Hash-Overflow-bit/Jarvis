@@ -156,6 +156,7 @@ class AgentExecutionLoop:
 
         # 3. Execution Loop
         completed_steps = []
+        execution_results = []
         step_idx = 0
         retry_count = 0
         MAX_RETRIES = 3
@@ -192,6 +193,44 @@ class AgentExecutionLoop:
                 from core.writing.sources import EvidenceSource
                 
                 intent_dict = args.get("intent", {})
+                
+                # Check for failed source reads before executing extract_data or generate_document
+                if tool_name in ("generate_document", "extract_data"):
+                    required_paths = []
+                    if intent_dict.get("source_files"):
+                        for f in intent_dict["source_files"]:
+                            filename = f.get("filename")
+                            location = f.get("location")
+                            if filename:
+                                target_fp = filename
+                                if not (target_fp.startswith(("/", "\\")) or ":" in target_fp):
+                                    if location == "desktop":
+                                        target_fp = str(settings.desktop_dir / filename)
+                                    else:
+                                        target_fp = str(settings.default_workspace_dir / filename)
+                                required_paths.append(str(Path(target_fp).resolve()))
+
+                    for path in required_paths:
+                        attempts = []
+                        for er in execution_results:
+                            if er["tool"] == "read_file":
+                                er_path = er["arguments"].get("filepath")
+                                if er_path:
+                                    try:
+                                        if Path(er_path).resolve() == Path(path).resolve():
+                                            attempts.append(er)
+                                    except Exception:
+                                        if str(er_path) == str(path):
+                                            attempts.append(er)
+                        
+                        if attempts and not attempts[-1]["success"]:
+                            error_msg = attempts[-1]["result"].get("error") or "File read failed."
+                            print(f"[🚫 Prerequisite Failed] Prerequisite read of '{path}' failed: {error_msg}")
+                            return f"Execution halted at Step {step.get('step')} ({tool_name}) because the source file could not be read: {error_msg}"
+                        elif not attempts:
+                            print(f"[🚫 Prerequisite Missing] Prerequisite read of '{path}' was never attempted.")
+                            return f"Execution halted at Step {step.get('step')} ({tool_name}) because the source file could not be read: {Path(path).name} was not successfully read."
+
                 intent_dict.get("task_type", "")
                 topic = intent_dict.get("topic", "research topic")
                 min_words = intent_dict.get("minimum_words")
@@ -346,6 +385,15 @@ class AgentExecutionLoop:
                     if "Jarvis execution verified" not in read_content:
                         tool_success = False
                         result["error"] = "Content did not exactly match 'Jarvis execution verified'."
+
+            # Record execution result
+            execution_results.append({
+                "step": step.get("step"),
+                "tool": tool_name,
+                "arguments": args,
+                "success": tool_success,
+                "result": result
+            })
 
             if tool_success:
                 print(f"[✅ Success] Step {step.get('step')} completed.")

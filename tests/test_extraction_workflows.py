@@ -68,3 +68,91 @@ def test_extraction_fails_gracefully_if_read_fails(tmp_path):
         assert "Execution halted" in result
         assert "missing.csv" in result
         assert not (desktop / "out.json").exists()
+
+def test_extraction_permission_error_halts(tmp_path):
+    desktop = tmp_path / "Desktop"
+    desktop.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    
+    from core.tools.tool_registry import tool_registry
+    original_execute = tool_registry.execute
+    
+    def mock_execute(name, args, mode='text'):
+        if name == 'read_file':
+            return {'success': False, 'error': 'Disk read error (Permission Error)'}
+        return original_execute(name, args, mode)
+
+    with patch.object(settings.__class__, 'desktop_dir', property(lambda self: desktop)), \
+         patch.object(settings.__class__, 'default_workspace_dir', property(lambda self: workspace)), \
+         patch.object(tool_registry, 'execute', side_effect=mock_execute):
+        
+        prompt = "Read secret.csv from my Desktop. Extract names. Save to Desktop as out.json."
+        loop = AgentExecutionLoop()
+        result = loop.run(prompt)
+        
+        assert "Execution halted" in result
+        assert "secret.csv" in result or "Disk read error" in result
+        assert not (desktop / "out.json").exists()
+
+def test_extraction_existing_empty_file(tmp_path):
+    desktop = tmp_path / "Desktop"
+    desktop.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    
+    empty_file = desktop / "empty.csv"
+    empty_file.touch()
+    
+    with patch.object(settings.__class__, 'desktop_dir', property(lambda self: desktop)), \
+         patch.object(settings.__class__, 'default_workspace_dir', property(lambda self: workspace)):
+        
+        prompt = "Read empty.csv from my Desktop. Extract names. Save to Desktop as out.json."
+        loop = AgentExecutionLoop()
+        result = loop.run(prompt)
+        
+        assert (desktop / "out.json").exists()
+        content = (desktop / "out.json").read_text()
+        assert "warnings" in content
+
+def test_extraction_valid_file(tmp_path):
+    desktop = tmp_path / "Desktop"
+    desktop.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    
+    valid_file = desktop / "valid.csv"
+    valid_file.write_text("Name,Age\nAlice,30\nBob,25")
+    
+    with patch.object(settings.__class__, 'desktop_dir', property(lambda self: desktop)), \
+         patch.object(settings.__class__, 'default_workspace_dir', property(lambda self: workspace)):
+        
+        prompt = "Read valid.csv from my Desktop. Extract names. Save to Desktop as out.json."
+        loop = AgentExecutionLoop()
+        result = loop.run(prompt)
+        
+        assert (desktop / "out.json").exists()
+        content = (desktop / "out.json").read_text()
+        assert "Alice" in content or "names" in content
+
+def test_extraction_multiple_sources_one_fails(tmp_path):
+    desktop = tmp_path / "Desktop"
+    desktop.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    
+    file1 = desktop / "file1.csv"
+    file1.write_text("Name\nAlice")
+    
+    # file2 is missing
+    with patch.object(settings.__class__, 'desktop_dir', property(lambda self: desktop)), \
+         patch.object(settings.__class__, 'default_workspace_dir', property(lambda self: workspace)):
+        
+        prompt = "Read file1.csv and file2.csv from my Desktop. Extract names. Save to Desktop as out.json."
+        loop = AgentExecutionLoop()
+        result = loop.run(prompt)
+        
+        assert "Execution halted" in result
+        assert "file2.csv" in result
+        assert not (desktop / "out.json").exists()
+
