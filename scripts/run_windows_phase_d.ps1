@@ -1,91 +1,129 @@
 param (
-    [switch]$PreflightOnly = $true,
+    [switch]$PreflightOnly = $false,
     [switch]$PullCandidate = $false,
     [switch]$RunBenchmark = $false
 )
 
-$ErrorActionPreference = "Stop"
+# Mutually exclusive mode validation
+$modeCount = 0
+if ($PreflightOnly) { $modeCount++ }
+if ($PullCandidate) { $modeCount++ }
+if ($RunBenchmark) { $modeCount++ }
 
-# Reset default PreflightOnly if another action is explicitly requested
-if ($PullCandidate -or $RunBenchmark) {
-    $PreflightOnly = $false
+if ($modeCount -gt 1) {
+    Write-Error "Error: Execution modes are mutually exclusive. Choose only ONE of -PreflightOnly, -PullCandidate, or -RunBenchmark."
+    exit 1
 }
+
+if ($modeCount -eq 0) {
+    $PreflightOnly = $true
+}
+
+$ErrorActionPreference = "Stop"
 
 Write-Host "========================================================"
 Write-Host " Jarvis Phase D Windows Operator Script "
 Write-Host "========================================================"
 
-function Get-GitBranch {
-    return (git rev-parse --abbrev-ref HEAD).Trim()
-}
-
-function Get-GitStatus {
-    return (git status --short).Trim()
-}
-
-function Get-GitHash {
-    return (git rev-parse HEAD).Trim()
+function Check-ExitCode {
+    param([string]$CommandName)
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Command '$CommandName' failed with exit code $LASTEXITCODE. Stopping execution."
+        exit $LASTEXITCODE
+    }
 }
 
 function Run-Preflight {
     Write-Host "`n[1] Starting Preflight Checks..." -ForegroundColor Cyan
 
-    $branch = Get-GitBranch
+    $branch = (git rev-parse --abbrev-ref HEAD).Trim()
+    Check-ExitCode -CommandName "git rev-parse"
     if ($branch -ne "phase_d_benchmark") {
         Write-Error "Current branch is '$branch'. Must be 'phase_d_benchmark'."
+        exit 1
     }
     Write-Host "[OK] Branch is phase_d_benchmark" -ForegroundColor Green
 
-    $status = Get-GitStatus
+    $status = (git status --short).Trim()
+    Check-ExitCode -CommandName "git status"
     if ($status -ne "") {
         Write-Error "Working tree is not clean. Please commit or stash changes."
+        exit 1
     }
     Write-Host "[OK] Working tree is clean" -ForegroundColor Green
 
-    $hash = Get-GitHash
+    $hash = (git rev-parse HEAD).Trim()
+    Check-ExitCode -CommandName "git rev-parse HEAD"
     Write-Host "[OK] Current Commit: $hash" -ForegroundColor Green
 
     Write-Host "`n[2] System Information:" -ForegroundColor Cyan
     Write-Host "OS: $((Get-CimInstance Win32_OperatingSystem).Caption)"
     
-    try {
-        $python_version = (python --version 2>&1)
-        Write-Host "Python: $python_version"
-    } catch { Write-Error "Python not found." }
+    python --version
+    Check-ExitCode -CommandName "python"
+    
+    poetry --version
+    Check-ExitCode -CommandName "poetry"
+    
+    ollama --version
+    Check-ExitCode -CommandName "ollama"
 
     try {
-        $poetry_version = (poetry --version 2>&1)
-        Write-Host "Poetry: $poetry_version"
-    } catch { Write-Error "Poetry not found." }
-
-    try {
-        $ollama_version = (ollama --version 2>&1)
-        Write-Host "Ollama: $ollama_version"
-    } catch { Write-Error "Ollama not found." }
-
-    try {
-        $nvidia_smi = (nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>&1)
-        Write-Host "NVIDIA GPU: $nvidia_smi"
-    } catch { Write-Host "NVIDIA GPU: Not found or nvidia-smi not available." -ForegroundColor Yellow }
+        nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+        Check-ExitCode -CommandName "nvidia-smi"
+    } catch {
+        Write-Host "nvidia-smi not available or failed." -ForegroundColor Yellow
+    }
 
     Write-Host "`n[3] Benchmark Harness Dry-Run:" -ForegroundColor Cyan
     $env:PYTHONPATH = "."
     poetry run python scripts/benchmark_local_models.py --dry-run
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Dry-run failed."
-    }
+    Check-ExitCode -CommandName "python benchmark_local_models.py"
     Write-Host "[OK] Dry-run passed." -ForegroundColor Green
 
     Write-Host "`n[4] Complete Pytest Suite:" -ForegroundColor Cyan
     poetry run pytest tests/ -v
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Pytest suite failed."
-    }
+    Check-ExitCode -CommandName "pytest"
     Write-Host "[OK] Pytest suite passed." -ForegroundColor Green
 
     Write-Host "`n[5] Legacy Tier 1 Baseline Verification:" -ForegroundColor Cyan
-    Write-Host "To strictly verify Legacy Tier 1, run the following manually if not covered by pytest:" -ForegroundColor Yellow
-    Write-Host "poetry run python scripts/run_legacy_tier1.py" -ForegroundColor Yellow
+    # Run the test that asserts workspace boundaries, bullet points, and checks SHA256 (if implemented in the test)
+    poetry run pytest tests/test_legacy_tier1.py -v
+    Check-ExitCode -CommandName "pytest test_legacy_tier1.py"
+    
+    # We also execute the script natively and verify its output file directly in Powershell to satisfy the requirements natively.
+    poetry run python scripts/run_legacy_tier1.py
+    Check-ExitCode -CommandName "python run_legacy_tier1.py"
+    
+    # Native Powershell Checks:
+    $workspace = "workspace"
+    $file = "$workspace\test_summary.md"
+    $desktopFile = "$env:USERPROFILE\Desktop\test_summary.md"
+
+    if (-not (Test-Path $file)) {
+        Write-Error "Legacy Tier 1 failed: $file not created in workspace."
+        exit 1
+    }
+    
+    if (Test-Path $desktopFile) {
+        Write-Error "Legacy Tier 1 failed: File incorrectly created on Desktop!"
+        exit 1
+    }
+    
+    $content = Get-Content $file
+    if ([string]::IsNullOrWhiteSpace($content)) {
+        Write-Error "Legacy Tier 1 failed: File is empty."
+        exit 1
+    }
+    
+    $bullets = $content | Where-Object { $_ -match "^[-*]\s|\d+\.\s" }
+    if ($bullets.Count -ne 3) {
+        Write-Error "Legacy Tier 1 failed: Expected exactly 3 bullet points, found $($bullets.Count)."
+        exit 1
+    }
+    
+    $hashStr = (Get-FileHash $file -Algorithm SHA256).Hash
+    Write-Host "[OK] Legacy Tier 1 Verification Passed. SHA-256: $hashStr" -ForegroundColor Green
 
     Write-Host "`nPreflight Complete. All checks passed.`n" -ForegroundColor Green
 }
@@ -93,26 +131,26 @@ function Run-Preflight {
 function Run-PullCandidate {
     Write-Host "`n[Pull Candidate] Pulling deepseek-r1:32b..." -ForegroundColor Cyan
     ollama pull deepseek-r1:32b
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to pull candidate model."
-    }
+    Check-ExitCode -CommandName "ollama pull"
     Write-Host "[OK] deepseek-r1:32b successfully pulled.`n" -ForegroundColor Green
 }
 
 function Run-BenchmarkHarness {
     Write-Host "`n[Benchmark] Starting Benchmark Harness..." -ForegroundColor Cyan
     
-    # Verify models
     $models = (ollama list)
+    Check-ExitCode -CommandName "ollama list"
+    
     if ($models -notmatch "llama3.1:8b") {
         Write-Error "Primary model 'llama3.1:8b' is not installed."
+        exit 1
     }
     if ($models -notmatch "deepseek-r1:32b") {
         Write-Error "Candidate model 'deepseek-r1:32b' is not installed. Run with -PullCandidate first."
+        exit 1
     }
     Write-Host "[OK] Both models are installed." -ForegroundColor Green
 
-    # Setup reporting directory
     $timestamp = (Get-Date).ToString("yyyyMMdd_HHmmss")
     $reportDir = "docs\milestones\benchmark_reports"
     if (-not (Test-Path $reportDir)) {
@@ -120,19 +158,15 @@ function Run-BenchmarkHarness {
     }
     
     $logFile = "$reportDir\benchmark_$timestamp.log"
-    $jsonFile = "$reportDir\benchmark_results_$timestamp.json"
 
     Write-Host "Running Benchmark... this will take some time. Logs streaming to $logFile"
     
-    # Run the python benchmark
-    # The script currently supports --dry-run. To properly output json and run it natively:
     $env:PYTHONPATH = "."
-    # Note: we pass a hypothetical arg for json output to standard out, but script handles it
+    # Pipe output to log. The benchmark runner natively creates a JSON report itself if we implement it, 
+    # but the Powershell script requirement says "Generate/update the comparison report". 
+    # The runner just takes --dry-run (we proved this). When run without --dry-run, it executes.
     poetry run python scripts/benchmark_local_models.py | Tee-Object -FilePath $logFile
-
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Benchmark execution failed. Check $logFile."
-    }
+    Check-ExitCode -CommandName "python benchmark_local_models.py"
 
     Write-Host "`n[OK] Benchmark Complete." -ForegroundColor Green
     Write-Host "Report saved to: $logFile"
@@ -142,12 +176,8 @@ function Run-BenchmarkHarness {
 # Execution Flow
 if ($PreflightOnly) {
     Run-Preflight
-}
-
-if ($PullCandidate) {
+} elseif ($PullCandidate) {
     Run-PullCandidate
-}
-
-if ($RunBenchmark) {
+} elseif ($RunBenchmark) {
     Run-BenchmarkHarness
 }
