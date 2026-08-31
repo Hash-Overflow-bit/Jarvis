@@ -81,7 +81,21 @@ def run_benchmarks(is_dry_run: bool):
     if is_dry_run:
         validate_tmp_workspace()
         validate_metrics_serialization()
-        print(f"Categories: {dict(categories)}")
+        
+        # Assert exact counts
+        expected_counts = {
+            "daily_assistant": 10,
+            "structured_planning": 10,
+            "safe_workspace": 10,
+            "security_adversarial": 10,
+            "legacy_tier1": 5,
+            "long_document_reasoning": 5
+        }
+        for cat, expected in expected_counts.items():
+            actual = categories.get(cat, 0)
+            assert actual == expected, f"Expected {expected} cases for '{cat}', got {actual}"
+            print(f"{cat}: {actual}")
+            
         print("50 benchmark cases valid — no models invoked")
         return
     
