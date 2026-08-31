@@ -136,17 +136,17 @@ def test_agent_loop_execution_with_reflection():
             "plan": [
                 {
                     "step": 1,
-                    "tool": "write_file",
-                    "arguments": {"filepath": "/bad/file.txt", "content": "hello"}
+                    "tool": "delegate_task",
+                    "arguments": {"agent_name": "Writer", "task_description": "Write report", "expected_output": "Report"}
                 }
             ]
         })
     }
     
-    # Step 2: tool execution failure (returns success=False)
+    # Step 2: tool execution fails
     mock_failed_exec = {
         "success": False,
-        "error": "PermissionError"
+        "error": "Agent busy"
     }
     
     # Step 3: reflector replanning
@@ -156,8 +156,8 @@ def test_agent_loop_execution_with_reflection():
             "plan": [
                 {
                     "step": 1,
-                    "tool": "write_file",
-                    "arguments": {"filepath": "/workspace/file.txt", "content": "hello"}
+                    "tool": "delegate_task",
+                    "arguments": {"agent_name": "Writer2", "task_description": "Write report", "expected_output": "Report"}
                 }
             ]
         })
@@ -230,9 +230,8 @@ def test_agent_loop_tool_call_leakage_recovery():
     with patch("core.orchestrator.agent_loop.ollama.chat", side_effect=[mock_empty_plan, mock_chat_res]):
         with patch("core.tools.tool_registry.tool_registry.execute", return_value={"success": True, "result": {}}) as mock_exec:
             res = loop.run("Create agents/test_leak.json containing role CEO")
-            assert "Successfully executed 'write_file'" in res
-            assert "agents/test_leak.json" in res
-            mock_exec.assert_called_once_with("write_file", {"filepath": "agents/test_leak.json", "content": '{"role": "CEO"}'})
+            assert "was reported created, but does not physically exist" in res
+            assert "test_leak.json" in res
 
 
 def test_agent_loop_sanitizer_toolkit_prefix_stripping():
@@ -426,24 +425,24 @@ def test_agent_loop_synthesis_no_unexecuted_file_claims():
         assert "automation_demo" in res_lower
 
 
-def test_agent_loop_desktop_as_universal_default(tmp_path):
+def test_agent_loop_workspace_as_universal_default(tmp_path):
     """
     Requirements 1-8:
-    Verify Desktop is the universal default destination for user-created local files and folders.
-    1. Input: 'Create a folder named automation_demo' -> <settings.desktop_dir>/automation_demo
-    2. Input: 'Create automation_demo and write report.md inside it' -> <settings.desktop_dir>/automation_demo/report.md
-    3. Input: 'Create test.txt' -> <settings.desktop_dir>/test.txt
-    4. Replanning keeps the exact same canonical Desktop path.
+    Verify Workspace is the universal default destination for user-created local files and folders.
+    1. Input: 'Create a folder named automation_demo' -> <settings.default_workspace_dir>/automation_demo
+    2. Input: 'Create automation_demo and write report.md inside it' -> <settings.default_workspace_dir>/automation_demo/report.md
+    3. Input: 'Create test.txt' -> <settings.default_workspace_dir>/test.txt
+    4. Replanning keeps the exact same canonical Workspace path.
     """
     loop = AgentExecutionLoop()
-    desktop_dir = tmp_path / "Desktop"
-    desktop_dir.mkdir(parents=True, exist_ok=True)
+    workspace_dir = tmp_path / "workspace"
+    workspace_dir.mkdir(parents=True, exist_ok=True)
 
-    with patch.object(type(settings), "desktop_dir", new_callable=PropertyMock, return_value=desktop_dir):
+    with patch.object(type(settings), "default_workspace_dir", new_callable=PropertyMock, return_value=workspace_dir):
         # Case 1: Folder creation
         route1 = loop._direct_route("Create a folder named automation_demo")
         assert route1 is not None
-        expected_dir = str(desktop_dir / "automation_demo")
+        expected_dir = str(workspace_dir / "automation_demo")
         assert route1[0]["arguments"]["directory"] == expected_dir
 
         # Case 2: Multi-step plan with file inside folder
@@ -453,15 +452,15 @@ def test_agent_loop_desktop_as_universal_default(tmp_path):
         ]
         sanitized2 = loop._sanitize_plan(raw_plan, "Create automation_demo and write report.md inside it")
         assert len(sanitized2) == 2
-        assert sanitized2[0]["arguments"]["directory"] == str(desktop_dir / "automation_demo")
-        assert sanitized2[1]["arguments"]["filepath"] == str(desktop_dir / "automation_demo" / "report.md")
+        assert sanitized2[0]["arguments"]["directory"] == str(workspace_dir / "automation_demo")
+        assert sanitized2[1]["arguments"]["filepath"] == str(workspace_dir / "automation_demo" / "report.md")
 
         # Case 3: Simple file creation
         route3 = loop._direct_route("Create test.txt")
         assert route3 is not None
-        assert route3[0]["arguments"]["filepath"] == str(desktop_dir / "test.txt")
+        assert route3[0]["arguments"]["filepath"] == str(workspace_dir / "test.txt")
 
-        # Case 4: Replanning / reflection preserves Desktop root
+        # Case 4: Replanning / reflection preserves Workspace root
         failed_step = {"step": 2, "tool": "write_file", "arguments": {"filepath": "automation_demo/report.md"}}
         replan_raw = [
             {"step": 1, "tool": "write_file", "arguments": {"filepath": "automation_demo/report.md", "content": "Retry content"}}
@@ -476,7 +475,7 @@ def test_agent_loop_desktop_as_universal_default(tmp_path):
             )
             sanitized_replan = loop._sanitize_plan(revised_plan, "Create automation_demo and write report.md inside it")
             assert len(sanitized_replan) == 1
-            assert sanitized_replan[0]["arguments"]["filepath"] == str(desktop_dir / "automation_demo" / "report.md")
+            assert sanitized_replan[0]["arguments"]["filepath"] == str(workspace_dir / "automation_demo" / "report.md")
 
 
 def test_agent_loop_session_isolation():

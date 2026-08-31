@@ -46,22 +46,24 @@ class ReadFile(BaseTool[ReadFileInput, ReadFileOutput]):
         return ReadFileOutput
 
     def run(self, input_data: ReadFileInput) -> ReadFileOutput:
+        from core.tools.path_resolver import PathResolver
         try:
             # Enforce sandbox and get absolute path
+            # SandboxEnforcer now uses PathResolver internally
             resolved_path = enforcer.validate(input_data.filepath)
 
             if not resolved_path.exists():
                 return ReadFileOutput(
                     success=False,
                     content="",
-                    error=f"File '{input_data.filepath}' does not exist."
+                    error=f"File '{resolved_path}' does not exist."
                 )
 
             if not resolved_path.is_file():
                 return ReadFileOutput(
                     success=False,
                     content="",
-                    error=f"Path '{input_data.filepath}' is a directory, not a file."
+                    error=f"Path '{resolved_path}' is a directory, not a file."
                 )
 
             # Read content with UTF-8 encoding

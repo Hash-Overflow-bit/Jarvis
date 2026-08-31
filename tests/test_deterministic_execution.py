@@ -12,7 +12,7 @@ def test_deterministic_3_step_generation(mock_agent):
     Test that the exact acceptance prompt generates exactly 3 ordered steps 
     via the deterministic router.
     """
-    prompt = "Create a folder named jarvis_execution_test on my Desktop. Inside it, create notes.txt containing exactly Jarvis execution verified. Then read the file back and confirm the exact path and content. Do not claim success unless you physically verify both the folder and file."
+    prompt = "Create a folder named jarvis_execution_test in my workspace. Inside it, create notes.txt containing exactly Jarvis execution verified. Then read the file back and confirm the exact path and content. Do not claim success unless you physically verify both the folder and file."
     
     plan = mock_agent._direct_route(prompt)
     assert plan is not None

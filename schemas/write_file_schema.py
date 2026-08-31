@@ -16,6 +16,10 @@ class WriteFileInput(BaseModel):
         default="",
         description="Text content to write to the file.",
     )
+    mode: str = Field(
+        default="create",
+        description="Write mode: 'create' (fails if file exists), 'overwrite' (replaces existing file), or 'append' (adds to existing file).",
+    )
 
 
 class WriteFileOutput(BaseModel):

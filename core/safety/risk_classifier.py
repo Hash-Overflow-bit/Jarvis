@@ -41,6 +41,9 @@ TOOL_RISK_MAP = {
     
     # Dynamic Sub-Agents (M5+)
     "agent_builder": RiskLevel.CRITICAL,
+
+    # Browser Automation (M6)
+    "skyvern_tool": RiskLevel.MEDIUM,
 }
 
 
@@ -58,6 +61,7 @@ class RiskClassifier:
         Otherwise:
         - Any HIGH risk profile tool or deletion tool requires user confirmation.
         - Any tool invocation (e.g. delegate_task) whose arguments contain destructive parameters/keywords requires confirmation.
+        - Browser actions with critical intents (submit, purchase, password) require confirmation.
         """
         import json
         if settings.safe_mode == "off":
@@ -72,6 +76,17 @@ class RiskClassifier:
             return True
         if self.get_risk_level(tool_name) == RiskLevel.HIGH:
             return True
+
+        # Browser action risk escalation: critical actions require confirmation
+        if tool_name == "skyvern_tool" and args and isinstance(args, dict):
+            goal = (args.get("navigation_goal") or "").lower()
+            critical_browser_actions = (
+                "submit", "purchase", "buy", "pay", "checkout",
+                "send message", "send email", "delete", "cancel",
+                "password", "change password", "security", "transfer"
+            )
+            if any(w in goal for w in critical_browser_actions):
+                return True
 
         # Check arguments for destructive parameters/keywords (e.g. delegated tasks)
         if args and isinstance(args, dict):

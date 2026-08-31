@@ -29,7 +29,7 @@ def test_nested_folder_markdown_generation(loop):
     Expected tools: create_directory x2, generate_document, write_file, read_file
     """
     prompt = (
-        "Create a folder named report_test on my Desktop. "
+        "Create a folder named report_test in that workspace. "
         "Inside it, create a folder named reports. "
         "Generate a short project status report with the sections Summary, Progress, Risks, and Next Steps, "
         "and save it inside reports as project_status.md. "
@@ -69,7 +69,7 @@ def test_nested_folder_json_generation(loop):
     Prompt: Create data_export_test -> create exports -> generate structured data -> save as JSON -> read back.
     """
     prompt = (
-        "Create a folder named data_export_test on my Desktop. "
+        "Create a folder named data_export_test in that workspace. "
         "Inside it, create a folder named exports. "
         "Generate structured data for three sample projects with the fields name, status, owner, and budget, "
         "and save it inside exports as projects.json. "
@@ -105,7 +105,7 @@ def test_nested_folder_text_generation(loop):
     Prompt: Create notes_project -> create drafts -> generate text -> save as .txt -> read back.
     """
     prompt = (
-        "Create a folder named notes_project on my Desktop. "
+        "Create a folder named notes_project in that workspace. "
         "Inside it, create a folder named drafts. "
         "Generate a short summary of automated testing best practices, "
         "and save it inside drafts as testing_notes.txt. "
@@ -136,7 +136,7 @@ def test_nested_folder_csv_generation(loop):
     Prompt: Create analytics -> create output -> generate CSV data -> save -> read back.
     """
     prompt = (
-        "Create a folder named analytics on my Desktop. "
+        "Create a folder named analytics in that workspace. "
         "Inside it, create a folder named output. "
         "Generate structured data for five quarterly sales records with the fields quarter, revenue, and region, "
         "and save it inside output as sales.csv. "
@@ -167,7 +167,7 @@ def test_pure_nested_filesystem_not_regressed(loop):
     Ensure that prompts with ONLY filesystem operations still work.
     """
     prompt = (
-        "Create a folder named recovery_test on my Desktop. "
+        "Create a folder named recovery_test in that workspace. "
         "Inside it, create step1.txt containing exactly First step complete."
     )
     plan = loop._direct_route(prompt)
@@ -192,7 +192,7 @@ def test_save_as_resolves_from_context(loop):
     using the directory context accumulated during clause parsing.
     """
     prompt = (
-        "Create a folder named project_alpha on my Desktop. "
+        "Create a folder named project_alpha in that workspace. "
         "Inside it, create a folder named docs. "
         "Generate a brief project overview, "
         "and save it inside docs as overview.md."

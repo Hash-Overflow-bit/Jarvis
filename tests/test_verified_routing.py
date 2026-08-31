@@ -195,3 +195,60 @@ def test_does_file_exist_synthesis_scanner_failure():
     
     assert "I couldn't verify the file's existence." in res
 
+def test_artifact_status_current_unsaved():
+    loop = AgentExecutionLoop(use_tools=True)
+    loop.session_artifacts["last_generated_document"] = {
+        "saved": False,
+        "saved_path": None
+    }
+    res = loop._direct_route("Where did you save the report?")
+    assert res == "The report was generated but has not been saved to a file yet."
+
+def test_artifact_status_current_saved():
+    loop = AgentExecutionLoop(use_tools=True)
+    loop.session_artifacts["last_generated_document"] = {
+        "saved": True,
+        "saved_path": "/workspace/my_new_report.txt"
+    }
+    res = loop._direct_route("Where did you put it?")
+    assert res == "The exact verified path is: /workspace/my_new_report.txt"
+
+def test_artifact_status_explicit_historical_kg():
+    loop = AgentExecutionLoop(use_tools=True)
+    # Even if we have a current session artifact (unrelated)
+    loop.session_artifacts["last_generated_document"] = {
+        "saved": True,
+        "saved_path": "/workspace/my_new_report.txt"
+    }
+    prompt = "Did you create annual_financial_summary_2026.pdf?"
+    recalled_facts = "- [Agent] wrote file [annual_financial_summary_2026.pdf] at path [/workspace/annual_financial_summary_2026.pdf]"
+    
+    res = loop._direct_route(prompt, recalled_facts=recalled_facts)
+    # Assert it falls through to explicit history check and doesn't return the generic artifact status
+    assert "Yes, I have verified evidence that I created annual_financial_summary_2026.pdf" in res
+    assert "/workspace/annual_financial_summary_2026.pdf" in res
+
+def test_artifact_status_explicit_historical_no_evidence():
+    loop = AgentExecutionLoop(use_tools=True)
+    loop.session_artifacts["last_generated_document"] = {
+        "saved": True,
+        "saved_path": "/workspace/my_new_report.txt"
+    }
+    prompt = "Did you create annual_financial_summary_2026.pdf?"
+    recalled_facts = "" # No KG evidence
+    
+    res = loop._direct_route(prompt, recalled_facts=recalled_facts)
+    assert "I don't have verified evidence that I created annual_financial_summary_2026.pdf" in res
+
+def test_artifact_status_does_not_shadow_explicit_file():
+    loop = AgentExecutionLoop(use_tools=True)
+    loop.session_artifacts["last_generated_document"] = {
+        "saved": True,
+        "saved_path": "/workspace/my_new_report.txt"
+    }
+    prompt = "Where did you save annual_financial_summary_2026.pdf?"
+    recalled_facts = "- [Agent] wrote file [annual_financial_summary_2026.pdf] at path [/workspace/annual_financial_summary_2026.pdf]"
+    
+    res = loop._direct_route(prompt, recalled_facts=recalled_facts)
+    assert "Yes, I have verified evidence that I created annual_financial_summary_2026.pdf" in res
+    assert "/workspace/annual_financial_summary_2026.pdf" in res

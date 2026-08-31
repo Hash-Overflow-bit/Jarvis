@@ -7,18 +7,18 @@ from core.config import settings
 
 def test_extraction_pathing_and_directory_creation(tmp_path):
     """
-    Verifies deterministic plans correctly preserve Windows Desktop sources,
+    Verifies deterministic plans correctly preserve Windows workspace sources,
     build nested paths via pathlib, and prepend create_directory.
     """
-    desktop = tmp_path / "Desktop"
+    desktop = tmp_path / "workspace"
     workspace = tmp_path / "workspace"
     desktop.mkdir()
-    workspace.mkdir()
+    workspace.mkdir(exist_ok=True)
     
-    with patch.object(settings.__class__, 'desktop_dir', property(lambda self: desktop)), \
+    with patch.object(settings.__class__, 'default_workspace_dir', property(lambda self: desktop)), \
          patch.object(settings.__class__, 'default_workspace_dir', property(lambda self: workspace)):
         
-        prompt = "Read employees.csv from my Desktop. Extract only the Name and Salary fields. Save the result inside company_exports/hr/json on my Desktop as employees_clean.json."
+        prompt = "Read employees.csv from my workspace. Extract only the Name and Salary fields. Save the result inside company_exports/hr/json on my workspace as employees_clean.json."
         
         loop = AgentExecutionLoop()
         plan = loop._direct_route(prompt, "")
@@ -51,15 +51,15 @@ def test_extraction_pathing_and_directory_creation(tmp_path):
         assert dest_path.parent.name == "json"
 
 def test_extraction_fails_gracefully_if_read_fails(tmp_path):
-    desktop = tmp_path / "Desktop"
+    desktop = tmp_path / "workspace"
     desktop.mkdir()
     workspace = tmp_path / "workspace"
-    workspace.mkdir()
+    workspace.mkdir(exist_ok=True)
     
-    with patch.object(settings.__class__, 'desktop_dir', property(lambda self: desktop)), \
+    with patch.object(settings.__class__, 'default_workspace_dir', property(lambda self: desktop)), \
          patch.object(settings.__class__, 'default_workspace_dir', property(lambda self: workspace)):
         
-        prompt = "Read missing.csv from my Desktop. Extract names. Save to Desktop as out.json."
+        prompt = "Read missing.csv from my workspace. Extract names. Save to workspace as out.json."
         loop = AgentExecutionLoop()
         
         # Should halt on read_file and never reach write_file
@@ -70,10 +70,10 @@ def test_extraction_fails_gracefully_if_read_fails(tmp_path):
         assert not (desktop / "out.json").exists()
 
 def test_extraction_permission_error_halts(tmp_path):
-    desktop = tmp_path / "Desktop"
+    desktop = tmp_path / "workspace"
     desktop.mkdir()
     workspace = tmp_path / "workspace"
-    workspace.mkdir()
+    workspace.mkdir(exist_ok=True)
     
     from core.tools.tool_registry import tool_registry
     original_execute = tool_registry.execute
@@ -83,11 +83,11 @@ def test_extraction_permission_error_halts(tmp_path):
             return {'success': False, 'error': 'Disk read error (Permission Error)'}
         return original_execute(name, args, mode)
 
-    with patch.object(settings.__class__, 'desktop_dir', property(lambda self: desktop)), \
+    with patch.object(settings.__class__, 'default_workspace_dir', property(lambda self: desktop)), \
          patch.object(settings.__class__, 'default_workspace_dir', property(lambda self: workspace)), \
          patch.object(tool_registry, 'execute', side_effect=mock_execute):
         
-        prompt = "Read secret.csv from my Desktop. Extract names. Save to Desktop as out.json."
+        prompt = "Read secret.csv from my workspace. Extract names. Save to workspace as out.json."
         loop = AgentExecutionLoop()
         result = loop.run(prompt)
         
@@ -96,38 +96,38 @@ def test_extraction_permission_error_halts(tmp_path):
         assert not (desktop / "out.json").exists()
 
 def test_extraction_existing_empty_file(tmp_path):
-    desktop = tmp_path / "Desktop"
+    desktop = tmp_path / "workspace"
     desktop.mkdir()
     workspace = tmp_path / "workspace"
-    workspace.mkdir()
+    workspace.mkdir(exist_ok=True)
     
     empty_file = desktop / "empty.csv"
     empty_file.touch()
     
-    with patch.object(settings.__class__, 'desktop_dir', property(lambda self: desktop)), \
+    with patch.object(settings.__class__, 'default_workspace_dir', property(lambda self: desktop)), \
          patch.object(settings.__class__, 'default_workspace_dir', property(lambda self: workspace)):
         
-        prompt = "Read empty.csv from my Desktop. Extract names. Save to Desktop as out.json."
+        prompt = "Read empty.csv from my workspace. Extract names. Save to workspace as out.json."
         loop = AgentExecutionLoop()
         result = loop.run(prompt)
         
         assert (desktop / "out.json").exists()
         content = (desktop / "out.json").read_text()
-        assert "warnings" in content
+        assert "No source text was provided for extraction" in content
 
 def test_extraction_valid_file(tmp_path):
-    desktop = tmp_path / "Desktop"
+    desktop = tmp_path / "workspace"
     desktop.mkdir()
     workspace = tmp_path / "workspace"
-    workspace.mkdir()
+    workspace.mkdir(exist_ok=True)
     
     valid_file = desktop / "valid.csv"
     valid_file.write_text("Name,Age\nAlice,30\nBob,25")
     
-    with patch.object(settings.__class__, 'desktop_dir', property(lambda self: desktop)), \
+    with patch.object(settings.__class__, 'default_workspace_dir', property(lambda self: desktop)), \
          patch.object(settings.__class__, 'default_workspace_dir', property(lambda self: workspace)):
         
-        prompt = "Read valid.csv from my Desktop. Extract names. Save to Desktop as out.json."
+        prompt = "Read valid.csv from my workspace. Extract names. Save to workspace as out.json."
         loop = AgentExecutionLoop()
         result = loop.run(prompt)
         
@@ -136,19 +136,19 @@ def test_extraction_valid_file(tmp_path):
         assert "Alice" in content or "names" in content
 
 def test_extraction_multiple_sources_one_fails(tmp_path):
-    desktop = tmp_path / "Desktop"
+    desktop = tmp_path / "workspace"
     desktop.mkdir()
     workspace = tmp_path / "workspace"
-    workspace.mkdir()
+    workspace.mkdir(exist_ok=True)
     
     file1 = desktop / "file1.csv"
     file1.write_text("Name\nAlice")
     
     # file2 is missing
-    with patch.object(settings.__class__, 'desktop_dir', property(lambda self: desktop)), \
+    with patch.object(settings.__class__, 'default_workspace_dir', property(lambda self: desktop)), \
          patch.object(settings.__class__, 'default_workspace_dir', property(lambda self: workspace)):
         
-        prompt = "Read file1.csv and file2.csv from my Desktop. Extract names. Save to Desktop as out.json."
+        prompt = "Read file1.csv and file2.csv from my workspace. Extract names. Save to workspace as out.json."
         loop = AgentExecutionLoop()
         result = loop.run(prompt)
         

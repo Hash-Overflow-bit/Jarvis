@@ -46,7 +46,7 @@ class SkyvernTool(BaseTool[SkyvernTaskInput, SkyvernTaskOutput]):
 
     def run(self, input_data: SkyvernTaskInput) -> SkyvernTaskOutput:
         # Resolve target download directory (defaults to OS Desktop directory)
-        target_dir = input_data.download_dir or str(settings.desktop_dir)
+        target_dir = input_data.download_dir or str(settings.desktop_dir / "Jarvis Downloads")
         try:
             validated_dir = enforcer.validate(target_dir)
             validated_dir.mkdir(parents=True, exist_ok=True)

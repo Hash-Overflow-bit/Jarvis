@@ -76,6 +76,34 @@ from core.writing.pipeline import WritingPipeline, WritingIntent
         "Extract all dates from transactions.csv into data.json",
         {"task_type": "extraction", "topic": "all dates from transactions.csv", "research_required": False, "sources_required": False, "minimum_words": None, "save_required": True, "destination": None, "output_format": "json", "source_files": ["transactions.csv"]}
     ),
+    (
+        "Write an essay, more than 2000",
+        {"task_type": "simple", "topic": "an essay", "research_required": False, "sources_required": False, "minimum_words": 2000, "save_required": False, "destination": None, "output_format": "markdown"}
+    ),
+    (
+        "Research the trend, word limit should be more then 2000",
+        {"task_type": "research_write", "topic": "the trend", "research_required": True, "sources_required": False, "minimum_words": 2000, "save_required": False, "destination": None, "output_format": "markdown"}
+    ),
+    (
+        "Write about tech, at least 2500 words",
+        {"task_type": "simple", "topic": "tech", "research_required": False, "sources_required": False, "minimum_words": 2500, "save_required": False, "destination": None, "output_format": "markdown"}
+    ),
+    (
+        "Analyze the market, 3000+ words",
+        {"task_type": "simple", "topic": "the market", "research_required": False, "sources_required": False, "minimum_words": 3000, "save_required": False, "destination": None, "output_format": "markdown"}
+    ),
+    (
+        "Write about space, word limit 1800",
+        {"task_type": "simple", "topic": "space", "research_required": False, "sources_required": False, "minimum_words": 1800, "save_required": False, "destination": None, "output_format": "markdown"}
+    ),
+    (
+        "Make it long, word limit should be more than",
+        {"task_type": "simple", "topic": "Make it long", "research_required": False, "sources_required": False, "minimum_words": None, "save_required": False, "destination": None, "output_format": "markdown"}
+    ),
+    (
+        "do a research on a trend and decline of e-cpmmerce, word limit should be more then 2000",
+        {"task_type": "research_write", "topic": "a trend and decline of e-cpmmerce", "research_required": True, "sources_required": False, "minimum_words": 2000, "save_required": False, "destination": None, "output_format": "markdown"}
+    ),
 ])
 def test_writing_intent_parsing(prompt, expected):
     intent = WritingPipeline.parse_intent(prompt)
@@ -108,23 +136,33 @@ def test_direct_route_writing_intent():
     plan = loop._direct_route(prompt)
     
     assert isinstance(plan, list)
-    assert len(plan) == 3
-    assert plan[0]["tool"] == "web_search"
-    assert "project management" in plan[0]["arguments"]["query"]
+    assert len(plan) >= 3  # At least: web_search(s) + generate_document + write_file
     
-    assert plan[1]["tool"] == "generate_document"
-    assert plan[1]["arguments"]["intent"]["minimum_words"] == 2000
-    assert plan[1]["arguments"]["intent"]["sources_required"] is True
+    # All web_search steps should relate to the topic
+    search_steps = [s for s in plan if s["tool"] == "web_search"]
+    assert len(search_steps) >= 1
+    assert any("project management" in s["arguments"]["query"] for s in search_steps)
     
-    assert plan[2]["tool"] == "write_file"
-    assert plan[2]["arguments"]["content"] == "<USE_GENERATED_ARTIFACT>"
-    assert "output.md" in plan[2]["arguments"]["filepath"]
+    gen_step = next(s for s in plan if s["tool"] == "generate_document")
+    assert gen_step["arguments"]["intent"]["minimum_words"] == 2000
+    assert gen_step["arguments"]["intent"]["sources_required"] is True
+    
+    write_step = next(s for s in plan if s["tool"] == "write_file")
+    assert write_step["arguments"]["content"] == "<USE_GENERATED_ARTIFACT>"
+    assert "output.md" in write_step["arguments"]["filepath"]
 
-    # Test 2: Cross-turn save
+    # Test 2: Cross-turn save to Desktop (should be blocked and fall back to LLM, or return None)
     loop.session_artifacts["last_generated_document"] = {"content": "Test content"}
     plan2 = loop._direct_route("Save this research on my Desktop.")
-    assert isinstance(plan2, list)
-    assert len(plan2) == 1
-    assert plan2[0]["tool"] == "write_file"
-    assert plan2[0]["arguments"]["content"] == "<USE_GENERATED_ARTIFACT>"
-    assert "Desktop" in plan2[0]["arguments"]["filepath"]
+    assert plan2 is None, "Expected _direct_route to fall through to the LLM due to Desktop path."
+
+    # Test 3: Cross-turn save to Workspace
+    loop.session_artifacts["last_generated_document"] = {"content": "Test content"}
+    plan3 = loop._direct_route("Save this research in that workspace.")
+    assert isinstance(plan3, list)
+    assert len(plan3) == 1
+    assert plan3[0]["tool"] == "write_file"
+    assert plan3[0]["arguments"]["content"] == "<USE_GENERATED_ARTIFACT>"
+    
+    from core.config import settings
+    assert str(settings.default_workspace_dir).replace("\\", "/") in plan3[0]["arguments"]["filepath"].replace("\\", "/")

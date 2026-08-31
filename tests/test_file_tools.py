@@ -289,7 +289,9 @@ def test_create_directory_and_write_file(temp_sandbox_env):
     target_file = new_dir / "notes.txt"
     inp_write = WriteFileInput(filepath=str(target_file), content="Hello Sandbox!")
 
-    with patch("core.tools.write_file.enforcer", SandboxEnforcer([sandbox_path])):
+    from core.config import settings
+    with patch("core.tools.write_file.enforcer", SandboxEnforcer([sandbox_path])), \
+         patch.object(settings.__class__, "default_workspace_dir", property(lambda self: sandbox_path)):
         res_write = writer.run(inp_write)
         assert res_write.success is True
         assert target_file.is_file()

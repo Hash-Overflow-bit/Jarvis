@@ -56,64 +56,12 @@ class SandboxEnforcer:
 
     def validate(self, target_path: Union[str, Path]) -> Path:
         """
-        Resolves the target path and validates it.
-
-        - If SANDBOX_MODE=false: resolves and returns the path unconditionally.
-          Jarvis can operate on any path the OS user can access.
-        - If SANDBOX_MODE=true: enforces that the path must reside inside one of
-          the approved SANDBOX_ROOTS directories.
-
-        Args:
-            target_path: The file or directory path to validate.
-
-        Returns:
-            The resolved absolute Path object.
-
-        Raises:
-            PermissionError: If sandbox is ON and the path escapes allowed roots.
-            ValueError: If sandbox is ON but no roots are configured.
+        Resolves the target path using PathResolver and validates it against sandbox roots.
         """
-        target_str = str(target_path)
-        is_windows = settings.is_windows or (platform.system() == "Windows")
-
-        # Convert WSL drive paths (e.g. /mnt/c/Users/...) to Windows format on native Windows
-        if is_windows:
-            wsl_match = re.match(r"^/mnt/([a-zA-Z])/(.*)", target_str.replace("\\", "/"))
-            if wsl_match:
-                drive = wsl_match.group(1).upper()
-                rest = wsl_match.group(2)
-                target_str = f"{drive}:/{rest}"
-
-        target_str_slash = target_str.replace("\\", "/")
-
-        # Try resolving path directly
-        try:
-            resolved = Path(target_str).resolve()
-        except Exception:
-            resolved = Path(target_str)
-
-        # Check if resolved is ALREADY inside one of allowed_roots
-        is_already_allowed = False
-        if self.allowed_roots:
-            for root in self.allowed_roots:
-                try:
-                    resolved.relative_to(root.resolve())
-                    is_already_allowed = True
-                    break
-                except ValueError:
-                    continue
-
-        if not is_already_allowed:
-            # Catch actual fake placeholder path hallucinations
-            # DO NOT catch real user home directories or valid absolute paths
-            fake_path_pattern = r"(?:^/?sandbox/|^/?path/to/|<workspace_path>/|<workspace>/|<username>/?|your_username/?|/Users/(?:username|your_username)/|/home/(?:username|user)/)"
-
-            if re.search(fake_path_pattern, target_str_slash, re.IGNORECASE):
-                desktop = str(settings.desktop_dir.resolve()).replace("\\", "/") + "/"
-                target_str_slash = re.sub(fake_path_pattern + r"(?:desktop|sandbox|workspace)?/?", desktop, target_str_slash, flags=re.IGNORECASE)
-                target_str_slash = target_str_slash.replace("//", "/")
-                target_str = target_str_slash
-                resolved = Path(target_str).resolve()
+        from core.tools.path_resolver import PathResolver
+        
+        # 1. Resolve path deterministically
+        resolved = PathResolver.resolve(target_path)
 
         # --- Unrestricted mode: allow any path ---
         if not self._sandbox_enabled:

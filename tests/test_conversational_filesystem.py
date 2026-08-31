@@ -60,7 +60,7 @@ def test_general_multi_action_parsing(mock_agent):
     """
     Test that a generalized multi-action prompt generates the correct deterministic plan.
     """
-    prompt = "Create a folder named recovery_test on my Desktop. Inside it, create step1.txt containing exactly First step complete."
+    prompt = "Create a folder named recovery_test in my workspace. Inside it, create step1.txt containing exactly First step complete."
     plan = mock_agent._direct_route(prompt)
     
     assert plan is not None

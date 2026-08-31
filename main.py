@@ -210,6 +210,16 @@ Examples:
 
     console.print(f"[green]✓[/green] Ollama connected | Model: [bold]{settings.ollama_model}[/bold]")
 
+    # Check Skyvern browser automation availability (non-blocking)
+    try:
+        import urllib.request
+        probe = urllib.request.Request(f"{settings.skyvern_base_url}/heartbeat", method="GET")
+        probe.add_header("User-Agent", "Jarvis-Skyvern-Bridge/1.0")
+        urllib.request.urlopen(probe, timeout=2)
+        console.print("[green]✓[/green] Browser automation available (Skyvern)")
+    except Exception:
+        console.print("[yellow]⚠[/yellow] Browser automation unavailable (Skyvern offline)")
+
     if args.mode == "text":
         run_text_mode()
     else:

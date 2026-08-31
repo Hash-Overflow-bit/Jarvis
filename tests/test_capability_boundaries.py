@@ -5,7 +5,7 @@ from core.writing.pipeline import WritingPipeline
 def test_filesystem_verification_is_not_compliance():
     """Test A: filesystem verification is not compliance"""
     loop = AgentExecutionLoop()
-    prompt = "Create A on Desktop. Inside it create B. Inside B create test.txt containing hello. Read it back and verify its exact path and content."
+    prompt = "Create folder_A in my workspace. Inside it create folder_B. Inside folder_B create test.txt containing hello. Read it back and verify its exact path and content."
     plan = loop._direct_route(prompt)
     assert plan is not None
     assert len(plan) == 4
@@ -39,7 +39,7 @@ def test_simple_report_requires_no_research():
 def test_mixed_nested_plus_simple_report():
     """Test C: mixed nested + simple report"""
     loop = AgentExecutionLoop()
-    prompt = "Create project_test on Desktop. Inside it create reports. Generate a short project status report and save it inside reports as status.md. Then read it back and verify its path and contents."
+    prompt = "Create project_test in my workspace. Inside it create reports. Generate a short project status report and save it inside reports as status.md. Then read it back and verify its path and contents."
     plan = loop._direct_route(prompt)
     assert plan is not None
     

@@ -198,8 +198,18 @@ class _Settings:
         return f"{self.ollama_base_url}/api/chat"
 
     @property
+    def ollama_primary_model(self) -> str:
+        # Fallback to old OLLAMA_MODEL if OLLAMA_PRIMARY_MODEL is not set
+        return os.getenv("OLLAMA_PRIMARY_MODEL", os.getenv("OLLAMA_MODEL", "llama3.1:8b"))
+
+    @property
+    def ollama_candidate_model(self) -> Optional[str]:
+        return os.getenv("OLLAMA_CANDIDATE_MODEL")
+
+    @property
     def ollama_model(self) -> str:
-        return os.getenv("OLLAMA_MODEL", "llama3.1")
+        # Deprecated: alias for primary model to preserve backward compatibility
+        return self.ollama_primary_model
 
     @property
     def ollama_keep_alive(self) -> int:

@@ -100,7 +100,7 @@ class WritingPipeline:
     }
 
     LOCAL_FILE_KEYWORDS = {
-        "read", "summarize file", "report.pdf", "report.md", "report.txt", "document", "folder",
+        "summarize file", "report.pdf", "report.md", "report.txt", "document", "folder",
         "approved local knowledge", "local compliance"
     }
 
@@ -133,7 +133,7 @@ class WritingPipeline:
             return "research"
 
         # Check Local document writing
-        if re.search(r"\b(read|summarize|from)\s+[a-zA-Z0-9_\-\.]+\.(txt|md|csv|pdf|json)\b", cleaned) or "local document" in cleaned:
+        if re.search(r"\b(summarize|from)\s+[a-zA-Z0-9_\-\.]+\.(txt|md|csv|pdf|json)\b", cleaned) or "local document" in cleaned:
             return "local_doc"
 
         # Default: Simple writing
@@ -203,18 +203,34 @@ class WritingPipeline:
             
         topic = topic_clean.strip('.!?,; ')
         
-        # Fallback to basic splitting if too long
+        # Fallback: trim only trailing save/export/word-count clauses, NOT commas
+        # that separate research subtopics. Preserve the full research scope.
         if len(topic.split()) > 15:
-            topic = re.split(r'\.\s+|,| and save', topic, flags=re.IGNORECASE)[0].strip()
+            # Only strip trailing save/export clauses, keep comma-separated subtopics
+            topic = re.split(r'\band\s+save\b', topic, flags=re.IGNORECASE)[0].strip()
+            # Remove trailing sentence fragments that are pure constraints
+            topic = re.sub(r',?\s*(?:and\s+)?(?:save|export|write)\s+(?:it|the|this).*$', '', topic, flags=re.IGNORECASE).strip('.!?,; ')
         min_words = None
-        # Handle formats like 2,000, 2000, 2k, 1800-word
-        word_m = re.search(r'(?:no\s+shorter\s+than|at\s+least|minimum|no\s+less\s+than|more\s+than)?\s*([\d,]+)(k)?\+?(?:\s*|-?)words?', cleaned)
-        if word_m:
-            val_str = word_m.group(1).replace(',', '')
-            val = int(val_str)
-            if word_m.group(2) == 'k':
-                val *= 1000
-            min_words = val
+        # Only parse word limits for generation tasks, NOT extraction.
+        # Phrases like "a 4,000-word article" describe input size, not output targets.
+        if task_type != "extraction":
+            # Robust numeric extraction for word limits without brittle string splitting
+            limit_pattern = re.compile(
+                r'(?:word\s+limit|more\s+th[ae]n|over|at\s+least|minimum|around|about|between\s+\d+\s+and)[^\d]*?([\d,]*\d[\d,]*)(k)?'
+                r'|([\d,]*\d[\d,]*)(k)?\+?(?:\s*|-?)words?',
+                re.IGNORECASE
+            )
+            word_m = limit_pattern.search(cleaned)
+            if word_m:
+                val_str = word_m.group(1) or word_m.group(3)
+                k_modifier = word_m.group(2) or word_m.group(4)
+                if val_str:
+                    val_str = val_str.replace(',', '')
+                    if val_str.isdigit():
+                        val = int(val_str)
+                        if k_modifier and k_modifier.lower() == 'k':
+                            val *= 1000
+                        min_words = val
                 
         sources_req = any(w in cleaned for w in ["source", "citation", "reference", "sourced", "evidence"])
         
@@ -223,11 +239,19 @@ class WritingPipeline:
         # ---------------------------------------------
         destination_root = None
         destination_subpath = None
-        save_req = any(w in cleaned for w in ["save", "write to", "export to", "create file", "put it on", "into ", "under ", "in "])
+        # Only set save_required when the user explicitly asks to save/export/write the result.
+        # Do NOT trigger on "into" (e.g. "turn into json") or "in" (e.g. "names in the document").
+        save_req = bool(re.search(
+            r'\b(save|export|write\s+to|create\s+file|put\s+it\s+on|store)\b',
+            cleaned, re.IGNORECASE
+        ))
 
         if "desktop" in cleaned:
             destination_root = "desktop"
-            save_req = True
+            # Only set save_req if there's an explicit save verb; mentioning "desktop"
+            # as a source location (e.g. "read file from my Desktop") should not trigger save.
+            if re.search(r'\b(save|export|write|put|store)\b.*\bdesktop\b|\bdesktop\b.*\b(save|export|write|put|store)\b', cleaned, re.IGNORECASE):
+                save_req = True
 
         format_match = re.search(r'\.(md|txt|json|pdf|csv)', cleaned)
         output_format = format_match.group(1) if format_match else "markdown"
@@ -236,7 +260,7 @@ class WritingPipeline:
         destination_subpath = None
         
         # Try specific nested subpath pattern first
-        subpath_match = re.search(r'(?:inside|under|in)\s+([a-zA-Z0-9_\-\./]+)(?:\s+(?:on|to)\s+.*?desktop)?\s+(?:as|named|called)\s+([a-zA-Z0-9_\-\.]+\.(?:md|txt|json|pdf|csv))', user_input_no_vocative, re.IGNORECASE)
+        subpath_match = re.search(r'(?:inside|under|in)\s+([a-zA-Z0-9_\-\./]+)(?:\s+(?:on|to)\s+.*?(?:desktop|workspace))?\s+(?:as|named|called)\s+([a-zA-Z0-9_\-\.]+\.(?:md|txt|json|pdf|csv))', user_input_no_vocative, re.IGNORECASE)
         if subpath_match:
             subpath_raw = subpath_match.group(1).strip()
             target_fname = subpath_match.group(2).strip()
@@ -315,6 +339,74 @@ class WritingPipeline:
         )
 
     @classmethod
+    def decompose_research_queries(cls, user_input: str, topic: str) -> list[str]:
+        """
+        Decomposes a multi-part research request into focused search queries.
+        Returns a list of query strings. For simple single-topic requests,
+        returns a single-element list.
+        """
+        # Use the full user input to detect multiple research dimensions
+        cleaned = user_input.lower().strip()
+        
+        # Split on commas and 'and' that separate distinct research subtopics
+        # But avoid splitting on commas inside date ranges or numeric expressions
+        # e.g. "from 2020 to 2024, its trend, best stock and top 10 companies"
+        parts = re.split(r',\s*(?:its\s+|the\s+)?|\band\s+(?:list\s+|find\s+|show\s+|include\s+)?(?:(?:its|the|all)\s+(?:time\s+)?)?', cleaned)
+        parts = [p.strip(' .!?') for p in parts if p and p.strip()]
+        
+        if len(parts) <= 1:
+            return [topic]
+        
+        # Extract the main subject from the first part
+        first_part = parts[0]
+        # Try to identify the core subject (e.g. "psx market from 2020 to 20")
+        subject_match = re.search(
+            r'(?:research|investigate|analyze|study|report)\s+(?:on\s+|about\s+)?(?:the\s+)?(.+?)(?:\s+from\s+\d|$)',
+            first_part, re.IGNORECASE
+        )
+        if subject_match:
+            core_subject = subject_match.group(1).strip()
+        else:
+            # Fallback: use the topic cleaned of action verbs
+            core_subject = re.sub(
+                r'^(?:do\s+a\s+)?(?:research|investigate|analyze|study|report)\s+(?:on\s+|about\s+)?(?:the\s+)?',
+                '', first_part, flags=re.IGNORECASE
+            ).strip()
+        
+        # Extract time range if present
+        time_range = ''
+        time_match = re.search(r'(?:from|between|during|in)\s+(\d{4}\s*(?:to|[-–])\s*\d{2,4})', cleaned)
+        if time_match:
+            time_range = f' {time_match.group(0)}'
+        
+        queries = []
+        for part in parts:
+            part_clean = part.strip()
+            if not part_clean or len(part_clean) < 3:
+                continue
+            # Skip parts that are just action verbs
+            if re.match(r'^(?:do|make|create|write|prepare|generate)\s', part_clean, re.IGNORECASE):
+                continue
+            
+            # If the part already contains the core subject, use it directly
+            if core_subject.lower() in part_clean.lower():
+                queries.append(part_clean)
+            else:
+                # Combine the part with the core subject for context
+                queries.append(f"{core_subject} {part_clean}{time_range}")
+        
+        # Deduplicate while preserving order
+        seen = set()
+        unique_queries = []
+        for q in queries:
+            q_normalized = q.lower().strip()
+            if q_normalized not in seen and len(q_normalized) > 5:
+                seen.add(q_normalized)
+                unique_queries.append(q)
+        
+        return unique_queries if unique_queries else [topic]
+
+    @classmethod
     def run_workflow(
         cls,
         user_input: str,
@@ -372,7 +464,8 @@ class WritingPipeline:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_input}
                 ],
-                temperature=0.7
+                temperature=0.7,
+                options={"num_predict": 8192}
             )
             raw_res = resp.get("content", "").strip() if isinstance(resp, dict) else str(resp)
             return StructuredWriter.apply_anti_slop_and_quality_pass(raw_res)
@@ -488,6 +581,8 @@ CRITICAL GROUNDING & CITATION RULES:
 5. SAFER LANGUAGE: Use safer phrasing like "based on the retrieved sources". NEVER say "based on verified evidence".
 6. CITATION RULE: You may ONLY include URLs that appear in the retrieved sources list ({json.dumps(allowed_urls)}).
 7. ABSOLUTE BAN ON FAKE URLS: NEVER invent, fabricate, or guess a URL, link, domain, or citation that is not explicitly present in the list above.
+8. RANKING METRIC DISCLOSURE: When ranking, listing "top N", or declaring something "best", you MUST state the specific metric used (e.g. market capitalization, total return, price performance, revenue, user count). NEVER present an unqualified "best" or "top" without the metric that defines it. If the retrieved sources do not provide a clear metric, state: "Ranking metric not established by retrieved evidence."
+9. INCOMPLETE RANKINGS: If the user asks for a top-N ranking (e.g. "top 10") and the retrieved sources do not contain all N items, you MUST explicitly state that the complete ranking cannot be verified from the retrieved sources. NEVER invent or hallucinate missing items to fill the list.
 """
         try:
             resp = ollama.chat(
@@ -496,7 +591,8 @@ CRITICAL GROUNDING & CITATION RULES:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"User Request: {user_input}"}
                 ],
-                temperature=0.3
+                temperature=0.3,
+                options={"num_predict": 8192}
             )
             raw_output = resp.get("content", "").strip() if isinstance(resp, dict) else str(resp)
             
@@ -555,7 +651,8 @@ DOCUMENT ATTRIBUTION RULES:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"User Request: {user_input}"}
                 ],
-                temperature=0.3
+                temperature=0.3,
+                options={"num_predict": 8192}
             )
             raw_output = resp.get("content", "").strip() if isinstance(resp, dict) else str(resp)
             return StructuredWriter.apply_anti_slop_and_quality_pass(raw_output)
@@ -581,8 +678,10 @@ DOCUMENT ATTRIBUTION RULES:
             content = "\n\n".join(s.content for s in sources if s.content)
             source_name = sources[0].location or sources[0].title or "document"
 
-        if not content and not raw_text_content:
-            content = user_input
+        # Never treat the user's instruction/prompt as the source text for extraction.
+        # Extraction requires real supplied text or a successfully read source file.
+        if not content.strip():
+            return json.dumps({"error": "No source text was provided for extraction.", "extracted": {}}, indent=2)
 
         # Detect requested fields from user prompt if not explicitly passed
         if not requested_fields:
