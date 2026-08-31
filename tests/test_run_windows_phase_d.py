@@ -14,6 +14,13 @@ def test_default_preflight_selection(script_content):
     # Ensure the script handles $modeCount -eq 0 -> $PreflightOnly = $true
     assert re.search(r"if\s*\(\$modeCount\s*-eq\s*0\)\s*\{\s*\$PreflightOnly\s*=\s*\$true\s*\}", script_content), "Does not default to preflight."
 
+def test_git_status_null_safe(script_content):
+    """Regression test ensuring git status handles empty output without null-method exception."""
+    assert "(git status --short | Out-String).Trim()" in script_content, "git status is not null-safe"
+    assert "(git rev-parse --abbrev-ref HEAD | Out-String).Trim()" in script_content, "git rev-parse branch is not null-safe"
+    assert "(git rev-parse HEAD | Out-String).Trim()" in script_content, "git rev-parse commit is not null-safe"
+    assert "ollama list | Out-String" in script_content, "ollama list is not null-safe"
+
 def test_rejection_of_conflicting_switches(script_content):
     """Test that the script counts modes and fails if > 1."""
     assert re.search(r"\$modeCount\s*-\w+\s*1", script_content)

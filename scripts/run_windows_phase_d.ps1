@@ -36,7 +36,7 @@ function Check-ExitCode {
 function Run-Preflight {
     Write-Host "`n[1] Starting Preflight Checks..." -ForegroundColor Cyan
 
-    $branch = (git rev-parse --abbrev-ref HEAD).Trim()
+    $branch = ((git rev-parse --abbrev-ref HEAD | Out-String).Trim())
     Check-ExitCode -CommandName "git rev-parse"
     if ($branch -ne "phase_d_benchmark") {
         Write-Error "Current branch is '$branch'. Must be 'phase_d_benchmark'."
@@ -44,7 +44,7 @@ function Run-Preflight {
     }
     Write-Host "[OK] Branch is phase_d_benchmark" -ForegroundColor Green
 
-    $status = (git status --short).Trim()
+    $status = ((git status --short | Out-String).Trim())
     Check-ExitCode -CommandName "git status"
     if ($status -ne "") {
         Write-Error "Working tree is not clean. Please commit or stash changes."
@@ -52,7 +52,7 @@ function Run-Preflight {
     }
     Write-Host "[OK] Working tree is clean" -ForegroundColor Green
 
-    $hash = (git rev-parse HEAD).Trim()
+    $hash = ((git rev-parse HEAD | Out-String).Trim())
     Check-ExitCode -CommandName "git rev-parse HEAD"
     Write-Host "[OK] Current Commit: $hash" -ForegroundColor Green
 
@@ -138,7 +138,7 @@ function Run-PullCandidate {
 function Run-BenchmarkHarness {
     Write-Host "`n[Benchmark] Starting Benchmark Harness..." -ForegroundColor Cyan
     
-    $models = (ollama list)
+    $models = (ollama list | Out-String)
     Check-ExitCode -CommandName "ollama list"
     
     if ($models -notmatch "llama3.1:8b") {

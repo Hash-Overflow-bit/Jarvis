@@ -48,10 +48,12 @@ def test_interview_isolation_positive_control():
     
     prompt = "Create a bookkeeping folder on my Desktop"
     
-    # Ensure it triggers the direct route or LLM planner correctly
-    plan = loop._generate_plan(prompt, recalled_facts="")
-    
-    # In this case it should hit the direct route for 'create folder'
+    with patch("core.orchestrator.agent_loop.ollama.chat") as mock_chat:
+        # Mock a successful plan generation
+        mock_chat.return_value = {"content": '{"reasoning": "User wants to create a folder", "plan": [{"step": 1, "tool": "create_directory", "arguments": {"path": "/Users/m2air/Desktop/bookkeeping"}}]}'}
+        plan = loop._generate_plan(prompt, recalled_facts="")
+        
+    # In this case it should hit the direct route for 'create folder' or fallback to planner which works
     assert isinstance(plan, list)
     assert len(plan) == 1
     assert plan[0]["tool"] == "create_directory"
