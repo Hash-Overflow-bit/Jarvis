@@ -42,23 +42,32 @@
 - **Runner Script:** `scripts/benchmark_local_models.py`
 - **Output:**
   ```text
-  Categories: {'end_to_end': 10, 'safety': 10, 'extraction': 10, 'creative': 10, 'parsing': 10}
+  daily_assistant: 10
+  structured_planning: 10
+  safe_workspace: 10
+  security_adversarial: 10
+  legacy_tier1: 5
+  long_document_reasoning: 5
   50 benchmark cases valid — no models invoked
   ```
 - **Validation:** 
-  - Verified 50 total benchmark cases.
-  - Verified expected category counts.
+  - Verified 50 total benchmark cases mapped exactly to their capability domains.
   - Temporary workspace created and validated successfully without touching real production workspaces.
   - Zero Ollama model validations or pulls during dry-run.
   - Zero model calls invoked.
   - Result/metrics serialization verified.
+  - Normal benchmark mode is structurally designed to:
+    - Execute the same 50 cases against both models with identical generation settings.
+    - Run within isolated temporary workspaces.
+    - Record pass/fail, latency, output validity, hallucination/grounding failures and safety violations.
+    - Safely output a comparison report without mutating `.env` or promoting the primary model.
 
 ## 6. Tool-Registry Scope Audit
 - **Audit Findings:** The `delete_file.py` and `schemas/delete_file_schema.py` artifacts were detected as unintended scopes introduced during development, along with modifications to `skyvern_tool.py`.
-- **Action Taken:** `delete_file` was completely purged from the repository. `skyvern_tool.py` and `tool_registry.py` were reverted strictly back to their `main` branch states. 
+- **Action Taken:** `delete_file` was completely purged from the repository. `skyvern_tool.py`, `tool_registry.py`, and `tests/test_skyvern_tool.py` were reverted strictly back to their `main` branch states (they no longer differ from `d23fc5b`).
 - **Confirmation:** No deletion or browser automation capabilities are activated or reachable through normal Jarvis prompts. The tool registry remains pristine.
 
-## 7. Phase D Changed Files (vs `main`)
+## 7. Phase D Changed Files (vs `d23fc5b`)
 ```text
 M	.env.example
 A	benchmarks/local_model_cases.yaml
@@ -93,15 +102,14 @@ A	tests/test_report_save.py
 A	tests/test_research_pipeline.py
 A	tests/test_research_pipeline_planner.py
 A	tests/test_routing_fixes.py
-M	tests/test_skyvern_tool.py
 M	tests/test_verified_routing.py
 M	tests/test_writing_workflow.py
 ```
-*(All temporary/debug files such as `generate_yaml.py`, `scratch/test_direct_route.py`, and `scratch/test_intent.py` have been purged).*
+*(All temporary/debug files and unapproved tool files have been purged).*
 
 ## 8. Final macOS Handoff State
 - **Execution Date:** 2026-08-31
-- **Final Git Commit:** `f3d280b Remove temp files and unrelated tools for Phase D branch`
 - **Pytest Suite:** 271 passed, 1 skipped. (Zero failures)
+  - *Note on Test Count: The count changed from 272 to 271 because the isolated `test_delete_file_verification` function in `tests/test_filesystem_core.py` was correctly removed when the unapproved `delete_file` tool was purged. No safety or regression coverage was lost.*
 
 *(Actual DeepSeek benchmark pending Windows execution)*
