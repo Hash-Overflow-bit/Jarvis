@@ -36,9 +36,72 @@
 - `OLLAMA_PRIMARY_MODEL` validation added to startup.
 - `.env.example` scaffolding implemented (real `.env` left untouched).
 
-## 5. Benchmark Harness
+## 5. Benchmark Harness Dry-Run
+
 - **Test File:** `benchmarks/local_model_cases.yaml` containing 50 required cases.
 - **Runner Script:** `scripts/benchmark_local_models.py`
-- Features active: Dry-run, fresh sessions, temporary workspaces, fixed context sizes, timeout support, robust JSONL metric tracking.
+- **Output:**
+  ```text
+  Categories: {'end_to_end': 10, 'safety': 10, 'extraction': 10, 'creative': 10, 'parsing': 10}
+  50 benchmark cases valid — no models invoked
+  ```
+- **Validation:** 
+  - Verified 50 total benchmark cases.
+  - Verified expected category counts.
+  - Temporary workspace created and validated successfully without touching real production workspaces.
+  - Zero Ollama model validations or pulls during dry-run.
+  - Zero model calls invoked.
+  - Result/metrics serialization verified.
+
+## 6. Tool-Registry Scope Audit
+- **Audit Findings:** The `delete_file.py` and `schemas/delete_file_schema.py` artifacts were detected as unintended scopes introduced during development, along with modifications to `skyvern_tool.py`.
+- **Action Taken:** `delete_file` was completely purged from the repository. `skyvern_tool.py` and `tool_registry.py` were reverted strictly back to their `main` branch states. 
+- **Confirmation:** No deletion or browser automation capabilities are activated or reachable through normal Jarvis prompts. The tool registry remains pristine.
+
+## 7. Phase D Changed Files (vs `main`)
+```text
+M	.env.example
+A	benchmarks/local_model_cases.yaml
+M	core/config.py
+M	core/orchestrator/agent_loop.py
+M	core/safety/risk_classifier.py
+A	core/tools/path_resolver.py
+M	core/tools/read_file.py
+M	core/tools/sandbox_enforcer.py
+M	core/tools/write_file.py
+M	core/writing/pipeline.py
+A	docs/LEGACY_ACCEPTANCE_MAPPING.md
+A	docs/TIER1_ROOT_CAUSE.md
+A	docs/milestones/MILESTONE_1_PHASE_D_DEEPSEEK_REPORT.md
+A	docs/milestones/MILESTONE_1_TIER1_REPORT.md
+A	docs/milestones/PHASE_D_BASELINE.md
+M	main.py
+M	schemas/write_file_schema.py
+A	scripts/benchmark_local_models.py
+A	scripts/run_legacy_tier1.py
+M	tests/test_agent_loop.py
+M	tests/test_capability_boundaries.py
+M	tests/test_conversational_filesystem.py
+M	tests/test_deterministic_execution.py
+M	tests/test_extraction_workflows.py
+M	tests/test_file_tools.py
+A	tests/test_filesystem_core.py
+A	tests/test_legacy_tier1.py
+M	tests/test_mixed_workflow.py
+M	tests/test_nested_parsing.py
+A	tests/test_report_save.py
+A	tests/test_research_pipeline.py
+A	tests/test_research_pipeline_planner.py
+A	tests/test_routing_fixes.py
+M	tests/test_skyvern_tool.py
+M	tests/test_verified_routing.py
+M	tests/test_writing_workflow.py
+```
+*(All temporary/debug files such as `generate_yaml.py`, `scratch/test_direct_route.py`, and `scratch/test_intent.py` have been purged).*
+
+## 8. Final macOS Handoff State
+- **Execution Date:** 2026-08-31
+- **Final Git Commit:** `f3d280b Remove temp files and unrelated tools for Phase D branch`
+- **Pytest Suite:** 271 passed, 1 skipped. (Zero failures)
 
 *(Actual DeepSeek benchmark pending Windows execution)*
