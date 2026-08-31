@@ -1,0 +1,151 @@
+cases:
+- id: case_1
+  prompt: Test prompt number 1 for category end_to_end.
+  type: end_to_end
+- id: case_2
+  prompt: Test prompt number 2 for category safety.
+  type: safety
+- id: case_3
+  prompt: Test prompt number 3 for category extraction.
+  type: extraction
+- id: case_4
+  prompt: Test prompt number 4 for category creative.
+  type: creative
+- id: case_5
+  prompt: Test prompt number 5 for category parsing.
+  type: parsing
+- id: case_6
+  prompt: Test prompt number 6 for category end_to_end.
+  type: end_to_end
+- id: case_7
+  prompt: Test prompt number 7 for category safety.
+  type: safety
+- id: case_8
+  prompt: Test prompt number 8 for category extraction.
+  type: extraction
+- id: case_9
+  prompt: Test prompt number 9 for category creative.
+  type: creative
+- id: case_10
+  prompt: Test prompt number 10 for category parsing.
+  type: parsing
+- id: case_11
+  prompt: Test prompt number 11 for category end_to_end.
+  type: end_to_end
+- id: case_12
+  prompt: Test prompt number 12 for category safety.
+  type: safety
+- id: case_13
+  prompt: Test prompt number 13 for category extraction.
+  type: extraction
+- id: case_14
+  prompt: Test prompt number 14 for category creative.
+  type: creative
+- id: case_15
+  prompt: Test prompt number 15 for category parsing.
+  type: parsing
+- id: case_16
+  prompt: Test prompt number 16 for category end_to_end.
+  type: end_to_end
+- id: case_17
+  prompt: Test prompt number 17 for category safety.
+  type: safety
+- id: case_18
+  prompt: Test prompt number 18 for category extraction.
+  type: extraction
+- id: case_19
+  prompt: Test prompt number 19 for category creative.
+  type: creative
+- id: case_20
+  prompt: Test prompt number 20 for category parsing.
+  type: parsing
+- id: case_21
+  prompt: Test prompt number 21 for category end_to_end.
+  type: end_to_end
+- id: case_22
+  prompt: Test prompt number 22 for category safety.
+  type: safety
+- id: case_23
+  prompt: Test prompt number 23 for category extraction.
+  type: extraction
+- id: case_24
+  prompt: Test prompt number 24 for category creative.
+  type: creative
+- id: case_25
+  prompt: Test prompt number 25 for category parsing.
+  type: parsing
+- id: case_26
+  prompt: Test prompt number 26 for category end_to_end.
+  type: end_to_end
+- id: case_27
+  prompt: Test prompt number 27 for category safety.
+  type: safety
+- id: case_28
+  prompt: Test prompt number 28 for category extraction.
+  type: extraction
+- id: case_29
+  prompt: Test prompt number 29 for category creative.
+  type: creative
+- id: case_30
+  prompt: Test prompt number 30 for category parsing.
+  type: parsing
+- id: case_31
+  prompt: Test prompt number 31 for category end_to_end.
+  type: end_to_end
+- id: case_32
+  prompt: Test prompt number 32 for category safety.
+  type: safety
+- id: case_33
+  prompt: Test prompt number 33 for category extraction.
+  type: extraction
+- id: case_34
+  prompt: Test prompt number 34 for category creative.
+  type: creative
+- id: case_35
+  prompt: Test prompt number 35 for category parsing.
+  type: parsing
+- id: case_36
+  prompt: Test prompt number 36 for category end_to_end.
+  type: end_to_end
+- id: case_37
+  prompt: Test prompt number 37 for category safety.
+  type: safety
+- id: case_38
+  prompt: Test prompt number 38 for category extraction.
+  type: extraction
+- id: case_39
+  prompt: Test prompt number 39 for category creative.
+  type: creative
+- id: case_40
+  prompt: Test prompt number 40 for category parsing.
+  type: parsing
+- id: case_41
+  prompt: Test prompt number 41 for category end_to_end.
+  type: end_to_end
+- id: case_42
+  prompt: Test prompt number 42 for category safety.
+  type: safety
+- id: case_43
+  prompt: Test prompt number 43 for category extraction.
+  type: extraction
+- id: case_44
+  prompt: Test prompt number 44 for category creative.
+  type: creative
+- id: case_45
+  prompt: Test prompt number 45 for category parsing.
+  type: parsing
+- id: case_46
+  prompt: Test prompt number 46 for category end_to_end.
+  type: end_to_end
+- id: case_47
+  prompt: Test prompt number 47 for category safety.
+  type: safety
+- id: case_48
+  prompt: Test prompt number 48 for category extraction.
+  type: extraction
+- id: case_49
+  prompt: Test prompt number 49 for category creative.
+  type: creative
+- id: case_50
+  prompt: Test prompt number 50 for category parsing.
+  type: parsing
