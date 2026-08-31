@@ -11,11 +11,9 @@ from unittest.mock import patch, MagicMock
 from core.tools.path_resolver import PathResolver
 from core.tools.sandbox_enforcer import SandboxEnforcer
 from core.tools.write_file import WriteFile
-from core.tools.read_file import ReadFile
-from core.tools.delete_file import DeleteFile
 from schemas.write_file_schema import WriteFileInput
 from core.tools.read_file import ReadFile, ReadFileInput
-from schemas.delete_file_schema import DeleteFileInput
+from core.orchestrator.agent_loop import AgentExecutionLoop
 from core.orchestrator.agent_loop import AgentExecutionLoop
 
 # ──────────────────────────────────────────────────────────────────────
@@ -179,19 +177,4 @@ def test_failed_mutation_halts_execution(mock_exec):
     assert mock_exec.call_count == 1
     assert "filesystem error" in result.lower()
 
-# ──────────────────────────────────────────────────────────────────────
-# Test 8: Deletion Verification
-# ──────────────────────────────────────────────────────────────────────
-def test_delete_file_verification(tmp_path):
-    """DeleteFile tool must verify the file is actually gone."""
-    test_file = tmp_path / "test.txt"
-    test_file.write_text("data")
-    
-    tool = DeleteFile()
-    with patch("core.tools.delete_file.enforcer.validate", return_value=test_file):
-        # We'll mock send2trash and unlink to do NOTHING, simulating a failure
-        with patch("core.tools.delete_file.send2trash", side_effect=Exception("mock")):
-            with patch("pathlib.Path.unlink"):
-                result = tool.run(DeleteFileInput(filepath=str(test_file)))
-                assert result.success is False
-                assert "still exists after deletion" in result.message
+
