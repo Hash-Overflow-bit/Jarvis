@@ -56,8 +56,9 @@ def test_no_env_modification(script_content):
     assert "Out-File" not in script_content or "benchmark_" in script_content
 
 def test_no_primary_model_promotion(script_content):
-    """Test that primary model is not promoted."""
-    assert "OLLAMA_PRIMARY_MODEL" not in script_content
+    """Test that primary model is not promoted in .env, but passed as env var."""
+    assert "$env:OLLAMA_PRIMARY_MODEL = " in script_content
+    assert "$env:OLLAMA_CANDIDATE_MODEL = " in script_content
 
 def test_report_path_inside_repository(script_content):
     """Test that report outputs are confined to the repository."""
