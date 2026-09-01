@@ -210,11 +210,16 @@ function Run-BenchmarkHarness {
     Write-Host "Running Benchmark... this will take some time. Logs streaming to $logFile"
     
     $env:PYTHONPATH = "."
-    # Pipe output to log. The benchmark runner natively creates a JSON report itself if we implement it, 
-    # but the Powershell script requirement says "Generate/update the comparison report". 
-    # The runner just takes --dry-run (we proved this). When run without --dry-run, it executes.
+    $env:OLLAMA_PRIMARY_MODEL = "llama3.1:8b"
+    $env:OLLAMA_CANDIDATE_MODEL = "deepseek-r1:32b"
+    
     poetry run python scripts/benchmark_local_models.py | Tee-Object -FilePath $logFile
-    Check-ExitCode -CommandName "python benchmark_local_models.py"
+    $benchExitCode = $LASTEXITCODE
+    
+    if ($benchExitCode -ne 0) {
+        Write-Error "Benchmark run failed! See log at $logFile"
+        exit $benchExitCode
+    }
 
     Write-Host "`n[OK] Benchmark Complete." -ForegroundColor Green
     Write-Host "Report saved to: $logFile"
