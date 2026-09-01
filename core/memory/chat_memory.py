@@ -301,7 +301,7 @@ def learn_from_message(user_message: str) -> None:
             target_type=f.get("target_type", "PERSON"),
             description=f.get("description", "")
         )
-        print(f"[🧠 Memory] Learned fact: {f.get('description')}")
+        print(f"[Memory] Learned fact: {f.get('description')}")
 
     # 2. Asynchronous LLM extraction for complex facts
     system_prompt = """You are the Fact Extractor Agent for Jarvis.
@@ -377,7 +377,7 @@ Each fact object in the list MUST contain:
                 for pattern in TASK_INSTRUCTION_PATTERNS:
                     if re.search(pattern, desc, re.IGNORECASE) or re.search(pattern, target, re.IGNORECASE):
                         is_task_instruction = True
-                        print(f"[🧠 Memory] REJECTED task instruction (not a stable fact): {f.get('description')}")
+                        print(f"[Memory] REJECTED task instruction (not a stable fact): {f.get('description')}")
                         break
                 if is_task_instruction:
                     continue
@@ -390,7 +390,7 @@ Each fact object in the list MUST contain:
                     target_type=f.get("target_type", "PERSON"),
                     description=f.get("description", "")
                 )
-                print(f"[🧠 Memory] Learned fact: {f.get('description')}")
+                print(f"[Memory] Learned fact: {f.get('description')}")
 
         except Exception as e:
             logger.warning(f"[Chat Memory] Fact extraction failed: {e}")

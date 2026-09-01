@@ -140,7 +140,7 @@ class AgentExecutionLoop:
         ]
         if any(k in user_input.lower() for k in isolation_keywords):
             self.interview_mode = True
-            print("[🔒 Isolation] Entering strict interview mode. Execution suppressed unless explicitly requested.")
+            print("[Isolation] Entering strict interview mode. Execution suppressed unless explicitly requested.")
 
         # 1. Memory Routing & Context Ingestion
         recalled_facts = ""
@@ -168,7 +168,7 @@ class AgentExecutionLoop:
 
                 if recall_res.facts or recall_res.entities:
                     recalled_facts = recall_res.as_text()
-                    print(f"\n[🧠 Memory] Recalled {len(recall_res.facts)} relations and {len(recall_res.entities)} entities in {recall_res.latency_ms:.1f}ms")
+                    print(f"\n[Memory] Recalled {len(recall_res.facts)} relations and {len(recall_res.entities)} entities in {recall_res.latency_ms:.1f}ms")
             except Exception as e:
                 logger.error(f"Memory recall failed: {e}")
 
@@ -195,7 +195,7 @@ class AgentExecutionLoop:
         # 2.5 Critic/Verification loop for multi-step operations
         is_deterministic = self._direct_route(user_input, recalled_facts) is not None
         if len(plan) > 1 and not any(s.get("tool") == "generate_document" for s in plan) and not is_deterministic:
-            print(f"\n[🛡️ Critic] Proposed plan has {len(plan)} steps. Initiating internal critic review...")
+            print(f"\n[Critic] Proposed plan has {len(plan)} steps. Initiating internal critic review...")
             plan = self._criticize_plan(user_input, plan)
 
         # 2.6 Sanitize — reject steps with placeholder/hallucinated paths
@@ -212,10 +212,10 @@ class AgentExecutionLoop:
 
         plan = self._sanitize_plan(plan, user_input)
         if not plan:
-            print("[❌ Sanitizer] Plan was rejected by sanitizer guardrails.")
-            return "[❌ Failure] Execution halted: Sanitizer rejected all proposed plan steps due to invalid or unregistered tools."
+            print("[Sanitizer] Plan was rejected by sanitizer guardrails.")
+            return "[Failure] Execution halted: Sanitizer rejected all proposed plan steps due to invalid or unregistered tools."
 
-        print(f"\n[📋 Plan] Decomposed into {len(plan)} steps:")
+        print(f"\n[Plan] Decomposed into {len(plan)} steps:")
         for step in plan:
             print(f"  - Step {step.get('step')}: {step.get('tool')} with args: {step.get('arguments')}")
 
@@ -234,11 +234,11 @@ class AgentExecutionLoop:
             args = step.get("arguments", {})
 
             if not isinstance(tool_name, str) or not tool_name:
-                print(f"[❌ Failure] Step {step.get('step')} has an invalid or missing tool name.")
+                print(f"[Failure] Step {step.get('step')} has an invalid or missing tool name.")
                 step_idx += 1
                 continue
 
-            print(f"\n[⚙️ Execution] Running Step {step.get('step')}: {tool_name} ...")
+            print(f"\n[Execution] Running Step {step.get('step')}: {tool_name} ...")
             
             # Record tool call in history for session context & tests
             self.history.append({
@@ -314,11 +314,11 @@ class AgentExecutionLoop:
                             if not latest_attempt["success"]:
                                 error_msg = latest_attempt["result"].get("error") or "File read failed."
                                 print(f"[DIAGNOSTIC] extract_data allowed: FALSE | write_file allowed: FALSE | reason: failed prerequisite read")
-                                print(f"[🚫 Prerequisite Failed] Prerequisite read of '{path}' failed: {error_msg}")
+                                print(f"[Prerequisite Failed] Prerequisite read of '{path}' failed: {error_msg}")
                                 return f"Execution halted at Step {step.get('step')} ({tool_name}) because the source file could not be read: {error_msg}"
                         else:
                             print(f"[DIAGNOSTIC] extract_data allowed: FALSE | write_file allowed: FALSE | reason: prerequisite read never attempted")
-                            print(f"[🚫 Prerequisite Missing] Prerequisite read of '{path}' was never attempted.")
+                            print(f"[Prerequisite Missing] Prerequisite read of '{path}' was never attempted.")
                             return f"Execution halted at Step {step.get('step')} ({tool_name}) because the source file could not be read: {Path(path).name} was not successfully read."
 
                     print(f"[DIAGNOSTIC] extract_data allowed: TRUE")
@@ -364,20 +364,20 @@ class AgentExecutionLoop:
                         ))
                 
                 if tool_name == "extract_data":
-                    print(f"[📝 Extraction] Starting data extraction...")
+                    print(f"[Extraction] Starting data extraction...")
                     full_report = WritingPipeline.run_extraction_workflow(user_input, sources)
                     word_count = len(full_report.split())
                 elif intent_dict.get("task_type") == "simple":
-                    print(f"[📝 Generation] Starting simple document generation for topic '{topic}'...")
+                    print(f"[Generation] Starting simple document generation for topic '{topic}'...")
                     full_report = WritingPipeline.run_simple_workflow(topic)
                     word_count = len(full_report.split())
                 else:
                     if intent_dict.get("research_required") and intent_dict.get("sources_required") and not sources:
-                        print(f"[🚫 Evidence Gate] Halting: 'generate_document' requires verified sources, but none were retrieved.")
+                        print(f"[Evidence Gate] Halting: 'generate_document' requires verified sources, but none were retrieved.")
                         # We must abort the generation and the write_file step
-                        return "[❌ Failure] Execution halted: I couldn't retrieve enough current sources to produce a grounded report."
+                        return "[Failure] Execution halted: I couldn't retrieve enough current sources to produce a grounded report."
 
-                    print(f"[📝 Generation] Starting document generation for topic '{topic}'...")
+                    print(f"[Generation] Starting document generation for topic '{topic}'...")
                     full_report = WritingPipeline.run_research_workflow(topic, sources)
                     word_count = len(full_report.split())
                 
@@ -385,7 +385,7 @@ class AgentExecutionLoop:
                     if min_words:
                         attempts = 1
                         while word_count < min_words and attempts < 3:
-                            print(f"[📝 Generation] Word count {word_count} is below required {min_words}. Expanding document...")
+                            print(f"[Generation] Word count {word_count} is below required {min_words}. Expanding document...")
                             # Append the expansion prompt and re-run
                             expansion_prompt = f"{topic}\n\nPlease expand the previous sections and add more detail to reach at least {min_words} words."
                             full_report = WritingPipeline.run_research_workflow(expansion_prompt, sources)
@@ -521,7 +521,7 @@ class AgentExecutionLoop:
             })
 
             if tool_success:
-                print(f"[✅ Success] Step {step.get('step')} completed.")
+                print(f"[Success] Step {step.get('step')} completed.")
                 
                 # --- Artifact Tracking ---
                 if tool_name == "create_directory":
@@ -549,7 +549,7 @@ class AgentExecutionLoop:
                         args=args,
                         result=result.get("result", {})
                     )
-                    print(f"[💾 Memory] Action saved: {tool_name}")
+                    print(f"[Memory] Action saved: {tool_name}")
                 except Exception as mem_err:
                     logger.warning(f"Action memory write failed: {mem_err}")
                 step_idx += 1
@@ -572,10 +572,10 @@ class AgentExecutionLoop:
                             break
                 error_msg = error_msg or "Unknown error"
 
-                print(f"[❌ Failure] Step {step.get('step')} failed: {error_msg}")
+                print(f"[Failure] Step {step.get('step')} failed: {error_msg}")
 
                 if "denied" in str(error_msg).lower():
-                    print(f"[🚫 Confirmation Gate] Execution of '{tool_name}' was denied by user. Halting immediately.")
+                    print(f"[Confirmation Gate] Execution of '{tool_name}' was denied by user. Halting immediately.")
                     return f"Execution of '{tool_name}' denied by user."
 
                 # --- FILESYSTEM MUTATION FAILURE INTERCEPT ---
@@ -583,7 +583,7 @@ class AgentExecutionLoop:
                 # after a filesystem operation fails, unless original request was explicitly those tools.
                 fs_tools = {"write_file", "create_directory", "delete_directory", "delete_file", "file_cleanup"}
                 if tool_name in fs_tools:
-                    print(f"[🚫 Filesystem Halt] Execution of '{tool_name}' failed. Halting dependent steps to prevent hallucinated success.")
+                    print(f"[Filesystem Halt] Execution of '{tool_name}' failed. Halting dependent steps to prevent hallucinated success.")
                     return prose_hook.filter_response(f"I encountered a filesystem error while trying to complete your request: {error_msg}")
 
 
@@ -602,12 +602,12 @@ class AgentExecutionLoop:
                     if any(w in str(error_msg).lower() for w in ("timeout", "disconnected", "connection aborted", "unreachable", "timed out", "connectionrefused")):
                         consecutive_search_timeouts += 1
                         if consecutive_search_timeouts >= 2:
-                            print("[❌ Search Provider Outage] Detected consecutive network failures. Aborting research.")
+                            print("[Search Provider Outage] Detected consecutive network failures. Aborting research.")
                             return "I couldn't retrieve enough current sources to produce a grounded report."
                     
                     retry_count += 1
                     if retry_count >= MAX_RETRIES:
-                        print(f"[❌ Search] Max search retries ({MAX_RETRIES}) reached. Aborting research.")
+                        print(f"[Search] Max search retries ({MAX_RETRIES}) reached. Aborting research.")
                         return prose_hook.filter_response("I couldn't retrieve enough current sources to produce a grounded report.")
                         
                     # Deterministic retry with better query cleaning
@@ -634,14 +634,14 @@ class AgentExecutionLoop:
                             retry_query = " ".join(words[:2]) # last ditch effort
                             
                         if retry_query.lower().strip() in attempted_queries or retry_query.lower().strip() == original_query.lower().strip():
-                            print(f"[❌ Search Retry] Exhausted unique query variants.")
+                            print(f"[Search Retry] Exhausted unique query variants.")
                             return prose_hook.filter_response("I couldn't retrieve enough current sources to produce a grounded report.")
                             
-                        print(f"[🔄 Search Retry] Retrying with query: '{retry_query}'")
+                        print(f"[Search Retry] Retrying with query: '{retry_query}'")
                         attempted_queries.add(retry_query.lower().strip())
                         plan[step_idx] = {"step": step.get("step"), "tool": "web_search", "arguments": {"query": retry_query}}
                     else:
-                        print(f"[❌ Search Retry] Could not extract keywords for retry.")
+                        print(f"[Search Retry] Could not extract keywords for retry.")
                         return prose_hook.filter_response("I couldn't retrieve enough current sources to produce a grounded report.")
                     continue
 
@@ -653,22 +653,22 @@ class AgentExecutionLoop:
                     downstream_tools = {s.get("tool") for s in plan[step_idx + 1:] if isinstance(s, dict)}
                     if downstream_tools & {"extract_data", "generate_document"}:
                         failed_filepath = args.get("filepath") or args.get("file_path") or "unknown file"
-                        print(f"[🚫 Prerequisite Failure] read_file failed for '{failed_filepath}' — downstream extraction/generation depends on it. Halting.")
+                        print(f"[Prerequisite Failure] read_file failed for '{failed_filepath}' — downstream extraction/generation depends on it. Halting.")
                         return f"Execution halted at Step {step.get('step')} (read_file) because the source file could not be read: {error_msg}"
                 
                 # If generation fails, downstream save should abort rather than saving error text.
                 if tool_name in ("generate_document", "extract_data"):
                     downstream_tools = {s.get("tool") for s in plan[step_idx + 1:] if isinstance(s, dict)}
                     if downstream_tools & {"write_file"}:
-                        print(f"[🚫 Generation Failure] {tool_name} failed — downstream write_file depends on it. Halting.")
+                        print(f"[Generation Failure] {tool_name} failed — downstream write_file depends on it. Halting.")
                         return f"Execution halted at Step {step.get('step')} ({tool_name}) because document generation failed: {error_msg}"
 
                 retry_count += 1
                 if retry_count >= MAX_RETRIES:
                     if "jarvis_execution_test" in user_input.lower() and "jarvis execution verified" in user_input.lower():
-                        print("[❌ Execution] Deterministic test step failed. Breaking out to synthesis.")
+                        print("[Execution] Deterministic test step failed. Breaking out to synthesis.")
                         break
-                    print(f"[❌ Reflection] Max retries ({MAX_RETRIES}) reached. Halting execution to prevent infinite loop.")
+                    print(f"[Reflection] Max retries ({MAX_RETRIES}) reached. Halting execution to prevent infinite loop.")
                     return f"Execution halted at Step {step.get('step')} ({tool_name}) due to repeated failures: {error_msg}"
                 
                 # Reflection & Self-Correction
@@ -683,7 +683,7 @@ class AgentExecutionLoop:
                     # Sanitize the revised plan too
                     revised_plan = self._sanitize_plan(revised_plan)
                 if revised_plan and isinstance(revised_plan, list) and len(revised_plan) > 0:
-                    print("\n[🔄 Re-planning] Self-corrected! Revised remaining steps:")
+                    print("\n[Re-planning] Self-corrected! Revised remaining steps:")
                     # Replace remaining steps in the plan
                     plan = plan[:step_idx] + revised_plan
                     # Adjust step indices in the revised plan for clean logging
@@ -694,7 +694,7 @@ class AgentExecutionLoop:
                         if isinstance(s, dict):
                             print(f"  - Step {s.get('step')}: {s.get('tool')} with args: {s.get('arguments')}")
                 else:
-                    print("[❌ Reflection] Could not self-correct further. Halting execution.")
+                    print("[Reflection] Could not self-correct further. Halting execution.")
                     return f"Execution halted at Step {step.get('step')} ({tool_name}) due to: {error_msg}"
 
         # 5. Final Synthesis
@@ -987,7 +987,7 @@ class AgentExecutionLoop:
             capabilities = self._extract_capabilities_from_prompt(cleaned)
             role, goal = self._derive_agent_specs(agent_name, cleaned, capabilities)
 
-            print(f"[🛡️ Direct Route] Planning agent build: name={agent_name}, framework={framework}, capabilities={capabilities}")
+            print(f"[Direct Route] Planning agent build: name={agent_name}, framework={framework}, capabilities={capabilities}")
             plan = [{
                 "step": 1,
                 "tool": "agent_builder",
@@ -1094,7 +1094,7 @@ class AgentExecutionLoop:
                     task_description = m_generic.group(1).strip()
 
         if matched_agent and task_description:
-            print(f"[🛡️ Direct Route] Delegating task to '{matched_agent}': {task_description}")
+            print(f"[Direct Route] Delegating task to '{matched_agent}': {task_description}")
             return [{
                 "step": 1,
                 "tool": "delegate_task",
@@ -1147,7 +1147,7 @@ class AgentExecutionLoop:
                 raw_fields = extract_match.group(1).strip()
                 extracted_fields = [f.strip() for f in re.split(r',|\band\b', raw_fields) if f.strip()]
 
-            print(f"[🛡️ Direct Route] Browser task: url={target_url}, goal={nav_goal}")
+            print(f"[Direct Route] Browser task: url={target_url}, goal={nav_goal}")
             skyvern_args = {
                 "url": target_url,
                 "navigation_goal": nav_goal
@@ -1713,7 +1713,7 @@ class AgentExecutionLoop:
         # Try deterministic routing first (100% reliable for obvious commands)
         direct_plan = self._direct_route(user_input, recalled_facts)
         if direct_plan is not None:
-            print("\n[⚡ Direct Route] Matched deterministic pattern — bypassing LLM planner.")
+            print("\n[Direct Route] Matched deterministic pattern — bypassing LLM planner.")
             return direct_plan
 
         prompt = f"""User Goal: {user_input}
@@ -1787,7 +1787,7 @@ Output ONLY raw JSON. Start with '{{'.
                 temperature=0.0,
                 format="json"
             )
-            print(f"\n[🤖 Planner Raw Response]\n{json.dumps(resp, indent=2)}\n")
+            print(f"\n[Planner Raw Response]\n{json.dumps(resp, indent=2)}\n")
             
             if not isinstance(resp, dict):
                 return []
@@ -2064,7 +2064,7 @@ Output ONLY raw JSON. Start with '{{'.
                 "bookkeeper" in tool_name.lower()
             )
             if is_agent_name and tool_name not in valid_tools:
-                print(f"[🛡️ Auto-Remap] Auto-mapping sub-agent invocation '{tool_name}' to 'delegate_task'.")
+                print(f"[Auto-Remap] Auto-mapping sub-agent invocation '{tool_name}' to 'delegate_task'.")
                 step["tool"] = "delegate_task"
                 task_desc = args.get("task_description") or args.get("task") or args.get("description") or f"Execute task assigned to {tool_name}"
                 exp_out = args.get("expected_output") or "Task completion report"
@@ -2078,7 +2078,7 @@ Output ONLY raw JSON. Start with '{{'.
 
             # --- GUARDRAIL 2: Reject Invalid / Unregistered Tools strictly ---
             if tool_name not in valid_tools:
-                print(f"[🚫 Sanitizer] Rejected Step {step.get('step')} — tool '{tool_name}' is not in the tool registry.")
+                print(f"[Sanitizer] Rejected Step {step.get('step')} — tool '{tool_name}' is not in the tool registry.")
                 continue
 
             # --- GUARDRAIL 3: Reject unrequested file system tools on research prompts ---
@@ -2091,14 +2091,14 @@ Output ONLY raw JSON. Start with '{{'.
                     ))
                     # Do not block read_file or list_dir for research, as they are non-mutating and often necessary.
                     if not has_save_intent and tool_name in ("write_file", "create_directory", "delete_directory"):
-                        print(f"[🛡️ Sanitizer] Rejected unrequested filesystem tool '{tool_name}' for research request without save intent.")
+                        print(f"[Sanitizer] Rejected unrequested filesystem tool '{tool_name}' for research request without save intent.")
                         continue
 
             # --- GUARDRAIL: Read-Only Verification Safety ---
             if read_only_intent:
                 mutating = {"write_file", "create_directory", "delete_directory", "delete_file", "move", "rename", "agent_builder", "delegate_task", "file_cleanup"}
                 if tool_name in mutating:
-                    print(f"[🛡️ Sanitizer] Rejected mutating tool '{tool_name}' because read-only intent was detected.")
+                    print(f"[Sanitizer] Rejected mutating tool '{tool_name}' because read-only intent was detected.")
                     continue
 
             # --- GUARDRAIL 2: Auto-populate missing agent_builder fields ---
@@ -2177,7 +2177,7 @@ Output ONLY raw JSON. Start with '{{'.
             is_bad = False
             for pattern in PLACEHOLDER_PATTERNS:
                 if re.search(pattern, args_str, re.IGNORECASE):
-                    print(f"[🚫 Sanitizer] Rejected Step {step.get('step')} — contains placeholder path: {pattern}")
+                    print(f"[Sanitizer] Rejected Step {step.get('step')} — contains placeholder path: {pattern}")
                     is_bad = True
                     break
             if not is_bad:
@@ -2188,7 +2188,7 @@ Output ONLY raw JSON. Start with '{{'.
             deletion_tools = {"delete_directory", "file_cleanup", "delete_file", "remove_directory", "remove_file"}
             has_delete = any(step.get("tool") in deletion_tools for step in sanitized)
             if not has_delete:
-                print("[🚫 Sanitizer] User requested deletion, but sanitized plan contains no registered deletion tool. Rejecting plan.")
+                print("[Sanitizer] User requested deletion, but sanitized plan contains no registered deletion tool. Rejecting plan.")
                 return []
 
         return sanitized
@@ -2206,7 +2206,7 @@ Output ONLY raw JSON. Start with '{{'.
         workspace_path = str(settings.default_workspace_dir)
 
         if isinstance(failed_step, dict) and failed_step.get("tool") == "agent_builder":
-            print("[🔄 Build Replan] Retrying agent_builder with original arguments to prevent corruption.")
+            print("[Build Replan] Retrying agent_builder with original arguments to prevent corruption.")
             return [{"step": failed_step.get("step", 1), "tool": "agent_builder", "arguments": failed_step.get("arguments", {})}]
 
         system_prompt = f"""You are Jarvis's Reflector. A step failed during execution.
@@ -2750,7 +2750,7 @@ Audit the plan, resolve any flaws, and output the finalized JSON.
                 res = proposed_plan
                 
             if isinstance(res, list) and len(res) > 0:
-                print("[🛡️ Critic] Plan successfully audited and approved.")
+                print("[Critic] Plan successfully audited and approved.")
                 return [s for s in res if isinstance(s, dict)]
             return proposed_plan
         except Exception as e:

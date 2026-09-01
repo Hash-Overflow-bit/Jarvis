@@ -25,6 +25,15 @@ Write-Host "========================================================"
 Write-Host " Jarvis Phase D Windows Operator Script "
 Write-Host "========================================================"
 
+# Safely configure execution for UTF-8
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+} catch {
+    # Ignore if not supported in the current console environment
+}
+
 function Check-ExitCode {
     param([string]$CommandName)
     if ($LASTEXITCODE -ne 0) {

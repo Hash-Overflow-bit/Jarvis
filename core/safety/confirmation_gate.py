@@ -34,7 +34,7 @@ class ConfirmationGate:
 
         risk = risk_classifier.get_risk_level(tool_name)
         warning_msg = (
-            f"\n[⚠️ SECURITY WARNING] Jarvis is requesting permission to execute "
+            f"\n[SECURITY WARNING] Jarvis is requesting permission to execute "
             f"a {risk.upper()} risk tool: '{tool_name}'\n"
             f"Parameters: {parameters}\n"
         )
@@ -42,7 +42,7 @@ class ConfirmationGate:
         if mode == "audio":
             approved = await self._confirm_audio(tool_name, warning_msg)
             if not approved:
-                print("\n[🎙️ Audio confirmation failed or denied. Falling back to console prompt...]")
+                print("\n[Audio confirmation failed or denied. Falling back to console prompt...]")
                 approved = await self._confirm_text(warning_msg)
             return approved
         else:

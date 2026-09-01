@@ -160,7 +160,7 @@ class SessionManager:
                         chat_messages.insert(1, {"role": "system", "content": injected_context})
 
                 except Exception as e:
-                    print(f"\n[🧠 Memory Error] Failed recall: {e}")
+                    print(f"\n[Memory Error] Failed recall: {e}")
 
             response_msg = ollama.chat(
                 messages=chat_messages,

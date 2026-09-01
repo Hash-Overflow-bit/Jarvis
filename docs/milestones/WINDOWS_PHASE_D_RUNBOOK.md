@@ -1,3 +1,4 @@
+
 # Phase D DeepSeek-R1 32B Benchmark Runbook (Windows 11)
 
 This runbook provides the exact commands required to execute the Phase D benchmark on the client's Windows 11 Poetry environment.

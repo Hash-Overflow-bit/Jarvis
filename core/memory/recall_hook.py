@@ -22,7 +22,7 @@ def main():
         if not prompt:
             # Fallback for empty prompts
             print(json.dumps({
-                "systemMessage": "[🧠 Memory] No search query provided.",
+                "systemMessage": "[Memory] No search query provided.",
                 "hookSpecificOutput": {
                     "hookEventName": "UserPromptSubmit",
                     "additionalContext": ""
@@ -46,7 +46,7 @@ def main():
     except Exception as e:
         # Graceful fallback: return empty memory context on error
         print(json.dumps({
-            "systemMessage": f"[🧠 Memory] Error in hook execution: {e}",
+            "systemMessage": f"[Memory] Error in hook execution: {e}",
             "hookSpecificOutput": {
                 "hookEventName": "UserPromptSubmit",
                 "additionalContext": ""

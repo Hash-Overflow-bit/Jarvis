@@ -23,7 +23,7 @@ class RecallResult:
             return "no memory matches"
 
         lines = [
-            f"[🧠 Memory] Recalled {len(self.facts)} relations and {len(self.entities)} entities in {self.latency_ms:.1f}ms\n"
+            f"[Memory] Recalled {len(self.facts)} relations and {len(self.entities)} entities in {self.latency_ms:.1f}ms\n"
         ]
 
         # 1. Format the relationships (edges)
