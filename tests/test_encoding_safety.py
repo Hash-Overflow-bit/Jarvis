@@ -39,14 +39,13 @@ def test_encoding_failure_does_not_abort_execution(tmp_path):
         bad_stream = BadEncoderStream()
         
         with patch('sys.stdout', bad_stream):
-            prompt = "Read the local system prompt files in the configured workspace, summarize the core instructions in exactly three bullet points, and create test_summary.md in that workspace."
+            prompt = "Read system_prompt.txt and save a summary to some_other_file.md"
             
-            # We mock ollama.chat to return a JSON plan with 3 steps
             mock_plan = f'''```json
 [
     {{"step": 1, "tool": "read_file", "arguments": {{"filepath": "{(tmp_path / 'system_prompt.txt').as_posix()}"}}}},
-    {{"step": 2, "tool": "generate_document", "arguments": {{"intent": {{"task_type": "research_write", "topic": "summarize system prompt in exactly three bullet points", "sources_required": true, "source_files": ["system_prompt.txt"]}}}}}},
-    {{"step": 3, "tool": "write_file", "arguments": {{"filepath": "{(tmp_path / 'test_summary.md').as_posix()}", "content": "<USE_GENERATED_ARTIFACT>"}}}}
+    {{"step": 2, "tool": "generate_document", "arguments": {{"intent": {{"task_type": "research_write", "topic": "summarize", "sources_required": true, "source_files": ["system_prompt.txt"]}}}}}},
+    {{"step": 3, "tool": "write_file", "arguments": {{"filepath": "{(tmp_path / 'some_other_file.md').as_posix()}", "content": "<USE_GENERATED_ARTIFACT>"}}}}
 ]
 ```'''
 
@@ -61,8 +60,8 @@ def test_encoding_failure_does_not_abort_execution(tmp_path):
             with patch('core.orchestrator.agent_loop.ollama.chat', side_effect=mock_chat):
                 loop.run(prompt, mode="text")
                 
-            expected_file = tmp_path / "test_summary.md"
-            assert expected_file.exists(), "test_summary.md was not created! Execution aborted."
+            expected_file = tmp_path / "some_other_file.md"
+            assert expected_file.exists(), "some_other_file.md was not created! Execution aborted."
             
             content = expected_file.read_text().strip()
             assert content != "", "Created file is empty!"

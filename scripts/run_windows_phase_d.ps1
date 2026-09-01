@@ -92,51 +92,86 @@ function Run-Preflight {
 
     Write-Host "`n[4] Complete Pytest Suite:" -ForegroundColor Cyan
     # Ensure memory is completely isolated by setting a temp path
-    $temp_kg_path = [System.IO.Path]::Combine($env:TEMP, ".jarvis_temp_test_memory.db")
+    $guid_str = [guid]::NewGuid().ToString()
+    $temp_kg_path = [System.IO.Path]::Combine($env:TEMP, "jarvis_test_memory_$guid_str.db")
     $env:JARVIS_KG_PATH = $temp_kg_path
     
     poetry run pytest tests/ -v
     Check-ExitCode -CommandName "pytest"
     Write-Host "[OK] Pytest suite passed." -ForegroundColor Green
 
-    Write-Host "`n[5] Legacy Tier 1 Baseline Verification:" -ForegroundColor Cyan
+    Write-Host "`n[4.5] Exact Model Tag Validation for llama3.1:8b:" -ForegroundColor Cyan
+    $models = ((ollama list | Out-String).Trim())
+    if ($models -notmatch "\bllama3.1:8b\b") {
+        Write-Error "Primary model 'llama3.1:8b' is not installed."
+        exit 1
+    }
+    Write-Host "[OK] llama3.1:8b is installed." -ForegroundColor Green
+
+    Write-Host "`n[5] Legacy Tier 1 Baseline Verification (10 Live Runs):" -ForegroundColor Cyan
     # Run the test that asserts workspace boundaries, bullet points, and checks SHA256 (if implemented in the test)
     poetry run pytest tests/test_legacy_tier1.py -v
     Check-ExitCode -CommandName "pytest test_legacy_tier1.py"
     
-    # We also execute the script natively and verify its output file directly in Powershell to satisfy the requirements natively.
-    poetry run python scripts/run_legacy_tier1.py
-    Check-ExitCode -CommandName "python run_legacy_tier1.py"
-    
-    # Native Powershell Checks:
-    $workspace = "workspace"
-    $file = "$workspace\test_summary.md"
-    $desktopFile = "$env:USERPROFILE\Desktop\test_summary.md"
+    for ($i = 1; $i -le 10; $i++) {
+        Write-Host "--- Tier 1 Run $i/10 ---" -ForegroundColor Cyan
+        
+        # Isolated workspace and DB for each run
+        $run_guid = [guid]::NewGuid().ToString()
+        $run_workspace = [System.IO.Path]::Combine($env:TEMP, "jarvis_tier1_run_$run_guid")
+        $run_kg_path = [System.IO.Path]::Combine($env:TEMP, "jarvis_tier1_kg_$run_guid.db")
+        
+        $env:JARVIS_WORKSPACE = $run_workspace
+        $env:JARVIS_KG_PATH = $run_kg_path
+        
+        if (-not (Test-Path $run_workspace)) {
+            New-Item -ItemType Directory -Force -Path $run_workspace | Out-Null
+        }
+        
+        # Copy a dummy system prompt file to simulate the environment
+        $dummy_prompt = [System.IO.Path]::Combine($run_workspace, "system_prompt.txt")
+        Set-Content -Path $dummy_prompt -Value "Core instructions: Always verify paths. Do not delete files without checking. Summarize effectively."
+        
+        # We also execute the script natively and verify its output file directly in Powershell to satisfy the requirements natively.
+        poetry run python scripts/run_legacy_tier1.py
+        Check-ExitCode -CommandName "python run_legacy_tier1.py"
+        
+        # Native Powershell Checks:
+        $file = [System.IO.Path]::Combine($run_workspace, "test_summary.md")
+        $desktopFile = [System.IO.Path]::Combine($env:USERPROFILE, "Desktop", "test_summary.md")
 
-    if (-not (Test-Path $file)) {
-        Write-Error "Legacy Tier 1 failed: $file not created in workspace."
-        exit 1
+        if (-not (Test-Path $file)) {
+            Write-Error "Legacy Tier 1 failed (Run $i): $file not created in workspace."
+            exit 1
+        }
+        
+        if (Test-Path $desktopFile) {
+            Write-Error "Legacy Tier 1 failed (Run $i): File incorrectly created on Desktop!"
+            exit 1
+        }
+        
+        $content = Get-Content $file
+        if ([string]::IsNullOrWhiteSpace($content)) {
+            Write-Error "Legacy Tier 1 failed (Run $i): File is empty."
+            exit 1
+        }
+        
+        $bullets = $content | Where-Object { $_ -match "^[-*]\s|\d+\.\s" }
+        if ($bullets.Count -ne 3) {
+            Write-Error "Legacy Tier 1 failed (Run $i): Expected exactly 3 bullet points, found $($bullets.Count)."
+            exit 1
+        }
+        
+        $hashStr = (Get-FileHash $file -Algorithm SHA256).Hash
+        Write-Host "[OK] Legacy Tier 1 Verification Passed (Run $i). SHA-256: $hashStr" -ForegroundColor Green
+        
+        # Cleanup isolated DB for this run
+        if (Test-Path $run_kg_path) { Remove-Item -Force $run_kg_path }
+        if (Test-Path $run_workspace) { Remove-Item -Force -Recurse $run_workspace }
     }
-    
-    if (Test-Path $desktopFile) {
-        Write-Error "Legacy Tier 1 failed: File incorrectly created on Desktop!"
-        exit 1
-    }
-    
-    $content = Get-Content $file
-    if ([string]::IsNullOrWhiteSpace($content)) {
-        Write-Error "Legacy Tier 1 failed: File is empty."
-        exit 1
-    }
-    
-    $bullets = $content | Where-Object { $_ -match "^[-*]\s|\d+\.\s" }
-    if ($bullets.Count -ne 3) {
-        Write-Error "Legacy Tier 1 failed: Expected exactly 3 bullet points, found $($bullets.Count)."
-        exit 1
-    }
-    
-    $hashStr = (Get-FileHash $file -Algorithm SHA256).Hash
-    Write-Host "[OK] Legacy Tier 1 Verification Passed. SHA-256: $hashStr" -ForegroundColor Green
+
+    # Cleanup main temp DB
+    if (Test-Path $temp_kg_path) { Remove-Item -Force $temp_kg_path }
 
     Write-Host "`nPreflight Complete. All checks passed.`n" -ForegroundColor Green
 }

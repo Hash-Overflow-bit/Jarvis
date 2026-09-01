@@ -174,9 +174,10 @@ def recall(prompt: str, hops: int = 3, top_k: int = 8) -> RecallResult:
         def _is_transient(text: str) -> bool:
             if not text: return False
             if "pytest-" in text: return True
-            if "Desktop" in text or "workspace" in text: return True
             # Matches absolute paths like /Users/... or C:/...
             if text.startswith("/") or re.match(r'^[a-zA-Z]:[/\\]', text): return True
+            # Check for path-like strings containing workspace or Desktop, but keep semantic mentions
+            if re.search(r'(?:/|\\|^)(?:workspace|Desktop)(?:/|\\|$|\.md|\.txt)', text, re.IGNORECASE): return True
             return False
 
         filtered_entities = []
