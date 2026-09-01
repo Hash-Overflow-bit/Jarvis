@@ -91,6 +91,10 @@ function Run-Preflight {
     Write-Host "[OK] Dry-run passed." -ForegroundColor Green
 
     Write-Host "`n[4] Complete Pytest Suite:" -ForegroundColor Cyan
+    # Ensure memory is completely isolated by setting a temp path
+    $temp_kg_path = [System.IO.Path]::Combine($env:TEMP, ".jarvis_temp_test_memory.db")
+    $env:JARVIS_KG_PATH = $temp_kg_path
+    
     poetry run pytest tests/ -v
     Check-ExitCode -CommandName "pytest"
     Write-Host "[OK] Pytest suite passed." -ForegroundColor Green

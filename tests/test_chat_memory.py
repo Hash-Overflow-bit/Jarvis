@@ -51,7 +51,7 @@ def temp_db():
 
 def test_save_conversational_fact(temp_db):
     """Verify that saving a fact manually writes it correctly to SQLite."""
-    with patch.dict(os.environ, {"KNOWLEDGE_GRAPH_PATH": str(temp_db)}):
+    with patch.object(settings.__class__, 'knowledge_graph_path', property(lambda self: str(temp_db))):
         save_conversational_fact(
             source_name="User",
             source_type="PERSON",
@@ -89,7 +89,7 @@ def test_save_conversational_fact(temp_db):
 
 def test_recall_learned_fact(temp_db):
     """Verify that a saved conversational fact can be retrieved via recall."""
-    with patch.dict(os.environ, {"KNOWLEDGE_GRAPH_PATH": str(temp_db)}):
+    with patch.object(settings.__class__, 'knowledge_graph_path', property(lambda self: str(temp_db))):
         save_conversational_fact(
             source_name="User",
             source_type="PERSON",
@@ -111,7 +111,7 @@ def test_recall_learned_fact(temp_db):
 def test_record_conversation_turn(temp_db):
     """Verify that full conversation turns are persisted and recalled across sessions."""
     from core.memory.chat_memory import record_conversation_turn
-    with patch.dict(os.environ, {"KNOWLEDGE_GRAPH_PATH": str(temp_db)}):
+    with patch.object(settings.__class__, 'knowledge_graph_path', property(lambda self: str(temp_db))):
         record_conversation_turn(
             user_input="create a folder named test_folder on desktop",
             agent_response="I created the folder test_folder on your desktop."

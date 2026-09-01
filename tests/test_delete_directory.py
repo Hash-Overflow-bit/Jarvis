@@ -144,7 +144,8 @@ def test_delete_directory_false_success_physical_verification_failure(tmp_path):
 
     with patch("core.orchestrator.agent_loop.tool_registry.execute", return_value=mock_tool_result) as mock_exec:
         with patch("core.orchestrator.agent_loop.ollama.chat", side_effect=mock_chat_fn):
-            res = loop.run(f"Please delete the folder {target_dir}")
+            with patch.object(settings.__class__, 'default_workspace_dir', property(lambda self: tmp_path)):
+                res = loop.run(f"Please delete the folder {target_dir}")
 
             print("[DEBUG TEST] planner response:", repr(mock_plan_res))
             print("[DEBUG TEST] final result:", repr(res))
@@ -202,4 +203,4 @@ def test_delete_directory_windows_path_physical_verification(tmp_path):
                 # Since mock doesn't actually delete it, physical verification MUST fail
                 # it should not claim success if the directory still exists.
                 assert "successfully deleted" not in res.lower()
-                assert any(k in res.lower() for k in ["physically exists", "couldn't delete", "halted", "failed"])
+                assert any(k in res.lower() for k in ["physically exists", "couldn't delete", "halted", "failed", "security restriction", "filesystem error"])

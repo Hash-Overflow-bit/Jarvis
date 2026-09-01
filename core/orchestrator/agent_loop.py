@@ -223,10 +223,22 @@ class AgentExecutionLoop:
             if not plan:
                 return self._synthesize_fallback(user_input, recalled_facts)
 
-        plan = self._sanitize_plan(plan, user_input)
-        if not plan:
-            self._safe_print("[Sanitizer] Plan was rejected by sanitizer guardrails.")
-            return "[Failure] Execution halted: Sanitizer rejected all proposed plan steps due to invalid or unregistered tools."
+        sanitized_plan = self._sanitize_plan(plan, user_input)
+        if not sanitized_plan:
+            self._safe_print("\n[Sanitizer] Plan was rejected by sanitizer guardrails. Attempting bounded repair...")
+            # Bounded replan attempt
+            repaired_plan = self._reflect_and_replan(
+                user_input,
+                {"step": 0, "tool": "planner", "arguments": plan},
+                "The plan was rejected because it violates dependency grounding, uses invalid paths, or hallucinated tools. Generate a strictly grounded plan.",
+                []
+            )
+            sanitized_plan = self._sanitize_plan(repaired_plan, user_input)
+            if not sanitized_plan:
+                self._safe_print("[Sanitizer] Plan was rejected by sanitizer guardrails after repair attempt.")
+                return "[Failure] Execution halted: Sanitizer rejected all proposed plan steps due to invalid or unregistered tools."
+
+        plan = sanitized_plan
 
         self._safe_print(f"\n[Plan] Decomposed into {len(plan)} steps:")
         for step in plan:
@@ -277,8 +289,13 @@ class AgentExecutionLoop:
                     required_paths = []
                     if intent_dict.get("source_files"):
                         for f in intent_dict["source_files"]:
-                            filename = f.get("filename")
-                            location = f.get("location")
+                            if isinstance(f, dict):
+                                filename = f.get("filename")
+                                location = f.get("location")
+                            else:
+                                filename = str(f)
+                                location = None
+                                
                             if filename:
                                 target_fp = filename
                                 if not (target_fp.startswith(("/", "\\")) or ":" in target_fp):
@@ -466,6 +483,38 @@ class AgentExecutionLoop:
                             tool_registry_bypassed = True
 
                 # Execute tool safely if not bypassed
+                if not tool_registry_bypassed:
+                    # STRICT WORKSPACE BOUNDARY ENFORCEMENT
+                    if tool_name in ("read_file", "write_file", "create_directory", "delete_directory", "list_dir", "delete_file", "file_cleanup", "remove_directory", "remove_file"):
+                        path_keys = ["filepath", "directory", "path"]
+                        for pk in path_keys:
+                            if pk in args:
+                                try:
+                                    from core.config import normalize_path
+                                    fp = Path(normalize_path(args[pk])).resolve()
+                                    ws = Path(settings.default_workspace_dir).resolve()
+                                    project_root = Path(__file__).parent.parent.parent.resolve()
+                                    
+                                    # Allow if it's the workspace root itself (for list_dir) or inside it
+                                    # Also allow reading from the Jarvis project directory itself (e.g. for system knowledge)
+                                    is_allowed = (fp == ws or fp.is_relative_to(ws))
+                                    if tool_name == "read_file" and (fp == project_root or fp.is_relative_to(project_root)):
+                                        is_allowed = True
+                                        
+                                    if not is_allowed:
+                                        result = {"success": False, "error": f"Security restriction: Path '{args[pk]}' is outside the authorized current workspace."}
+                                        tool_registry_bypassed = True
+                                        break
+                                        
+                                    if tool_name == "read_file" and not fp.exists():
+                                        result = {"success": False, "error": f"File not found: '{args[pk]}' does not physically exist in the current workspace."}
+                                        tool_registry_bypassed = True
+                                        break
+                                except Exception as e:
+                                    result = {"success": False, "error": f"Invalid path format '{args[pk]}': {e}"}
+                                    tool_registry_bypassed = True
+                                    break
+
                 if not tool_registry_bypassed:
                     result: dict[str, Any] = tool_registry.execute(tool_name, args, mode=mode)
             
@@ -2204,6 +2253,27 @@ Output ONLY raw JSON. Start with '{{'.
             if not has_delete:
                 self._safe_print("[Sanitizer] User requested deletion, but sanitized plan contains no registered deletion tool. Rejecting plan.")
                 return []
+
+        # --- GUARDRAIL 6: Dependency and Grounding Validation ---
+        has_read = False
+        for step in sanitized:
+            tool = step.get("tool")
+            args = step.get("arguments", {})
+            
+            if tool in ("read_file", "list_dir"):
+                has_read = True
+                
+            if tool == "generate_document":
+                intent = args.get("intent", {})
+                if intent.get("sources_required") and not intent.get("source_files"):
+                    self._safe_print(f"[Sanitizer] generate_document requires sources but source_files is empty. Rejecting plan.")
+                    return []
+                    
+            if tool == "write_file":
+                content = args.get("content", "")
+                if has_read and content and content != "<USE_GENERATED_ARTIFACT>":
+                    self._safe_print(f"[Sanitizer] write_file contains pre-generated content before reads succeed. Rejecting plan.")
+                    return []
 
         return sanitized
 

@@ -41,18 +41,24 @@ def test_encoding_failure_does_not_abort_execution(tmp_path):
         with patch('sys.stdout', bad_stream):
             prompt = "Read the local system prompt files in the configured workspace, summarize the core instructions in exactly three bullet points, and create test_summary.md in that workspace."
             
-            # We mock ollama.chat to return a JSON plan with 3 steps: read, generate_document (or write directly), write
+            # We mock ollama.chat to return a JSON plan with 3 steps
             mock_plan = f'''```json
 [
     {{"step": 1, "tool": "read_file", "arguments": {{"filepath": "{(tmp_path / 'system_prompt.txt').as_posix()}"}}}},
-    {{"step": 2, "tool": "write_file", "arguments": {{"filepath": "{(tmp_path / 'test_summary.md').as_posix()}", "content": "- Always be helpful\\n- Keep it concise\\n- Use bullet points"}}}}
+    {{"step": 2, "tool": "generate_document", "arguments": {{"intent": {{"task_type": "research_write", "topic": "summarize system prompt in exactly three bullet points", "sources_required": true, "source_files": ["system_prompt.txt"]}}}}}},
+    {{"step": 3, "tool": "write_file", "arguments": {{"filepath": "{(tmp_path / 'test_summary.md').as_posix()}", "content": "<USE_GENERATED_ARTIFACT>"}}}}
 ]
 ```'''
+
+            def mock_chat(*args, **kwargs):
+                if kwargs.get('format') == 'json' or 'format' in kwargs and kwargs['format'] == 'json':
+                    return {'content': mock_plan}
+                return {'content': "- Always be helpful\n- Keep it concise\n- Use bullet points"}
 
             sys_prompt = tmp_path / "system_prompt.txt"
             sys_prompt.write_text("Rule 1: Always be helpful.\\nRule 2: Keep it concise.\\nRule 3: Use bullet points.\\n")
 
-            with patch('core.orchestrator.agent_loop.ollama.chat', return_value={'content': mock_plan}):
+            with patch('core.orchestrator.agent_loop.ollama.chat', side_effect=mock_chat):
                 loop.run(prompt, mode="text")
                 
             expected_file = tmp_path / "test_summary.md"

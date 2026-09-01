@@ -170,13 +170,32 @@ def recall(prompt: str, hops: int = 3, top_k: int = 8) -> RecallResult:
         cursor.execute(relations_query, tuple(entity_ids) + tuple(entity_ids))
         relations = [dict(row) for row in cursor.fetchall()]
 
-        conn.close()
-        
+        import re
+        def _is_transient(text: str) -> bool:
+            if not text: return False
+            if "pytest-" in text: return True
+            if "Desktop" in text or "workspace" in text: return True
+            # Matches absolute paths like /Users/... or C:/...
+            if text.startswith("/") or re.match(r'^[a-zA-Z]:[/\\]', text): return True
+            return False
+
+        filtered_entities = []
+        for ent in entities:
+            if _is_transient(ent["name"]) or _is_transient(ent["description"]):
+                continue
+            filtered_entities.append(ent)
+            
+        filtered_relations = []
+        for rel in relations:
+            if _is_transient(rel["source"]) or _is_transient(rel["target"]) or _is_transient(rel["predicate"]):
+                continue
+            filtered_relations.append(rel)
+
         latency = (time.perf_counter() - start_time) * 1000.0
 
         return RecallResult(
-            facts=relations,
-            entities=entities,
+            facts=filtered_relations,
+            entities=filtered_entities,
             latency_ms=latency
         )
 
