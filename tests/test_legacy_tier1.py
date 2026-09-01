@@ -33,7 +33,7 @@ def test_workspace_resolution(loop, tmp_path):
         assert str(tmp_path).replace("\\", "/") in filepath
         assert str(settings.desktop_dir).replace("\\", "/") not in filepath
 
-def test_mocked_planner_enforces_dependencies(loop, tmp_path):
+def test_mocked_planner_enforces_dependencies(tmp_path):
     """
     Test that the fallback planner correctly sequences read -> write 
     and validates exactly three bullets against the source content.
@@ -41,17 +41,19 @@ def test_mocked_planner_enforces_dependencies(loop, tmp_path):
     from core.config import settings
     
     sys_prompt = tmp_path / "system_prompt.txt"
-    sys_prompt.write_text("Rule 1: Always be helpful.\nRule 2: Keep it concise.\nRule 3: Use bullet points.\n")
+    sys_prompt.write_text("Rule 1: Always be helpful.\\nRule 2: Keep it concise.\\nRule 3: Use bullet points.\\n")
     
     # We mock ollama.chat to return a JSON plan with 3 steps: read, generate_document (or write directly), write
     mock_plan = f'''```json
 [
-    {{"step": 1, "tool": "read_file", "arguments": {{"filepath": "{sys_prompt.as_posix()}"}}}},
-    {{"step": 2, "tool": "write_file", "arguments": {{"filepath": "{(tmp_path / "test_summary.md").as_posix()}", "content": "- Always be helpful\n- Keep it concise\n- Use bullet points"}}}}
+    {{"step": 1, "tool": "read_file", "arguments": {{"filepath": "{(tmp_path / 'system_prompt.txt').as_posix()}"}}}},
+    {{"step": 2, "tool": "write_file", "arguments": {{"filepath": "{(tmp_path / 'test_summary.md').as_posix()}", "content": "- Always be helpful\\n- Keep it concise\\n- Use bullet points"}}}}
 ]
 ```'''
 
     with patch.object(settings.__class__, 'default_workspace_dir', property(lambda self: tmp_path)):
+        # Construct loop INSIDE patched context to prevent any caching of the workspace path
+        loop = AgentExecutionLoop(use_tools=True)
         with patch('core.orchestrator.agent_loop.ollama.chat', return_value={'content': mock_plan}):
             prompt = "Read the local system prompt files in the configured workspace, summarize the core instructions in exactly three bullet points, and create test_summary.md in that workspace."
             loop.run(prompt, mode="text")
@@ -67,18 +69,22 @@ def test_mocked_planner_enforces_dependencies(loop, tmp_path):
             assert "helpful" in content
             assert "concise" in content
             assert "bullet points" in content
-def test_legacy_tier1_end_to_end(loop, tmp_path):
+def test_legacy_tier1_end_to_end(tmp_path):
     """
     Live test to verify that the Legacy Tier 1 prompt runs end-to-end,
     produces exactly three bullets, and correctly writes to the workspace.
     """
     from core.config import settings
+    from core.orchestrator.agent_loop import AgentExecutionLoop
     
     # Create mock system prompt files
     sys_prompt = tmp_path / "prompt.txt"
-    sys_prompt.write_text("Rule 1: Always be helpful.\nRule 2: Keep it concise.\nRule 3: Use bullet points.\n")
+    sys_prompt.write_text("Rule 1: Always be helpful.\\nRule 2: Keep it concise.\\nRule 3: Use bullet points.\\n")
     
     with patch.object(settings.__class__, 'default_workspace_dir', property(lambda self: tmp_path)):
+        # Construct loop INSIDE patched context to prevent any caching of the workspace path
+        loop = AgentExecutionLoop(use_tools=True)
+        
         prompt = "Read the local system prompt files in the configured workspace, summarize the core instructions in exactly three bullet points, and create test_summary.md in that workspace."
         import pytest
         from core.llm.ollama_client import OllamaError
@@ -94,7 +100,7 @@ def test_legacy_tier1_end_to_end(loop, tmp_path):
         assert content != "", "Created file is empty!"
         
         # Verify exactly three bullets
-        lines = [line.strip() for line in content.split('\n') if line.strip()]
+        lines = [line.strip() for line in content.split('\\n') if line.strip()]
         bullet_lines = [line for line in lines if line.startswith('-') or line.startswith('*') or line[0].isdigit()]
         assert len(bullet_lines) >= 3, f"Expected at least 3 bullets, found {len(bullet_lines)}: {content}"
 

@@ -18,15 +18,6 @@ from typing import Optional
 
 from dotenv import load_dotenv
 import os
-
-# Safely force stdout/stderr to replace unknown characters so that 
-# logging encoding failures never abort the execution thread.
-if hasattr(sys.stdout, 'reconfigure'):
-    try:
-        sys.stdout.reconfigure(errors='replace')
-        sys.stderr.reconfigure(errors='replace')
-    except Exception:
-        pass
 import re
 import getpass
 

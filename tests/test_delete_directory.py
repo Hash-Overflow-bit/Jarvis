@@ -158,3 +158,48 @@ def test_delete_directory_false_success_physical_verification_failure(tmp_path):
             assert "successfully deleted" not in res.lower()
             # 4. Verify failure/verification condition is present in res
             assert any(k in res.lower() for k in ["physically exists", "couldn't delete", "halted", "failed"])
+
+def test_delete_directory_windows_path_physical_verification(tmp_path):
+    """
+    Regression Test for Windows Path Verification:
+    Ensures that when a Windows path (C:\\...) is used and sanitize_plan
+    encounters it, the physical verification check correctly assesses if it exists,
+    rather than corrupting the path due to aggressive placeholder replacements.
+    """
+    target_dir = tmp_path / "stubborn_windows_folder"
+    target_dir.mkdir(exist_ok=True)
+    assert target_dir.exists()
+
+    loop = AgentExecutionLoop()
+
+    mock_tool_result = {
+        "success": True,
+        "result": {"success": True, "message": "Successfully deleted directory"}
+    }
+
+    # Simulate a path that contains /Users/ but is actually a Windows absolute path.
+    # The sanitizer shouldn't duplicate the drive letter (e.g. C:C:/Users/...)
+    fake_win_path = f"C:{target_dir.as_posix()}"
+    
+    mock_plan_res = {
+        "role": "assistant",
+        "content": json.dumps({
+            "plan": [
+                {
+                    "step": 1,
+                    "tool": "delete_directory",
+                    "arguments": {"directory": fake_win_path}
+                }
+            ]
+        })
+    }
+
+    with patch("core.orchestrator.agent_loop.tool_registry.execute", return_value=mock_tool_result):
+        with patch("core.orchestrator.agent_loop.ollama.chat", return_value=mock_plan_res):
+            with patch("pathlib.Path.exists", return_value=True):
+                res = loop.run(f"Please delete the folder {fake_win_path}")
+                
+                # Since mock doesn't actually delete it, physical verification MUST fail
+                # it should not claim success if the directory still exists.
+                assert "successfully deleted" not in res.lower()
+                assert any(k in res.lower() for k in ["physically exists", "couldn't delete", "halted", "failed"])
