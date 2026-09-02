@@ -368,4 +368,15 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 
 ---
 
-*Last Updated: 2026-09-02 | Session 19 | Six Core Capabilities Rebuilt and Verified*
+---
+
+## Session 20 — Controlled Sub-Agent Delegation Rebuild
+
+- Replaced the legacy CrewAI/ReAct user-facing delegation path with bounded local specialist profiles.
+- Permitted sub-agent capabilities: `summarize`, `analyze`, `classify`, and `plan` only.
+- Sub-agents cannot receive tools, browse, access the filesystem, execute commands, operate accounts, make purchases, or spawn further agents.
+- Delegation now binds both the task and expected-output contract to the local model call, rejects action requests and common prompt-injection attempts before calling the model, and returns model errors without false success claims.
+- Full regression result after the rebuild: `310 passed, 7 skipped`.
+- Client-facing limitations and task scope: `docs/milestones/SUBAGENT_DELEGATION_REPORT.md`.
+
+*Last Updated: 2026-09-02 | Session 20 | Controlled Sub-Agent Delegation Rebuilt and Verified*

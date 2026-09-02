@@ -212,11 +212,14 @@ tool_registry = ToolRegistry()
 
 # Default capability profile: non-destructive, daily workspace operations only.
 # Destructive deletion, Git/package mutation, dynamic sub-agents, model-weight
-# changes, and browser automation are intentionally not registered.
+# changes and browser automation are intentionally not registered. Bounded
+# reasoning-only sub-agents are an exception: they receive no external tools.
 from core.tools.file_scanner import FileScanner
 from core.tools.create_directory import CreateDirectory
 from core.tools.write_file import WriteFile
 from core.tools.read_file import ReadFile
+from core.tools.agent_builder import AgentBuilder
+from core.tools.delegate_task import DelegateTask
 
 file_scanner_tool = FileScanner()
 tool_registry.register(file_scanner_tool)
@@ -224,6 +227,8 @@ tool_registry.register_alias("list_dir", file_scanner_tool)
 tool_registry.register(CreateDirectory())
 tool_registry.register(WriteFile())
 tool_registry.register(ReadFile())
+tool_registry.register(AgentBuilder())
+tool_registry.register(DelegateTask())
 
 # Kept for backward-compatible internal writing workflows. User research is
 # routed through ResearchService before the generic planner.

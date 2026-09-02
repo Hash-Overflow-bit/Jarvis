@@ -58,7 +58,7 @@ class DelegateTask(BaseTool[DelegateTaskInput, DelegateTaskOutput]):
 
 
         try:
-            result = agent_adapter.run(input_data.task_description)
+            result = agent_adapter.run(input_data.task_description, input_data.expected_output)
             return DelegateTaskOutput(
                 success=True,
                 result=result

@@ -190,6 +190,7 @@ class OllamaClient:
         Returns:
             The message dict containing 'content' and optional 'tool_calls' (or generator if stream=True).
         """
+        request_timeout = float(kwargs.pop("request_timeout", settings.ollama_request_timeout))
         payload_options = {"temperature": temperature}
         if options:
             payload_options.update(options)
@@ -219,7 +220,7 @@ class OllamaClient:
                     settings.ollama_chat_url,   # http://localhost:11434/api/chat
                     json=payload,
                     stream=stream,
-                    timeout=settings.ollama_request_timeout,
+                    timeout=request_timeout,
                 )
                 resp.raise_for_status()
                 span.set_attribute("llm.status_code", resp.status_code)
@@ -230,7 +231,7 @@ class OllamaClient:
             )
         except requests.exceptions.Timeout as e:
             raise OllamaError(
-                f"Ollama request timed out after {settings.ollama_request_timeout:g} seconds."
+                f"Ollama request timed out after {request_timeout:g} seconds."
             ) from e
         except requests.exceptions.HTTPError as e:
             raise OllamaError(f"Ollama HTTP error: {e}") from e

@@ -77,12 +77,12 @@ def test_session_uses_deterministic_path_without_llm(tmp_path, monkeypatch):
 def test_default_registry_excludes_destructive_and_expansive_tools():
     for disabled in (
         "delete_directory", "delete_file", "file_cleanup", "git_push",
-        "poetry_install", "agent_builder", "delegate_task", "weight_manager",
+        "poetry_install", "weight_manager",
         "skyvern_tool",
     ):
         assert tool_registry.get(disabled) is None
 
-    for enabled in ("list_dir", "create_directory", "read_file", "write_file"):
+    for enabled in ("list_dir", "create_directory", "read_file", "write_file", "agent_builder", "delegate_task"):
         assert tool_registry.get(enabled) is not None
 
 

@@ -41,6 +41,7 @@ TOOL_RISK_MAP = {
     
     # Dynamic Sub-Agents (M5+)
     "agent_builder": RiskLevel.CRITICAL,
+    "delegate_task": RiskLevel.LOW,
 
     # Browser Automation (M6)
     "skyvern_tool": RiskLevel.MEDIUM,

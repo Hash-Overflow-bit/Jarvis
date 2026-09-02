@@ -899,7 +899,7 @@ class AgentExecutionLoop:
         
         if not match:
             caps = []
-            for kw in ("summarize", "analyze", "classify", "extract", "search"):
+            for kw in ("summarize", "analyze", "classify", "plan"):
                 if kw in clean_input.lower():
                     caps.append(kw)
             return caps
@@ -915,8 +915,17 @@ class AgentExecutionLoop:
         for part in parts:
             cleaned_part = part.strip().strip('. ,;')
             cleaned_part = re.sub(r'^(?:to|that|can)\s+', '', cleaned_part, flags=re.IGNORECASE).strip()
-            if cleaned_part.lower() in ("summarize text", "summarize documents", "summarize data", "text summarization"):
+            lowered = cleaned_part.lower()
+            # A bounded profile supports verbs, not arbitrary free-form tool
+            # descriptions (such as "browse websites" or "extract files").
+            if "summar" in lowered:
                 cleaned_part = "summarize"
+            elif "analy" in lowered:
+                cleaned_part = "analyze"
+            elif "classif" in lowered or "categoriz" in lowered:
+                cleaned_part = "classify"
+            elif "plan" in lowered or "organ" in lowered:
+                cleaned_part = "plan"
             if cleaned_part and len(cleaned_part) > 2:
                 capabilities.append(cleaned_part)
 
@@ -1845,7 +1854,7 @@ Rules:
 - To trigger, assign, or invoke ANY sub-agent (like LedgerBookkeeper or CaliforniaCPA), you MUST use the 'delegate_task' tool with the 'agent_name' argument. Do NOT try to call the agent name as a function.
 - Use real absolute paths. Map 'desktop' to '{desktop_path}'. Never use placeholder paths or append '/user/desktop' to an already resolved Desktop path.
 - Use forward slashes (/) in all paths, even on Windows.
-- CRITICAL: When using delegate_task, you MUST inject the absolute path for 'Desktop' ('{desktop_path}') into the 'task_description' so the sub-agent knows exactly where to read/write files.
+- Delegated sub-agents are reasoning-only. Do not ask them to read/write files, browse, execute commands, or operate outside the parent workflow. Provide the relevant text in task_description instead.
 - If reading a file AND then processing its contents, plan ONLY the read step now. The processing step will happen in the next turn.
 - If the user provides a filename but no folder (e.g., "create hello.txt"), default to creating it directly in the Workspace ('{workspace_path}'). DO NOT append it to random directories from memory unless the user explicitly refers to that folder.
 - If the user's request is completely vague (e.g., "create file" with no name), DO NOT guess paths from memory. Return an empty plan ({{"reasoning": "Need more info", "plan": []}}) to ask for clarification.

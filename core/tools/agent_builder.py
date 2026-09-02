@@ -7,7 +7,6 @@ using the YAML blueprint schema and CrewAI factory loop.
 
 import yaml
 import asyncio
-import nest_asyncio
 from typing import List, Type
 from pydantic import BaseModel, Field
 from core.config import settings
@@ -16,6 +15,7 @@ from core.orchestrator.hot_loader import hot_loader
 from core.orchestrator.agent_registry import agent_registry
 from core.orchestrator.baseline_runner import baseline_runner
 from core.orchestrator.rollback_manager import rollback_manager
+from core.orchestrator.subagent_runner import SubagentPolicyError, validate_capabilities
 
 
 class AgentBuilderInput(BaseModel):
@@ -28,20 +28,20 @@ class AgentBuilderInput(BaseModel):
         description="The role of the sub-agent"
     )
     goal: str = Field(
-        default="Execute assigned automated operations efficiently and safely.",
+        default="Produce a grounded specialist response for an assigned reasoning task.",
         description="The goal of the sub-agent"
     )
     backstory: str = Field(
-        default="An expert autonomous AI sub-agent built to execute domain-specific tasks.",
+        default="An expert local reasoning specialist with no external tools or autonomous actions.",
         description="The backstory of the sub-agent"
     )
     tools: List[str] = Field(
         default_factory=list,
-        description="List of tool names allowed (e.g. ['FileManagementToolkit.list_dir', 'file_scanner'])"
+        description="Must be empty. Local sub-agents never receive tools."
     )
     framework: str = Field(
-        default="crewai",
-        description="The framework to use (e.g. crewai or langgraph)"
+        default="local",
+        description="Bounded local runtime. Legacy values are mapped to local."
     )
     capabilities: List[str] = Field(
         default_factory=list,
@@ -80,6 +80,16 @@ class AgentBuilder(BaseTool[AgentBuilderInput, AgentBuilderOutput]):
         return AgentBuilderOutput
 
     def run(self, input_data: AgentBuilderInput) -> AgentBuilderOutput:
+        # Validate before any persistent change. A sub-agent is deliberately a
+        # reasoning profile, never an autonomous tool/container/browser worker.
+        if not input_data.name.replace("_", "").replace("-", "").replace(" ", "").isalnum():
+            return AgentBuilderOutput(success=False, agent=input_data.name, details="Agent name may contain letters, numbers, spaces, hyphens, and underscores only.")
+        if input_data.tools:
+            return AgentBuilderOutput(success=False, agent=input_data.name, details="Sub-agents cannot be given tools, filesystem access, browser access, shell access, or nested delegation.")
+        try:
+            capabilities = validate_capabilities(input_data.capabilities)
+        except SubagentPolicyError as exc:
+            return AgentBuilderOutput(success=False, agent=input_data.name, details=str(exc))
         blueprint_path = settings.agents_blueprint_path
         blueprint_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -107,11 +117,11 @@ class AgentBuilder(BaseTool[AgentBuilderInput, AgentBuilderOutput]):
             "role": input_data.role,
             "goal": input_data.goal,
             "backstory": input_data.backstory,
-            "verbose": True,
+            "verbose": False,
             "allow_delegation": False,
-            "tools": input_data.tools,
-            "framework": input_data.framework,
-            "capabilities": input_data.capabilities
+            "tools": [],
+            "framework": "local",
+            "capabilities": list(capabilities)
         }
         updated_list.append(new_agent)
         config["custom_sub_agents"] = updated_list
@@ -139,22 +149,11 @@ class AgentBuilder(BaseTool[AgentBuilderInput, AgentBuilderOutput]):
             )
 
         # 4. Register dynamically
-        caps = input_data.capabilities if input_data.capabilities else input_data.tools
-        agent_registry.register(input_data.name, agent_instance, caps)
+        agent_registry.register(input_data.name, agent_instance, list(capabilities))
 
         # 5. Run baseline smoke test execution
         try:
-            try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-
-            if loop.is_running():
-                nest_asyncio.apply()
-                test_result = loop.run_until_complete(baseline_runner.test(agent_instance))
-            else:
-                test_result = loop.run_until_complete(baseline_runner.test(agent_instance))
+            test_result = asyncio.run(baseline_runner.test(agent_instance))
 
         except Exception as e:
             test_result = {"success": False, "error": str(e)}
@@ -170,5 +169,5 @@ class AgentBuilder(BaseTool[AgentBuilderInput, AgentBuilderOutput]):
         return AgentBuilderOutput(
             success=True,
             agent=input_data.name,
-            details=f"Sub-agent '{input_data.name}' built, hot-loaded, and verified successfully."
+            details=f"Bounded local sub-agent '{input_data.name}' built and verified. It can only perform: {', '.join(capabilities)}."
         )
