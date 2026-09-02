@@ -145,6 +145,9 @@ class SessionManager:
                         "kind": "research_report",
                     }
                 except ResearchUnavailable as exc:
+                    # Do not let a later "save this report" command write an
+                    # older report after the current research request failed.
+                    self.session_artifacts.pop("last_generated_document", None)
                     response = (
                         "I could not complete grounded web research because online sources "
                         f"were unavailable: {exc}"

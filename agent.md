@@ -415,5 +415,7 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 - Research save references are no longer misclassified as fresh research.
 - If no verified report or referenced directory exists in the current session,
   Jarvis refuses the save and creates no empty file.
+- A failed replacement research request clears the active report artifact, so a
+  later save cannot accidentally write an older report.
 - Added regression coverage for research → later save, exact file contents,
   reset isolation, and deterministic directory references.

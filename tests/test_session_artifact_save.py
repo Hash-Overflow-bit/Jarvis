@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from core.config import settings
 from core.research.service import ResearchResult, ResearchSource
+from core.research.service import ResearchUnavailable
 from core.state.session_manager import SessionManager
 
 
@@ -73,6 +74,20 @@ def test_reset_discards_report_artifact_state():
 
     session.reset()
 
+    assert "last_generated_document" not in session.session_artifacts
+
+
+def test_failed_research_clears_prior_report_artifact():
+    session = SessionManager(use_tools=True, system_prompt="Be concise.")
+    session.session_artifacts["last_generated_document"] = {"content": "older report"}
+
+    with patch(
+        "core.research.service.ResearchService.research",
+        side_effect=ResearchUnavailable("offline"),
+    ):
+        response = session.chat("Research current project data")
+
+    assert "could not complete grounded web research" in response.lower()
     assert "last_generated_document" not in session.session_artifacts
 
 
