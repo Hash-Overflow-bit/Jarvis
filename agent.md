@@ -379,5 +379,6 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 - Full regression result after the rebuild: `310 passed, 7 skipped`.
 - Client-facing limitations and task scope: `docs/milestones/SUBAGENT_DELEGATION_REPORT.md`.
 - Added public-web tools: `web_search`, `fetch_url` (GET-only evidence), and `open_url` (default-browser launch). Public URLs only; no website interaction or authenticated actions.
+- Added `test_source_compilation.py` so malformed/truncated Python source fails before runtime or deployment.
 
 *Last Updated: 2026-09-02 | Session 20 | Controlled Sub-Agent Delegation Rebuilt and Verified*
