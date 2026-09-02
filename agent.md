@@ -378,5 +378,6 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 - Delegation now binds both the task and expected-output contract to the local model call, rejects action requests and common prompt-injection attempts before calling the model, and returns model errors without false success claims.
 - Full regression result after the rebuild: `310 passed, 7 skipped`.
 - Client-facing limitations and task scope: `docs/milestones/SUBAGENT_DELEGATION_REPORT.md`.
+- Added public-web tools: `web_search`, `fetch_url` (GET-only evidence), and `open_url` (default-browser launch). Public URLs only; no website interaction or authenticated actions.
 
 *Last Updated: 2026-09-02 | Session 20 | Controlled Sub-Agent Delegation Rebuilt and Verified*

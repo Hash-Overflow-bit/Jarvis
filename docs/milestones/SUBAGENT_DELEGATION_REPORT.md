@@ -31,6 +31,18 @@ Output is model-generated and can still be incomplete or incorrect. For a
 factual, legal, medical, financial, or high-impact decision, a person must
 review the result and source material.
 
+## Public web capability
+
+Jarvis can search the public web, retrieve a public HTTP/HTTPS URL as
+read-only evidence, and open a verified public URL in the operating system's
+default browser. Fetched evidence contains the page title, final URL,
+retrieval timestamp, and readable text excerpt. Private-network and localhost
+addresses are rejected.
+
+Opening a URL is not browser automation. Jarvis cannot log in, click controls,
+fill or submit forms, upload, publish, send messages, purchase, or use a
+website on a person's behalf.
+
 ## Safety and reliability controls
 
 - Capabilities are a fixed allowlist; no dynamic tool mapping is permitted.

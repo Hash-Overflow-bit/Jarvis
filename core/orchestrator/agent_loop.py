@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 42346)
+Total output lines: 2969
+
 """
 core/orchestrator/agent_loop.py
 ================================
@@ -128,7 +131,8 @@ class AgentExecutionLoop:
             "- agent_builder: Use when building a new sub-agent. Arguments: {'name': '<Name>', 'role': '...', 'goal': '...', 'backstory': '...'}",
             "- web_search: Use when user wants to research online topics, current information, or retrieve external sources. Arguments: {'query': '<search_query>'}",
             "- generate_document: Use to synthesize research, write reports, or provide analysis/rankings after web_search. Arguments: {'intent': {'task_type': 'research_write', 'topic': '<topic description>', 'research_required': true}}",
-            "- skyvern_tool: ONLY use when user explicitly asks to navigate a web portal or URL. Arguments: {'url': '<url>', 'navigation_goal': '<goal>'}"
+            "- fetch_url: Read a public web page as evidence. Arguments: {'url': 'https://...'}\n"
+            "- open_url: Open a public web URL in the default browser. Arguments: {'url': 'https://...'}"
         ]
         return "\n".join(tools_summary)
 
@@ -1197,7 +1201,7 @@ class AgentExecutionLoop:
                 }
             }]
 
-        # --- Browser Intent Routing (Skyvern) ---
+        # --- Public URL routing (read-only fetch or open in default browser) ---
         cleaned_lower = cleaned.lower()
         url_match = re.search(r'(https?://\S+|www\.\S+)', cleaned)
         browser_verbs = ("open ", "browse ", "navigate ", "go to ", "visit ")
@@ -1225,12 +1229,13 @@ class AgentExecutionLoop:
 
         if is_browser_intent and url_match:
             target_url = url_match.group(1)
-            # Build navigation_goal from the rest of the user input (minus URL)
+            # Never route public URL requests into browser automation. A plain
+            # open uses the OS browser; extraction uses safe GET-only retrieval.
             nav_goal = cleaned.replace(target_url, "").strip()
             nav_goal = re.sub(r'^(?:open|browse|navigate to|go to|visit)\s+', '', nav_goal, flags=re.IGNORECASE).strip()
             nav_goal = re.sub(r'^(?:and|then)\s+', '', nav_goal, flags=re.IGNORECASE).strip()
             if not nav_goal:
-                nav_goal = f"Navigate and interact with {target_url}"
+                return [{"step": 1, "tool": "open_url", "arguments": {"url": target_url}}]
 
             # Extract requested fields if user mentions "extract"
             extracted_fields = None
@@ -1239,19 +1244,9 @@ class AgentExecutionLoop:
                 raw_fields = extract_match.group(1).strip()
                 extracted_fields = [f.strip() for f in re.split(r',|\band\b', raw_fields) if f.strip()]
 
-            self._safe_print(f"[Direct Route] Browser task: url={target_url}, goal={nav_goal}")
-            skyvern_args = {
-                "url": target_url,
-                "navigation_goal": nav_goal
-            }
-            if extracted_fields:
-                skyvern_args["extracted_fields"] = extracted_fields
-
-            return [{
-                "step": 1,
-                "tool": "skyvern_tool",
-                "arguments": skyvern_args
-            }]
+            if extracted_fields or any(word in nav_goal.lower() for word in ("read", "summarize", "extract", "find", "get")):
+                return [{"step": 1, "tool": "fetch_url", "arguments": {"url": target_url}}]
+            return [{"step": 1, "tool": "open_url", "arguments": {"url": target_url}}]
 
         # --- Local Compliance Grounding (Read-only) ---
         if any(k in cleaned.lower() for k in ("approved local knowledge", "local compliance knowledge", "local compliance only", "ca_compliance_2026.md")):
@@ -1418,154 +1413,7 @@ class AgentExecutionLoop:
             cleaned, flags=re.IGNORECASE
         )
         if len(clauses) > 0:
-            multi_plan: list[dict[str, Any]] = []
-            valid = True
-            has_generation = False  # Track if any generation clause was found
-            
-            context: dict[str, str] = {
-                "desktop": str(settings.desktop_dir),
-                "workspace": str(settings.default_workspace_dir)
-            }
-            last_created_dir = context["workspace"]
-            
-            class WorkspacePathAmbiguous(Exception): pass
-            class WorkspaceBoundaryViolation(Exception): pass
-
-            def _resolve_parent_dir(clause_text: str, current_parent: str, ctx: dict[str, str], fallback_dir: str) -> str:
-                """Resolve the parent directory from conversational references in a clause."""
-                parent = current_parent
-                
-                # Check explicitly for workspace
-                if "workspace" in clause_text.lower():
-                    from core.config import settings
-                    workspace_root = Path(settings.default_workspace_dir).resolve()
-                    if not workspace_root:
-                        raise WorkspacePathAmbiguous("Workspace directory is not configured.")
-                    
-                    # Ensure the reference doesn't just specify a subfolder
-                    # "Save inside company_exports/hr/json on my workspace"
-                    # If they say "in that workspace", we just return workspace_root.
-                    # Only if they say "inside reports in workspace" should we look for "reports".
-                    ref_match = re.search(r'(?:inside|under|within|in)\s+(?:it|that folder|that directory|([a-zA-Z0-9_\-\./\\]+))', clause_text, re.IGNORECASE)
-                    
-                    if ref_match and ref_match.group(1):
-                        ref_lower = ref_match.group(1).lower()
-                        if ref_lower not in ("workspace", "that", "the", "my"):
-                            # It's a subfolder like 'reports'
-                            pass
-                        else:
-                            return str(workspace_root)
-                    else:
-                        return str(workspace_root)
-                        
-                ref_match = re.search(r'(?:inside|under|within|in)\s+(?:it|that folder|that directory|([a-zA-Z0-9_\-\.]+))|there', clause_text, re.IGNORECASE)
-                
-                if "inside" in clause_text.lower() and not ref_match:
-                    alt = re.search(r'inside\s+([a-zA-Z0-9_\-\.]+)', clause_text, re.IGNORECASE)
-                    if alt:
-                        ref_match = alt
-
-                if ref_match:
-                    ref_name = ref_match.group(1)
-                    if ref_name:
-                        ref_lower = ref_name.lower().rstrip('.')
-                        if ref_lower in ctx:
-                            parent = ctx[ref_lower]
-                        elif ref_lower in ("workspace",):
-                            from core.config import settings
-                            return str(Path(settings.default_workspace_dir).resolve())
-                        else:
-                            for k, v in ctx.items():
-                                if k.endswith(ref_lower) or ref_lower in k:
-                                    parent = v
-                                    break
-                            else:
-                                raise WorkspacePathAmbiguous(f"Location '{ref_name}' is ambiguous or not found.")
-                    else:
-                        parent = fallback_dir
-                elif "on my desktop" in clause_text.lower() or "on desktop" in clause_text.lower():
-                    # Block desktop resolution if we strictly enforce workspace
-                    raise WorkspaceBoundaryViolation("Desktop is outside the configured workspace.")
-                
-                return parent
-            
-            for clause in clauses:
-                clause = clause.strip()
-                if not clause or "do not claim" in clause.lower() or ("verify" in clause.lower() and "filesystem" in clause.lower()) or "only report success" in clause.lower():
-                    continue
-                
-                # --- Capability Classification ---
-                
-                # 1. Check for read patterns first (they don't conflict with other patterns)
-                # If the clause asks for summary/report/extraction, it's NOT a pure read.
-                read_m = None
-                read_m_simple = None
-                if not (re.search(r'\b(summarize|extract|summary|analyze)\b', clause, re.IGNORECASE) or (re.search(r'\breport\b(?!\.(txt|md|pdf|csv|json))', clause, re.IGNORECASE) and not re.search(r'\bread\b', clause, re.IGNORECASE))):
-                    read_m = re.search(r'read\s+(?:the\s+)?(?:file\s+)?(?:back\s+)?(?:and\s+confirm\s+)?(?:the\s+)?(?:exact\s+)?(?:path\s+and\s+)?(?:content\s+)?(?:named\s+|called\s+)?[\'\"]?([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9]*)[\'\"]?', clause, re.IGNORECASE)
-                    read_m_simple = re.search(r'read\s+(?:the\s+|both\s+|all\s+)?(?:saved\s+)?(?:files?|reports?|documents?)?(?:\s+)?(?:back)?', clause, re.IGNORECASE)
-                
-                # 2. Check for generation patterns (generate/produce/compose/draft)
-                generate_m = re.search(
-                    r'(?:generate|produce|compose|draft)\s+(?:a\s+)?(?:short\s+|brief\s+|detailed\s+)?'
-                    r'(?:structured\s+(?:data|json)|sample\s+(?:data|json|records))',
-                    clause, re.IGNORECASE
-                )
-                generate_doc_m = re.search(
-                    r'(?:generate|produce|compose|draft)\s+(?:a\s+)?(?:short\s+|brief\s+|detailed\s+)?'
-                    r'(?:business\s+|project\s+)?(?:performance\s+|status\s+)?(?:report|document|summary|article|script|copy|text|content|description|overview|readme|page|analysis)',
-                    clause, re.IGNORECASE
-                )
-                is_generation = generate_m is not None or generate_doc_m is not None
-                
-                # 3. Check for save-as pattern (often part of a generation clause)
-                save_as_m = re.search(
-                    r'save\s+(?:it\s+)?(?:(?:inside|in|to|under|within)\s+([a-zA-Z0-9_\-\.]+)\s+)?as\s+[\'\"]?([a-zA-Z0-9_\-\.]+\.(?:md|txt|json|csv|pdf|py|svg))[\'\"]?',
-                    clause, re.IGNORECASE
-                )
-                
-                # 4. Check for filesystem patterns
-                folder_m = re.search(r'(?:create|make|build|put)\s+(?:a\s+|two\s+|three\s+|multiple\s+)?(?:new\s+|another\s+)?(?:local\s+)?(?:project\s+)?(?:folders?|directories|directory|package)\s+(?:named\s+|called\s+)?[\'\"]?([a-zA-Z0-9_\-\./\\]+(?:\s+and\s+[a-zA-Z0-9_\-\./\\]+)?)[\'\"]?', clause, re.IGNORECASE)
-                if not folder_m:
-                    folder_m = re.search(r'(?:create|make|build)\s+(?!(?:a|the|it|some|file|document|report)\b)([a-zA-Z0-9_\-/]+)(?:\s+on\s+desktop)?', clause, re.IGNORECASE)
-                    
-                file_m = re.search(r'(?:create|make|build|put)\s+(?:a\s+)?(?:new\s+|another\s+)?(?:file\s+)?(?:named\s+|called\s+)?[\'\"]?([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9]+)[\'\"]?(?:\s+(?:containing|with)\s+(?:exactly\s+)?(?:content\s+)?(.+))?', clause, re.IGNORECASE)
-                if not file_m:
-                    file_m = re.search(r'(?:put|create)\s+([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9]+)\s+inside', clause, re.IGNORECASE)
-
-                content_m = re.search(r'containing\s+(?:exactly\s+)?(.+)', clause, re.IGNORECASE)
-                # Resolve parent directory from conversational references
-                try:
-                    parent_dir = _resolve_parent_dir(clause, last_created_dir, context, last_created_dir)
-                except (WorkspacePathAmbiguous, WorkspaceBoundaryViolation):
-                    # Let the LLM planner handle ambiguous or boundary-violating paths, 
-                    # which will ultimately be blocked by write_file if needed.
-                    return None
-                
-                exts = (".txt", ".md", ".json", ".csv", ".svg", ".py")
-                is_file = file_m is not None
-                # Don't treat as folder if it's actually a generation clause
-                is_folder = folder_m and not (is_file and file_m.group(1).endswith(exts)) and not is_generation
-                if is_folder and folder_m.group(1).endswith(exts):
-                    is_folder = False 
-                    file_m = folder_m
-                    is_file = True
-
-                matched = False
-                
-                # --- CAPABILITY: Generation (generate_document + write_file) ---
-                if is_generation:
-                    has_generation = True
-                    # Extract the full generation topic from the clause
-                    gen_topic = clause.strip()
-                    # Remove the save-as tail if present to get a clean topic
-                    if save_as_m:
-                        gen_topic = clause[:save_as_m.start()].strip().rstrip(',').strip()
-                    
-                    # Determine output format from save filename or data type
-                    output_format = "markdown"
-                    if save_as_m:
-                        save_filename = save_as_m.group(2)
-                        ext = save_filename.rsplit('.', 1)[-1].lower() if '.' in save_filename else 'md'
+            multi_plan: list[…2346 tokens truncated…se 'md'
                         format_map = {'md': 'markdown', 'txt': 'txt', 'json': 'json', 'csv': 'csv', 'pdf': 'pdf'}
                         output_format = format_map.get(ext, 'markdown')
                     elif generate_m is not None:
