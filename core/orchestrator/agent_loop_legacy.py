@@ -2882,25 +2882,20 @@ Executed Steps & Results:
                             leak_plan = [{"step": 1, "tool": tool_name, "arguments": {"filepath": filepath, "content": c_val}}]
 
                 if leak_plan and isinstance(leak_plan, list) and len(leak_plan) > 0 and isinstance(leak_plan[0], dict):
-                    completed_names = []
-                    target_paths = []
-                    from core.tools.tool_registry import tool_registry
-                    for step in leak_plan:
-                        tool_name = step.get("tool")
-                        args = step.get("arguments", {})
-                        if isinstance(tool_name, str) and isinstance(args, dict):
-                            safe_args: dict[str, Any] = {str(k): v for k, v in args.items()}
-                            try:
-                                tool_registry.execute(tool_name, safe_args)
-                                completed_names.append(tool_name)
-                                target_path = str(safe_args.get("directory") or safe_args.get("filepath") or safe_args.get("url") or tool_name)
-                                target_paths.append(target_path)
-                            except Exception:
-                                pass
-                    if completed_names:
-                        if len(completed_names) > 1:
-                            return prose_hook.filter_response(f"Successfully generated and saved {len(completed_names)} executive board configuration files in 'agents/': {', '.join(target_paths)}.")
-                        return prose_hook.filter_response(f"Successfully executed '{completed_names[0]}' ({target_paths[0]}).")
+                    # A model response that merely *looks* like a tool call is
+                    # untrusted text, not an authorization or execution
+                    # result.  Never run it from the conversational fallback;
+                    # doing so bypasses the planner's sandbox and physical
+                    # verification gates and can falsely claim a file exists.
+                    target_path = str(
+                        leak_plan[0].get("arguments", {}).get("filepath")
+                        or leak_plan[0].get("arguments", {}).get("directory")
+                        or "the requested artifact"
+                    )
+                    return prose_hook.filter_response(
+                        f"{target_path} was reported created, but does not physically exist. "
+                        "The model text was untrusted, so no tool was executed."
+                    )
 
             return prose_hook.filter_response(raw_text)
         except Exception as e:

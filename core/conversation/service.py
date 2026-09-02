@@ -9,10 +9,17 @@ prevents a drafting prompt from accidentally invoking tools.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any, Sequence
 
 from core.llm.ollama_client import OllamaError, ollama
 from core.llm.prose_hook import prose_hook
+
+
+_LOCAL_FILE_SUFFIXES = {
+    ".csv", ".doc", ".docx", ".json", ".log", ".md", ".pdf", ".py",
+    ".txt", ".xlsx", ".xls", ".yaml", ".yml",
+}
 
 
 class ConversationRouter:
@@ -59,6 +66,18 @@ class ConversationRouter:
         re.IGNORECASE,
     )
 
+    @staticmethod
+    def _has_public_url(text: str) -> bool:
+        """Return True for public URL syntax, never a local filename."""
+        match = ConversationRouter._PUBLIC_URL.search(text)
+        if not match:
+            return False
+        candidate = match.group(0)
+        if candidate.lower().startswith(("http://", "https://", "www.")):
+            return True
+        hostname = candidate.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+        return not (Path(hostname).suffix.lower() in _LOCAL_FILE_SUFFIXES)
+
     def requires_agent(self, user_input: str) -> bool:
         """Return True only when the request explicitly needs a tool/action."""
         text = (user_input or "").strip()
@@ -66,7 +85,7 @@ class ConversationRouter:
             return False
         if self._SITE_ALIAS_ACTION.search(text):
             return True
-        if self._PUBLIC_URL.search(text) and self._URL_ACTION.search(text):
+        if self._has_public_url(text) and self._URL_ACTION.search(text):
             return True
         if self._EXTERNAL_ACTION.search(text):
             return True

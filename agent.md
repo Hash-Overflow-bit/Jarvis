@@ -417,5 +417,17 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
   Jarvis refuses the save and creates no empty file.
 - A failed replacement research request clears the active report artifact, so a
   later save cannot accidentally write an older report.
+
+## Session 24 — Filesystem vs. Public URL Routing Repair
+
+- Fixed the public URL detector so bare local filenames such as `notes.txt`,
+  `employees.csv`, and `report.json` cannot be misrouted to `fetch_url`.
+- Explicit URLs and normal public hostnames remain supported; controlled
+  workspace document flows return to the filesystem planner.
+- Anchored cross-turn save detection to actual save commands, preventing status
+  questions such as “Where did you save the report?” from being treated as a
+  request to write a file.
+- Model text that resembles a tool call is now treated as untrusted text and
+  cannot execute a filesystem action outside the normal verified tool loop.
 - Added regression coverage for research → later save, exact file contents,
   reset isolation, and deterministic directory references.

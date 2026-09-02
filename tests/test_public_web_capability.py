@@ -1,6 +1,7 @@
 from unittest.mock import Mock, patch
 
 from core.orchestrator.agent_loop import AgentExecutionLoop
+from core.conversation.service import ConversationRouter
 from core.tools.public_web import FetchURL, FetchURLInput, OpenURL, OpenURLInput, normalize_public_url
 
 
@@ -71,3 +72,14 @@ def test_direct_route_does_not_false_block_a_safe_domain_name():
     assert AgentExecutionLoop()._direct_route("Open https://facebook.com") == [
         {"step": 1, "tool": "open_url", "arguments": {"url": "https://facebook.com"}}
     ]
+
+
+def test_local_filenames_never_route_to_public_web_tools():
+    loop = AgentExecutionLoop()
+    assert loop._direct_route("Read notes.txt and summarize it") != [
+        {"step": 1, "tool": "fetch_url", "arguments": {"url": "https://notes.txt"}}
+    ]
+    assert loop._direct_route("Create report.json") != [
+        {"step": 1, "tool": "fetch_url", "arguments": {"url": "https://report.json"}}
+    ]
+    assert ConversationRouter().requires_agent("Read workspace/notes.txt")

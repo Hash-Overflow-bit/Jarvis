@@ -36,6 +36,12 @@ _legacy.recall = _recall_proxy
 _legacy.record_action = _record_action_proxy
 
 
+_LOCAL_FILE_SUFFIXES = {
+    ".csv", ".doc", ".docx", ".json", ".log", ".md", ".pdf", ".py",
+    ".txt", ".xlsx", ".xls", ".yaml", ".yml",
+}
+
+
 def _public_url(text: str) -> str | None:
     match = re.search(
         r"(?:https?://|www\.|(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,})[^\s<>()\[\]{}]*",
@@ -44,6 +50,15 @@ def _public_url(text: str) -> str | None:
     )
     if not match:
         return None
+    candidate = match.group(0)
+    # A bare local filename (for example ``notes.txt``) resembles a hostname
+    # to a permissive URL regex.  Treat it as a file reference unless the user
+    # supplied an explicit URL form.  This boundary keeps filesystem tasks out
+    # of the browser/fetch tool path.
+    if not candidate.lower().startswith(("http://", "https://", "www.")):
+        hostname = candidate.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+        if Path(hostname).suffix.lower() in _LOCAL_FILE_SUFFIXES:
+            return None
     from core.tools.public_web import normalize_public_url
 
     url = normalize_public_url(match.group(0))
@@ -76,7 +91,7 @@ class AgentExecutionLoop(_legacy.AgentExecutionLoop):
     """Verified execution loop with small, explicit current-policy adapters."""
 
     _ARTIFACT_SAVE = re.compile(
-        r"\b(?:save|export|write|put)\s+(?:this|that|the)\s+"
+        r"^\s*(?:please\s+)?(?:save|export|write|put)\s+(?:this|that|the)\s+"
         r"(?:research|report|document|answer)\b",
         re.IGNORECASE,
     )
