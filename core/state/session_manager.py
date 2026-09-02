@@ -16,6 +16,7 @@ Design notes:
 """
 
 import datetime
+import re
 from typing import Optional
 
 from core.config import settings
@@ -45,6 +46,12 @@ class SessionManager:
         self.conversation_router = ConversationRouter()
         self.conversation_service = ConversationService()
         self._started_at = datetime.datetime.now(datetime.timezone.utc)
+        # Tool workflows create artifacts (reports and directories) that a
+        # later turn may refer to as "this report" or "that directory".  The
+        # execution loop is intentionally short-lived per turn, so this state
+        # belongs to the conversation session rather than to an individual
+        # loop instance.
+        self.session_artifacts = self._new_session_artifacts()
 
         # Inform the LLM of the authorized sandbox & workspace directories so it does not use placeholders
         if self.use_tools:
@@ -63,6 +70,15 @@ class SessionManager:
         self.history: list[dict] = [
             {"role": "system", "content": self.system_prompt}
         ]
+
+    @staticmethod
+    def _new_session_artifacts() -> dict[str, object]:
+        """Return empty artifact state for one isolated conversation."""
+        return {
+            "last_created_directory": None,
+            "created_directories": [],
+            "created_files": [],
+        }
 
     # ------------------------------------------------------------------
     # Core chat method
@@ -95,6 +111,15 @@ class SessionManager:
             deterministic = DeterministicFilesystemRouter().try_handle(user_input)
             if deterministic is not None:
                 response = deterministic.response
+                # Preserve a deterministic directory creation so a later
+                # command can safely resolve "that directory".
+                created_match = re.match(
+                    r"^Created workspace directory:\s+(.+)$", response
+                )
+                if created_match:
+                    directory = created_match.group(1).strip()
+                    self.session_artifacts["last_created_directory"] = directory
+                    self.session_artifacts["created_directories"].append(directory)
                 self.history.append({"role": "assistant", "content": response})
                 self._trim_history()
                 return response
@@ -102,7 +127,23 @@ class SessionManager:
             from core.research.service import ResearchRouter, ResearchService, ResearchUnavailable
             if ResearchRouter().matches(user_input):
                 try:
-                    response = ResearchService().research(user_input, model=self.model).report
+                    research_result = ResearchService().research(user_input, model=self.model)
+                    response = research_result.report
+                    # A research response is a generated artifact just like a
+                    # document created by the planner.  Retain the exact,
+                    # grounded text so a follow-up "save this report" command
+                    # writes this text rather than asking the model to invent
+                    # replacement content.
+                    self.session_artifacts["last_generated_document"] = {
+                        "content": response,
+                        "word_count": len(response.split()),
+                        "topic": research_result.query,
+                        "sources": [source.url for source in research_result.sources],
+                        "generated": True,
+                        "saved": False,
+                        "saved_path": None,
+                        "kind": "research_report",
+                    }
                 except ResearchUnavailable as exc:
                     response = (
                         "I could not complete grounded web research because online sources "
@@ -123,7 +164,11 @@ class SessionManager:
                 record_conversation_turn = None
 
             from core.orchestrator.agent_loop import AgentExecutionLoop
-            loop = AgentExecutionLoop(use_tools=True, history=self.history)
+            loop = AgentExecutionLoop(
+                use_tools=True,
+                history=self.history,
+                session_artifacts=self.session_artifacts,
+            )
             try:
                 response = loop.run(user_input, mode=mode)
             except Exception:
@@ -220,6 +265,7 @@ class SessionManager:
     def reset(self) -> None:
         """Start a completely fresh conversation (keeps system prompt)."""
         self.history = [{"role": "system", "content": self.system_prompt}]
+        self.session_artifacts = self._new_session_artifacts()
         self._started_at = datetime.datetime.now(datetime.timezone.utc)
 
     # ------------------------------------------------------------------

@@ -51,9 +51,17 @@ class ResearchRouter:
         r"look\s+up\s+online|find\s+(?:current|latest)\s+information)\b",
         re.IGNORECASE,
     )
+    _SAVE_REFERENCE = re.compile(
+        r"^\s*(?:please\s+)?(?:save|export|write|put)\s+"
+        r"(?:this|that|the)\s+(?:research|report|document|answer)\b",
+        re.IGNORECASE,
+    )
 
     def matches(self, user_input: str) -> bool:
-        return bool(self._PATTERN.search(user_input or ""))
+        # "Save this research" refers to an artifact already generated in
+        # this session.  It is not a new web-research request.
+        text = user_input or ""
+        return not self._SAVE_REFERENCE.search(text) and bool(self._PATTERN.search(text))
 
     def query(self, user_input: str) -> str:
         text = (user_input or "").strip()

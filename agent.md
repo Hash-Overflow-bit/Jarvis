@@ -404,3 +404,16 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
   GitHub, Wikipedia, LinkedIn, and Reddit in the system default browser.
 - Added support for explicit bare hostnames such as `open google.com`; DNS and
   public-address validation still occur before the browser is launched.
+
+## Session 23 — Cross-Turn Report Save Integrity
+
+- Moved generated-document artifacts from an individual agent-loop instance
+  into `SessionManager`, so research/report text survives into the user's next
+  message.
+- A follow-up `save this/that report in that directory` now writes the exact
+  retained report text and resolves the prior verified directory reference.
+- Research save references are no longer misclassified as fresh research.
+- If no verified report or referenced directory exists in the current session,
+  Jarvis refuses the save and creates no empty file.
+- Added regression coverage for research → later save, exact file contents,
+  reset isolation, and deterministic directory references.

@@ -46,6 +46,11 @@ class ConversationRouter:
         r"delete|remove|rename|move|copy|organize)\b",
         re.IGNORECASE,
     )
+    _ARTIFACT_SAVE = re.compile(
+        r"\b(?:save|export|write|put)\s+(?:this|that|the)\s+"
+        r"(?:research|report|document|answer)\b",
+        re.IGNORECASE,
+    )
     _EXTERNAL_ACTION = re.compile(
         r"\b(?:research|web\s*search|search\s+(?:the\s+)?web|look\s+up\s+online|"
         r"browse|navigate|open\s+(?:the\s+)?(?:website|url)|fill\s+(?:in\s+)?(?:a\s+)?form|"
@@ -64,6 +69,11 @@ class ConversationRouter:
         if self._PUBLIC_URL.search(text) and self._URL_ACTION.search(text):
             return True
         if self._EXTERNAL_ACTION.search(text):
+            return True
+        # A follow-up save may not name a filename yet, but it still needs
+        # the tool loop so it can bind to the verified prior artifact or fail
+        # safely without creating an empty file.
+        if self._ARTIFACT_SAVE.search(text):
             return True
         return bool(self._FILE_ACTION.search(text) and self._FILE_TARGET.search(text))
 

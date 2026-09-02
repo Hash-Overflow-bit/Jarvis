@@ -7,6 +7,7 @@ current bounded-routing policy.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from urllib.parse import urlparse
 
 from core.orchestrator import agent_loop_legacy as _legacy
@@ -74,7 +75,43 @@ def _site_alias_url(text: str) -> str | None:
 class AgentExecutionLoop(_legacy.AgentExecutionLoop):
     """Verified execution loop with small, explicit current-policy adapters."""
 
+    _ARTIFACT_SAVE = re.compile(
+        r"\b(?:save|export|write|put)\s+(?:this|that|the)\s+"
+        r"(?:research|report|document|answer)\b",
+        re.IGNORECASE,
+    )
+
+    def __init__(
+        self,
+        use_tools: bool = True,
+        history: list[dict] | None = None,
+        session_artifacts: dict | None = None,
+    ):
+        super().__init__(use_tools=use_tools, history=history)
+        if session_artifacts is not None:
+            # Keep the same object: the next turn must receive the generated
+            # text and directory references from this turn.
+            self.session_artifacts = session_artifacts
+
     def _direct_route(self, user_input: str, recalled_facts: str = ""):
+        artifact_save = bool(self._ARTIFACT_SAVE.search(user_input or ""))
+        if artifact_save:
+            artifact = self.session_artifacts.get("last_generated_document")
+            content = artifact.get("content") if isinstance(artifact, dict) else None
+            if not isinstance(content, str) or not content.strip():
+                return (
+                    "I cannot save that because this session has no verified generated "
+                    "report yet. No file was created. Generate or research the report first."
+                )
+            if re.search(r"\bthat\s+(?:directory|folder)\b", user_input, re.IGNORECASE):
+                directory = self.session_artifacts.get("last_created_directory")
+                if not isinstance(directory, str) or not directory.strip():
+                    return (
+                        "I have the report, but this session has no verified previous directory "
+                        "to resolve 'that directory'. No file was created. Please name a workspace "
+                        "directory or create one first."
+                    )
+
         url = _public_url(user_input) or _site_alias_url(user_input)
         lowered = (user_input or "").lower()
         read_only_verbs = ("read", "fetch", "summarize", "summarise", "extract", "find", "get")
@@ -110,6 +147,17 @@ class AgentExecutionLoop(_legacy.AgentExecutionLoop):
         plan = super()._direct_route(user_input, recalled_facts)
         if not isinstance(plan, list):
             return plan
+
+        # Resolve conversational references such as "save this report in that
+        # directory" to the directory verified in the earlier turn.
+        if artifact_save and re.search(r"\bthat\s+(?:directory|folder)\b", user_input, re.IGNORECASE):
+            directory = self.session_artifacts.get("last_created_directory")
+            if isinstance(directory, str) and directory.strip():
+                for step in plan:
+                    if step.get("tool") == "write_file":
+                        arguments = step.setdefault("arguments", {})
+                        filename = Path(str(arguments.get("filepath", "research_report.md"))).name
+                        arguments["filepath"] = str(Path(directory) / filename)
         for step in plan:
             if step.get("tool") != "agent_builder":
                 continue
