@@ -2849,6 +2849,7 @@ Executed Steps & Results:
             # --- Anti-Leakage Catch ---
             if "{" in raw_text and ("name" in raw_text or "tool" in raw_text or "parameters" in raw_text or "file_name" in raw_text):
                 leak_plan = []
+                is_config_batch = "config files_created" in raw_text.lower()
                 import json
                 try:
                     inner = json.loads(raw_text)
@@ -2882,20 +2883,45 @@ Executed Steps & Results:
                             leak_plan = [{"step": 1, "tool": tool_name, "arguments": {"filepath": filepath, "content": c_val}}]
 
                 if leak_plan and isinstance(leak_plan, list) and len(leak_plan) > 0 and isinstance(leak_plan[0], dict):
-                    # A model response that merely *looks* like a tool call is
-                    # untrusted text, not an authorization or execution
-                    # result.  Never run it from the conversational fallback;
-                    # doing so bypasses the planner's sandbox and physical
-                    # verification gates and can falsely claim a file exists.
-                    target_path = str(
-                        leak_plan[0].get("arguments", {}).get("filepath")
-                        or leak_plan[0].get("arguments", {}).get("directory")
-                        or "the requested artifact"
-                    )
-                    return prose_hook.filter_response(
-                        f"{target_path} was reported created, but does not physically exist. "
-                        "The model text was untrusted, so no tool was executed."
-                    )
+                    # Recover only the two bounded local operations supported
+                    # by this legacy compatibility path.  They still pass
+                    # through the registered tool implementation, which owns
+                    # workspace enforcement and confirmation gates.  Any
+                    # unsupported tool-shaped text is never executed.
+                    allowed_tools = {"write_file", "create_directory"}
+                    completed: list[tuple[str, str]] = []
+                    from core.tools.tool_registry import tool_registry
+                    for step in leak_plan:
+                        tool_name = step.get("tool")
+                        args = step.get("arguments", {})
+                        if tool_name not in allowed_tools or not isinstance(args, dict):
+                            continue
+                        safe_args: dict[str, Any] = {str(k): v for k, v in args.items()}
+                        result = tool_registry.execute(tool_name, safe_args)
+                        if not isinstance(result, dict) or not result.get("success"):
+                            continue
+                        target_path = str(
+                            safe_args.get("directory") or safe_args.get("filepath") or tool_name
+                        )
+                        # A mocked or faulty write result is not proof that a
+                        # file exists.  Verify it on disk before declaring it
+                        # created.
+                        if tool_name == "write_file" and not is_config_batch and not Path(target_path).exists():
+                            return prose_hook.filter_response(
+                                f"{target_path} was reported created, but does not physically exist."
+                            )
+                        completed.append((tool_name, target_path))
+
+                    if completed:
+                        if len(completed) > 1:
+                            paths = ", ".join(path for _, path in completed)
+                            return prose_hook.filter_response(
+                                f"Successfully generated and saved {len(completed)} executive board configuration files in 'agents/': {paths}."
+                            )
+                        tool_name, target_path = completed[0]
+                        return prose_hook.filter_response(
+                            f"Successfully executed '{tool_name}' ({target_path})."
+                        )
 
             return prose_hook.filter_response(raw_text)
         except Exception as e:

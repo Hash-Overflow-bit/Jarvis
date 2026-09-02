@@ -56,7 +56,7 @@ def _public_url(text: str) -> str | None:
     # supplied an explicit URL form.  This boundary keeps filesystem tasks out
     # of the browser/fetch tool path.
     if not candidate.lower().startswith(("http://", "https://", "www.")):
-        hostname = candidate.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+        hostname = candidate.rstrip(".,;:!?)]}").split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
         if Path(hostname).suffix.lower() in _LOCAL_FILE_SUFFIXES:
             return None
     from core.tools.public_web import normalize_public_url

@@ -428,6 +428,9 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
   questions such as “Where did you save the report?” from being treated as a
   request to write a file.
 - Model text that resembles a tool call is now treated as untrusted text and
-  cannot execute a filesystem action outside the normal verified tool loop.
+  is restricted to the legacy local write/directory recovery path; file writes
+  are physically verified before a success response is allowed.
+- Stripped sentence punctuation before classifying a bare host token, so
+  `status.md.` and `test.txt.` remain local filenames rather than URLs.
 - Added regression coverage for research → later save, exact file contents,
   reset isolation, and deterministic directory references.

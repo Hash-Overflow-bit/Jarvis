@@ -75,7 +75,7 @@ class ConversationRouter:
         candidate = match.group(0)
         if candidate.lower().startswith(("http://", "https://", "www.")):
             return True
-        hostname = candidate.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+        hostname = candidate.rstrip(".,;:!?)]}").split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
         return not (Path(hostname).suffix.lower() in _LOCAL_FILE_SUFFIXES)
 
     def requires_agent(self, user_input: str) -> bool:
