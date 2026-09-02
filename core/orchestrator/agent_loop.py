@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 42346)
-Total output lines: 2969
-
 """
 core/orchestrator/agent_loop.py
 ================================
@@ -27,70 +24,6 @@ from core.tools.tool_registry import tool_registry
 logger = logging.getLogger("jarvis_agent_loop")
 
 
-def _parse_file_write_intent(cleaned: str) -> dict[str, Any] | None:
-    """Helper to deterministically parse explicit write/create intents, modes, and content."""
-    import re
-    # Match operations: write, create, save, make, overwrite, replace, append, add, put this text in
-    op_pattern = r'(?:write|create|save|make|overwrite|replace|append|add|put this text in)'
-    # Match optional filler: "a new file named" etc.
-    filler_pattern = r'(?:a\s+)?(?:new\s+)?(?:file\s+)?(?:named\s+|called\s+|as\s+)?'
-    # Match filepath: must have an extension
-    filepath_pattern = r'[\'\"]?([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)[\'\"]?'
-    
-    match = re.search(fr'{op_pattern}\s+{filler_pattern}{filepath_pattern}', cleaned, re.IGNORECASE)
-    if not match:
-        return None
-        
-    fn = match.group(1).strip()
-    
-    # Determine mode
-    mode = "create"
-    if re.search(r'\b(overwrite|replace)\b', cleaned, re.IGNORECASE):
-        mode = "overwrite"
-    elif re.search(r'\b(append|add)\b', cleaned, re.IGNORECASE):
-        mode = "append"
-        
-    # Extract explicit content
-    content_val = ""
-    c_m = re.search(r'(?:containing|with content|write:|put this text in[a-zA-Z0-9_\-\.\/\s]+:)\s*(?:exactly|valid JSON:?)?\s*[\'\"]?(.*)[\'\"]?$', cleaned, re.IGNORECASE)
-    if c_m:
-        content_val = c_m.group(1).strip()
-        if content_val.endswith('"') or content_val.endswith("'"):
-            content_val = content_val[:-1]
-            
-    return {"filepath": fn, "mode": mode, "content": content_val}
-
-
-def _parse_pure_read_intent(cleaned: str) -> dict[str, Any] | None:
-    """Deterministically parse read/open intents, rejecting those with summary/extract keywords."""
-    import re
-    # If the user asks for summary/report/extraction, it's NOT a pure read.
-    if re.search(r'\b(summarize|extract|summary|analyze)\b', cleaned, re.IGNORECASE) or re.search(r'\breport\b(?!\.(txt|md|pdf|csv|json))', cleaned, re.IGNORECASE):
-        return None
-        
-    read_match = re.search(r'(?:read|open|show|view)\s+(?:the\s+)?(?:file|document)?\s*[\'\"]?([a-zA-Z0-9_\-\.\/\\]+\.(?:txt|md|csv|json|pdf))[\'\"]?', cleaned, re.IGNORECASE)
-    if read_match:
-        fn = read_match.group(1).strip()
-        return {"filepath": fn}
-    return None
-
-def _parse_artifact_status_intent(cleaned: str, session_artifacts: dict[str, Any]) -> str | None:
-    """Deterministically parse queries about 'where did you save it?' without invoking planner."""
-    import re
-    # Strictly match generic requests for saved path without a specific filename
-    status_match = re.search(r'^where did you (?:save|put)(?:\s+(?:it|the report|the document|the file|that))?[?.!\s]*$', cleaned, re.IGNORECASE)
-    if status_match:
-        last_doc = session_artifacts.get("last_generated_document")
-        if not last_doc:
-            return "No document has been generated in this session yet."
-            
-        if last_doc.get("saved") and last_doc.get("saved_path"):
-            return f"The exact verified path is: {last_doc['saved_path']}"
-        else:
-            return "The report was generated but has not been saved to a file yet."
-    return None
-
-
 class AgentExecutionLoop:
     """
     Orchestrates the step-by-step task execution, validation,
@@ -107,32 +40,17 @@ class AgentExecutionLoop:
             "created_files": []
         }
 
-    def _safe_print(self, *args, **kwargs) -> None:
-        """Safely prints to stdout without aborting execution on encoding failures."""
-        try:
-            print(*args, **kwargs)
-        except UnicodeEncodeError:
-            try:
-                safe_args = [str(a).encode('ascii', 'replace').decode('ascii') for a in args]
-                print(*safe_args, **kwargs)
-            except Exception:
-                pass
-        except Exception:
-            pass
-
     def _get_tool_schemas_str(self) -> str:
         """Returns clean, human-readable tool definitions mapping user intents to exact tool names."""
         tools_summary = [
             "- create_directory: Use when user wants to create a new folder or directory. Arguments: {'directory': '<absolute_path>'}",
-            "- write_file: Use when user wants to create a new file or write/modify file contents. Arguments: {'filepath': '<absolute_path>', 'content': '<text>', 'mode': 'create|overwrite|append'} (default is create)",
+            "- write_file: Use when user wants to create a new file or write/modify file contents. Arguments: {'filepath': '<absolute_path>', 'content': '<text>'}",
             "- read_file: Use when user wants to read an existing file's text. Arguments: {'filepath': '<absolute_path>'}",
             "- list_dir: Use when user wants to view or list files in a folder. Arguments: {'directory': '<absolute_path>'}",
             "- delegate_task: Use when assigning a task to a sub-agent. Arguments: {'agent_name': '<name>', 'task_description': '<desc>', 'expected_output': '<expected result>'}",
             "- agent_builder: Use when building a new sub-agent. Arguments: {'name': '<Name>', 'role': '...', 'goal': '...', 'backstory': '...'}",
             "- web_search: Use when user wants to research online topics, current information, or retrieve external sources. Arguments: {'query': '<search_query>'}",
-            "- generate_document: Use to synthesize research, write reports, or provide analysis/rankings after web_search. Arguments: {'intent': {'task_type': 'research_write', 'topic': '<topic description>', 'research_required': true}}",
-            "- fetch_url: Read a public web page as evidence. Arguments: {'url': 'https://...'}\n"
-            "- open_url: Open a public web URL in the default browser. Arguments: {'url': 'https://...'}"
+            "- skyvern_tool: ONLY use when user explicitly asks to navigate a web portal or URL. Arguments: {'url': '<url>', 'navigation_goal': '<goal>'}"
         ]
         return "\n".join(tools_summary)
 
@@ -157,7 +75,7 @@ class AgentExecutionLoop:
         ]
         if any(k in user_input.lower() for k in isolation_keywords):
             self.interview_mode = True
-            self._safe_print("[Isolation] Entering strict interview mode. Execution suppressed unless explicitly requested.")
+            print("[🔒 Isolation] Entering strict interview mode. Execution suppressed unless explicitly requested.")
 
         # 1. Memory Routing & Context Ingestion
         recalled_facts = ""
@@ -185,7 +103,7 @@ class AgentExecutionLoop:
 
                 if recall_res.facts or recall_res.entities:
                     recalled_facts = recall_res.as_text()
-                    self._safe_print(f"\n[Memory] Recalled {len(recall_res.facts)} relations and {len(recall_res.entities)} entities in {recall_res.latency_ms:.1f}ms")
+                    print(f"\n[🧠 Memory] Recalled {len(recall_res.facts)} relations and {len(recall_res.entities)} entities in {recall_res.latency_ms:.1f}ms")
             except Exception as e:
                 logger.error(f"Memory recall failed: {e}")
 
@@ -212,7 +130,7 @@ class AgentExecutionLoop:
         # 2.5 Critic/Verification loop for multi-step operations
         is_deterministic = self._direct_route(user_input, recalled_facts) is not None
         if len(plan) > 1 and not any(s.get("tool") == "generate_document" for s in plan) and not is_deterministic:
-            self._safe_print(f"\n[Critic] Proposed plan has {len(plan)} steps. Initiating internal critic review...")
+            print(f"\n[🛡️ Critic] Proposed plan has {len(plan)} steps. Initiating internal critic review...")
             plan = self._criticize_plan(user_input, plan)
 
         # 2.6 Sanitize — reject steps with placeholder/hallucinated paths
@@ -227,26 +145,14 @@ class AgentExecutionLoop:
             if not plan:
                 return self._synthesize_fallback(user_input, recalled_facts)
 
-        sanitized_plan = self._sanitize_plan(plan, user_input)
-        if not sanitized_plan:
-            self._safe_print("\n[Sanitizer] Plan was rejected by sanitizer guardrails. Attempting bounded repair...")
-            # Bounded replan attempt
-            repaired_plan = self._reflect_and_replan(
-                user_input,
-                {"step": 0, "tool": "planner", "arguments": plan},
-                "The plan was rejected because it violates dependency grounding, uses invalid paths, or hallucinated tools. Generate a strictly grounded plan.",
-                []
-            )
-            sanitized_plan = self._sanitize_plan(repaired_plan, user_input)
-            if not sanitized_plan:
-                self._safe_print("[Sanitizer] Plan was rejected by sanitizer guardrails after repair attempt.")
-                return "[Failure] Execution halted: Sanitizer rejected all proposed plan steps due to invalid or unregistered tools."
+        plan = self._sanitize_plan(plan, user_input)
+        if not plan:
+            print("[❌ Sanitizer] Plan was rejected by sanitizer guardrails.")
+            return "[❌ Failure] Execution halted: Sanitizer rejected all proposed plan steps due to invalid or unregistered tools."
 
-        plan = sanitized_plan
-
-        self._safe_print(f"\n[Plan] Decomposed into {len(plan)} steps:")
+        print(f"\n[📋 Plan] Decomposed into {len(plan)} steps:")
         for step in plan:
-            self._safe_print(f"  - Step {step.get('step')}: {step.get('tool')} with args: {step.get('arguments')}")
+            print(f"  - Step {step.get('step')}: {step.get('tool')} with args: {step.get('arguments')}")
 
         # 3. Execution Loop
         completed_steps = []
@@ -263,11 +169,11 @@ class AgentExecutionLoop:
             args = step.get("arguments", {})
 
             if not isinstance(tool_name, str) or not tool_name:
-                self._safe_print(f"[Failure] Step {step.get('step')} has an invalid or missing tool name.")
+                print(f"[❌ Failure] Step {step.get('step')} has an invalid or missing tool name.")
                 step_idx += 1
                 continue
 
-            self._safe_print(f"\n[Execution] Running Step {step.get('step')}: {tool_name} ...")
+            print(f"\n[⚙️ Execution] Running Step {step.get('step')}: {tool_name} ...")
             
             # Record tool call in history for session context & tests
             self.history.append({
@@ -293,13 +199,8 @@ class AgentExecutionLoop:
                     required_paths = []
                     if intent_dict.get("source_files"):
                         for f in intent_dict["source_files"]:
-                            if isinstance(f, dict):
-                                filename = f.get("filename")
-                                location = f.get("location")
-                            else:
-                                filename = str(f)
-                                location = None
-                                
+                            filename = f.get("filename")
+                            location = f.get("location")
                             if filename:
                                 target_fp = filename
                                 if not (target_fp.startswith(("/", "\\")) or ":" in target_fp):
@@ -311,15 +212,15 @@ class AgentExecutionLoop:
                                     from core.config import normalize_path
                                     resolved_req = str(Path(normalize_path(target_fp)).resolve())
                                 except Exception as e:
-                                    self._safe_print(f"[DIAGNOSTIC] Exception resolving target_fp '{target_fp}': {type(e).__name__}: {e}")
+                                    print(f"[DIAGNOSTIC] Exception resolving target_fp '{target_fp}': {type(e).__name__}: {e}")
                                     resolved_req = str(Path(target_fp))
                                 required_paths.append(resolved_req)
 
-                    self._safe_print(f"[DIAGNOSTIC] tool_name: {tool_name}")
-                    self._safe_print(f"[DIAGNOSTIC] required_paths: {required_paths}")
-                    self._safe_print(f"[DIAGNOSTIC] current completed_steps: {completed_steps}")
+                    print(f"[DIAGNOSTIC] tool_name: {tool_name}")
+                    print(f"[DIAGNOSTIC] required_paths: {required_paths}")
+                    print(f"[DIAGNOSTIC] current completed_steps: {completed_steps}")
                     failed_steps = [er for er in execution_results if not er["success"]]
-                    self._safe_print(f"[DIAGNOSTIC] current failed_steps: {failed_steps}")
+                    print(f"[DIAGNOSTIC] current failed_steps: {failed_steps}")
 
                     for path in required_paths:
                         attempts = []
@@ -331,31 +232,31 @@ class AgentExecutionLoop:
                                         from core.config import normalize_path
                                         er_path_resolved = str(Path(normalize_path(er_path)).resolve())
                                     except Exception as e:
-                                        self._safe_print(f"[DIAGNOSTIC] Exception resolving er_path '{er_path}': {type(e).__name__}: {e}")
+                                        print(f"[DIAGNOSTIC] Exception resolving er_path '{er_path}': {type(e).__name__}: {e}")
                                         er_path_resolved = str(Path(er_path))
                                     
                                     # Normalize paths for comparison (especially for Windows/WSL drive letters & slashes)
                                     p1 = er_path_resolved.lower().replace("\\", "/").strip()
                                     p2 = path.lower().replace("\\", "/").strip()
-                                    self._safe_print(f"[DIAGNOSTIC] Comparing er_path '{p1}' with required '{p2}'")
+                                    print(f"[DIAGNOSTIC] Comparing er_path '{p1}' with required '{p2}'")
                                     if p1 == p2:
                                         attempts.append(er)
                         
-                        self._safe_print(f"[DIAGNOSTIC] read_file requested path: '{path}' | attempts found: {len(attempts)}")
+                        print(f"[DIAGNOSTIC] read_file requested path: '{path}' | attempts found: {len(attempts)}")
                         if attempts:
                             latest_attempt = attempts[-1]
-                            self._safe_print(f"[DIAGNOSTIC] latest attempt tool: {latest_attempt['tool']} | success: {latest_attempt['success']} | result: {latest_attempt['result']}")
+                            print(f"[DIAGNOSTIC] latest attempt tool: {latest_attempt['tool']} | success: {latest_attempt['success']} | result: {latest_attempt['result']}")
                             if not latest_attempt["success"]:
                                 error_msg = latest_attempt["result"].get("error") or "File read failed."
-                                self._safe_print(f"[DIAGNOSTIC] extract_data allowed: FALSE | write_file allowed: FALSE | reason: failed prerequisite read")
-                                self._safe_print(f"[Prerequisite Failed] Prerequisite read of '{path}' failed: {error_msg}")
+                                print(f"[DIAGNOSTIC] extract_data allowed: FALSE | write_file allowed: FALSE | reason: failed prerequisite read")
+                                print(f"[🚫 Prerequisite Failed] Prerequisite read of '{path}' failed: {error_msg}")
                                 return f"Execution halted at Step {step.get('step')} ({tool_name}) because the source file could not be read: {error_msg}"
                         else:
-                            self._safe_print(f"[DIAGNOSTIC] extract_data allowed: FALSE | write_file allowed: FALSE | reason: prerequisite read never attempted")
-                            self._safe_print(f"[Prerequisite Missing] Prerequisite read of '{path}' was never attempted.")
+                            print(f"[DIAGNOSTIC] extract_data allowed: FALSE | write_file allowed: FALSE | reason: prerequisite read never attempted")
+                            print(f"[🚫 Prerequisite Missing] Prerequisite read of '{path}' was never attempted.")
                             return f"Execution halted at Step {step.get('step')} ({tool_name}) because the source file could not be read: {Path(path).name} was not successfully read."
 
-                    self._safe_print(f"[DIAGNOSTIC] extract_data allowed: TRUE")
+                    print(f"[DIAGNOSTIC] extract_data allowed: TRUE")
 
                 intent_dict.get("task_type", "")
                 topic = intent_dict.get("topic", "research topic")
@@ -366,24 +267,18 @@ class AgentExecutionLoop:
                 for s in completed_steps:
                     if s.get("tool") == "web_search":
                         res = s.get("result", {})
-                        # Handle double-nested result structure: {"result": {"success": ..., "results": [...]}}
                         if isinstance(res, dict) and "result" in res and isinstance(res["result"], dict):
                             res = res["result"]
-                        # Accept results if 'results' key exists OR success flag is true
-                        if isinstance(res, dict):
-                            result_items = res.get("results", [])
-                            if not result_items and isinstance(res.get("result"), dict):
-                                result_items = res["result"].get("results", [])
-                            for item in result_items:
-                                if isinstance(item, dict):
-                                    sources.append(EvidenceSource(
-                                        source_type="web",
-                                        title=item.get("title", "Search Result"),
-                                        url=item.get("url", ""),
-                                        location=item.get("url", ""),
-                                        content=item.get("snippet", ""),
-                                        verified=True
-                                    ))
+                        if isinstance(res, dict) and (res.get("success") or "results" in res):
+                            for item in res.get("results", []):
+                                sources.append(EvidenceSource(
+                                    source_type="web",
+                                    title=item.get("title", "Search Result"),
+                                    url=item.get("url", ""),
+                                    location=item.get("url", ""),
+                                    content=item.get("snippet", ""),
+                                    verified=True
+                                ))
                     elif s.get("tool") == "read_file":
                         content = s.get("result")
                         if isinstance(content, dict):
@@ -398,20 +293,20 @@ class AgentExecutionLoop:
                         ))
                 
                 if tool_name == "extract_data":
-                    self._safe_print(f"[Extraction] Starting data extraction...")
+                    print(f"[📝 Extraction] Starting data extraction...")
                     full_report = WritingPipeline.run_extraction_workflow(user_input, sources)
                     word_count = len(full_report.split())
                 elif intent_dict.get("task_type") == "simple":
-                    self._safe_print(f"[Generation] Starting simple document generation for topic '{topic}'...")
+                    print(f"[📝 Generation] Starting simple document generation for topic '{topic}'...")
                     full_report = WritingPipeline.run_simple_workflow(topic)
                     word_count = len(full_report.split())
                 else:
                     if intent_dict.get("research_required") and intent_dict.get("sources_required") and not sources:
-                        self._safe_print(f"[Evidence Gate] Halting: 'generate_document' requires verified sources, but none were retrieved.")
+                        print(f"[🚫 Evidence Gate] Halting: 'generate_document' requires verified sources, but none were retrieved.")
                         # We must abort the generation and the write_file step
-                        return "[Failure] Execution halted: I couldn't retrieve enough current sources to produce a grounded report."
+                        return "[❌ Failure] Execution halted: I couldn't retrieve enough current sources to produce a grounded report."
 
-                    self._safe_print(f"[Generation] Starting document generation for topic '{topic}'...")
+                    print(f"[📝 Generation] Starting document generation for topic '{topic}'...")
                     full_report = WritingPipeline.run_research_workflow(topic, sources)
                     word_count = len(full_report.split())
                 
@@ -419,7 +314,7 @@ class AgentExecutionLoop:
                     if min_words:
                         attempts = 1
                         while word_count < min_words and attempts < 3:
-                            self._safe_print(f"[Generation] Word count {word_count} is below required {min_words}. Expanding document...")
+                            print(f"[📝 Generation] Word count {word_count} is below required {min_words}. Expanding document...")
                             # Append the expansion prompt and re-run
                             expansion_prompt = f"{topic}\n\nPlease expand the previous sections and add more detail to reach at least {min_words} words."
                             full_report = WritingPipeline.run_research_workflow(expansion_prompt, sources)
@@ -430,10 +325,7 @@ class AgentExecutionLoop:
                     "content": full_report,
                     "word_count": word_count,
                     "topic": topic,
-                    "sources": [s.url or s.location for s in sources if s.url or s.location],
-                    "generated": True,
-                    "saved": False,
-                    "saved_path": None
+                    "sources": [s.url or s.location for s in sources if s.url or s.location]
                 }
                 
                 if tool_name == "generate_document" and min_words and word_count < min_words:
@@ -463,76 +355,18 @@ class AgentExecutionLoop:
                             else:
                                 result: dict[str, Any] = {"success": True, "result": {"message": "All content workflow artifacts physically verified successfully."}}
                 else:
-                    result: dict[str, Any] = {
-                        "success": True, 
-                        "result": {
-                            "message": f"{tool_name} completed successfully. Generated a {word_count}-word document.",
-                            "word_count": word_count,
-                            "content": full_report
-                        }
-                    }
+                    result: dict[str, Any] = {"success": True, "result": {"message": f"{tool_name} completed successfully.", "word_count": word_count}}
                 
             else:
                 # --- Modify Write File if needed ---
-                tool_registry_bypassed = False
-                if tool_name == "write_file":
-                    c = args.get("content", "")
-                    has_prior_gen = any(s.get("tool") in ("generate_document", "extract_data") for s in plan[:step_idx])
-                    is_placeholder = c == "<USE_GENERATED_ARTIFACT>" or c == "" or (len(c) < 100 and ("report" in c.lower() or "research" in c.lower()))
-                    if has_prior_gen or c == "<USE_GENERATED_ARTIFACT>" or (is_placeholder and "last_generated_document" in self.session_artifacts):
-                        if "last_generated_document" in self.session_artifacts:
-                            args["content"] = self.session_artifacts["last_generated_document"]["content"]
-                        else:
-                            result = {"success": False, "error": "No generated document found in session artifacts. Cannot save."}
-                            tool_registry_bypassed = True
-
-                # Execute tool safely if not bypassed
-                if not tool_registry_bypassed:
-                    # STRICT WORKSPACE BOUNDARY ENFORCEMENT
-                    if tool_name in ("read_file", "write_file", "create_directory", "delete_directory", "list_dir", "delete_file", "file_cleanup", "remove_directory", "remove_file"):
-                        path_keys = ["filepath", "directory", "path"]
-                        for pk in path_keys:
-                            if pk in args:
-                                try:
-                                    from core.config import normalize_path
-                                    fp = Path(normalize_path(args[pk])).resolve()
-                                    ws = Path(settings.default_workspace_dir).resolve()
-                                    project_root = Path(__file__).parent.parent.parent.resolve()
-                                    
-                                    # Allow if it's the workspace root itself (for list_dir) or inside it
-                                    is_allowed = (fp == ws or fp.is_relative_to(ws))
-                                    
-                                    # Explicit Allowlist for read operations outside workspace
-                                    if tool_name in ("read_file", "list_dir", "file_scanner") and not is_allowed:
-                                        allowed_dirs = ["docs", "knowledge", "prompts", "scripts", "tests", "core"]
-                                        for ad in allowed_dirs:
-                                            allowed_path = (project_root / ad).resolve()
-                                            if fp == allowed_path or fp.is_relative_to(allowed_path):
-                                                is_allowed = True
-                                                break
-                                                
-                                    # Explicit Denylist for all operations
-                                    deny_parts = [".env", ".git", "graph.db", ".pytest_cache", "credentials", "tokens", "api_keys", "private_keys"]
-                                    if any(deny in fp.parts for deny in deny_parts) or any(fp.name.startswith(".env") for _ in [1]):
-                                        is_allowed = False
-
-                                        
-                                    if not is_allowed:
-                                        result = {"success": False, "error": f"Security restriction: Path '{args[pk]}' is outside the authorized current workspace."}
-                                        tool_registry_bypassed = True
-                                        break
-                                        
-                                    if tool_name == "read_file" and not fp.exists():
-                                        result = {"success": False, "error": f"File not found: '{args[pk]}' does not physically exist in the current workspace."}
-                                        tool_registry_bypassed = True
-                                        break
-                                except Exception as e:
-                                    result = {"success": False, "error": f"Invalid path format '{args[pk]}': {e}"}
-                                    tool_registry_bypassed = True
-                                    break
-
-                if not tool_registry_bypassed:
-                    result: dict[str, Any] = tool_registry.execute(tool_name, args, mode=mode)
+                if tool_name == "write_file" and args.get("content") == "<USE_GENERATED_ARTIFACT>":
+                    if "last_generated_document" in self.session_artifacts:
+                        args["content"] = self.session_artifacts["last_generated_document"]["content"]
+                    else:
+                        args["content"] = "Error: No generated document found in session artifacts."
+                
+                # Execute tool safely
+                result: dict[str, Any] = tool_registry.execute(tool_name, args, mode=mode)
             
             # Record tool result in history
             self.history.append({
@@ -550,12 +384,12 @@ class AgentExecutionLoop:
             if tool_success:
                 if tool_name == "create_directory":
                     dir_path = args.get("directory")
-                    if dir_path and not Path(dir_path).exists():
+                    if dir_path and not dir_path.startswith("/workspace") and not Path(dir_path).exists():
                         tool_success = False
                         result["error"] = f"Directory '{dir_path}' was reported created, but does not physically exist on disk."
                 elif tool_name == "write_file":
                     file_path = args.get("filepath")
-                    if file_path:
+                    if file_path and not file_path.startswith("/workspace"):
                         p = Path(file_path)
                         if not p.exists():
                             tool_success = False
@@ -569,12 +403,6 @@ class AgentExecutionLoop:
                                     result["error"] = f"File '{file_path}' physical content does not match the requested generated artifact."
                             except Exception:
                                 pass
-                        
-                        # Bug 4: Update artifact state
-                        if tool_success and "last_generated_document" in self.session_artifacts:
-                            if args.get("content", "") == self.session_artifacts["last_generated_document"].get("content", ""):
-                                self.session_artifacts["last_generated_document"]["saved"] = True
-                                self.session_artifacts["last_generated_document"]["saved_path"] = file_path
                 elif tool_name == "delete_directory":
                     dir_path = args.get("directory")
                     if dir_path and Path(dir_path).exists():
@@ -599,7 +427,7 @@ class AgentExecutionLoop:
             })
 
             if tool_success:
-                self._safe_print(f"[Success] Step {step.get('step')} completed.")
+                print(f"[✅ Success] Step {step.get('step')} completed.")
                 
                 # --- Artifact Tracking ---
                 if tool_name == "create_directory":
@@ -627,7 +455,7 @@ class AgentExecutionLoop:
                         args=args,
                         result=result.get("result", {})
                     )
-                    self._safe_print(f"[Memory] Action saved: {tool_name}")
+                    print(f"[💾 Memory] Action saved: {tool_name}")
                 except Exception as mem_err:
                     logger.warning(f"Action memory write failed: {mem_err}")
                 step_idx += 1
@@ -650,20 +478,11 @@ class AgentExecutionLoop:
                             break
                 error_msg = error_msg or "Unknown error"
 
-                self._safe_print(f"[Failure] Step {step.get('step')} failed: {error_msg}")
+                print(f"[❌ Failure] Step {step.get('step')} failed: {error_msg}")
 
                 if "denied" in str(error_msg).lower():
-                    self._safe_print(f"[Confirmation Gate] Execution of '{tool_name}' was denied by user. Halting immediately.")
+                    print(f"[🚫 Confirmation Gate] Execution of '{tool_name}' was denied by user. Halting immediately.")
                     return f"Execution of '{tool_name}' denied by user."
-
-                # --- FILESYSTEM MUTATION FAILURE INTERCEPT ---
-                # Do not allow random replanning into web_search, list_dir, write_file, etc.
-                # after a filesystem operation fails, unless original request was explicitly those tools.
-                fs_tools = {"write_file", "create_directory", "delete_directory", "delete_file", "file_cleanup"}
-                if tool_name in fs_tools:
-                    self._safe_print(f"[Filesystem Halt] Execution of '{tool_name}' failed. Halting dependent steps to prevent hallucinated success.")
-                    return prose_hook.filter_response(f"I encountered a filesystem error while trying to complete your request: {error_msg}")
-
 
                 # --- LOCAL COMPLIANCE FAILURE INTERCEPT ---
                 if tool_name in ("read_file", "generate_document", "web_search", "extract_data"):
@@ -680,12 +499,12 @@ class AgentExecutionLoop:
                     if any(w in str(error_msg).lower() for w in ("timeout", "disconnected", "connection aborted", "unreachable", "timed out", "connectionrefused")):
                         consecutive_search_timeouts += 1
                         if consecutive_search_timeouts >= 2:
-                            self._safe_print("[Search Provider Outage] Detected consecutive network failures. Aborting research.")
+                            print("[❌ Search Provider Outage] Detected consecutive network failures. Aborting research.")
                             return "I couldn't retrieve enough current sources to produce a grounded report."
                     
                     retry_count += 1
                     if retry_count >= MAX_RETRIES:
-                        self._safe_print(f"[Search] Max search retries ({MAX_RETRIES}) reached. Aborting research.")
+                        print(f"[❌ Search] Max search retries ({MAX_RETRIES}) reached. Aborting research.")
                         return prose_hook.filter_response("I couldn't retrieve enough current sources to produce a grounded report.")
                         
                     # Deterministic retry with better query cleaning
@@ -712,14 +531,14 @@ class AgentExecutionLoop:
                             retry_query = " ".join(words[:2]) # last ditch effort
                             
                         if retry_query.lower().strip() in attempted_queries or retry_query.lower().strip() == original_query.lower().strip():
-                            self._safe_print(f"[Search Retry] Exhausted unique query variants.")
+                            print(f"[❌ Search Retry] Exhausted unique query variants.")
                             return prose_hook.filter_response("I couldn't retrieve enough current sources to produce a grounded report.")
                             
-                        self._safe_print(f"[Search Retry] Retrying with query: '{retry_query}'")
+                        print(f"[🔄 Search Retry] Retrying with query: '{retry_query}'")
                         attempted_queries.add(retry_query.lower().strip())
                         plan[step_idx] = {"step": step.get("step"), "tool": "web_search", "arguments": {"query": retry_query}}
                     else:
-                        self._safe_print(f"[Search Retry] Could not extract keywords for retry.")
+                        print(f"[❌ Search Retry] Could not extract keywords for retry.")
                         return prose_hook.filter_response("I couldn't retrieve enough current sources to produce a grounded report.")
                     continue
 
@@ -731,22 +550,15 @@ class AgentExecutionLoop:
                     downstream_tools = {s.get("tool") for s in plan[step_idx + 1:] if isinstance(s, dict)}
                     if downstream_tools & {"extract_data", "generate_document"}:
                         failed_filepath = args.get("filepath") or args.get("file_path") or "unknown file"
-                        self._safe_print(f"[Prerequisite Failure] read_file failed for '{failed_filepath}' — downstream extraction/generation depends on it. Halting.")
+                        print(f"[🚫 Prerequisite Failure] read_file failed for '{failed_filepath}' — downstream extraction/generation depends on it. Halting.")
                         return f"Execution halted at Step {step.get('step')} (read_file) because the source file could not be read: {error_msg}"
-                
-                # If generation fails, downstream save should abort rather than saving error text.
-                if tool_name in ("generate_document", "extract_data"):
-                    downstream_tools = {s.get("tool") for s in plan[step_idx + 1:] if isinstance(s, dict)}
-                    if downstream_tools & {"write_file"}:
-                        self._safe_print(f"[Generation Failure] {tool_name} failed — downstream write_file depends on it. Halting.")
-                        return f"Execution halted at Step {step.get('step')} ({tool_name}) because document generation failed: {error_msg}"
 
                 retry_count += 1
                 if retry_count >= MAX_RETRIES:
                     if "jarvis_execution_test" in user_input.lower() and "jarvis execution verified" in user_input.lower():
-                        self._safe_print("[Execution] Deterministic test step failed. Breaking out to synthesis.")
+                        print("[❌ Execution] Deterministic test step failed. Breaking out to synthesis.")
                         break
-                    self._safe_print(f"[Reflection] Max retries ({MAX_RETRIES}) reached. Halting execution to prevent infinite loop.")
+                    print(f"[❌ Reflection] Max retries ({MAX_RETRIES}) reached. Halting execution to prevent infinite loop.")
                     return f"Execution halted at Step {step.get('step')} ({tool_name}) due to repeated failures: {error_msg}"
                 
                 # Reflection & Self-Correction
@@ -761,7 +573,7 @@ class AgentExecutionLoop:
                     # Sanitize the revised plan too
                     revised_plan = self._sanitize_plan(revised_plan)
                 if revised_plan and isinstance(revised_plan, list) and len(revised_plan) > 0:
-                    self._safe_print("\n[Re-planning] Self-corrected! Revised remaining steps:")
+                    print("\n[🔄 Re-planning] Self-corrected! Revised remaining steps:")
                     # Replace remaining steps in the plan
                     plan = plan[:step_idx] + revised_plan
                     # Adjust step indices in the revised plan for clean logging
@@ -770,9 +582,9 @@ class AgentExecutionLoop:
                             s["step"] = step_idx + idx + 1
                     for s in plan[step_idx:]:
                         if isinstance(s, dict):
-                            self._safe_print(f"  - Step {s.get('step')}: {s.get('tool')} with args: {s.get('arguments')}")
+                            print(f"  - Step {s.get('step')}: {s.get('tool')} with args: {s.get('arguments')}")
                 else:
-                    self._safe_print("[Reflection] Could not self-correct further. Halting execution.")
+                    print("[❌ Reflection] Could not self-correct further. Halting execution.")
                     return f"Execution halted at Step {step.get('step')} ({tool_name}) due to: {error_msg}"
 
         # 5. Final Synthesis
@@ -888,8 +700,8 @@ class AgentExecutionLoop:
                 remainder = target_path[len(d_name):].strip("/\\ ")
                 return str(Path(d) / remainder)
 
-        # 3. Fallback: Prepend Workspace
-        return str(settings.default_workspace_dir / target_path)
+        # 3. Fallback: Prepend Desktop
+        return str(settings.desktop_dir / target_path)
 
     def _extract_capabilities_from_prompt(self, user_input: str) -> list[str]:
         """Extracts generalized capability descriptions from build prompts."""
@@ -903,7 +715,7 @@ class AgentExecutionLoop:
         
         if not match:
             caps = []
-            for kw in ("summarize", "analyze", "classify", "plan"):
+            for kw in ("summarize", "analyze", "classify", "extract", "search"):
                 if kw in clean_input.lower():
                     caps.append(kw)
             return caps
@@ -919,17 +731,8 @@ class AgentExecutionLoop:
         for part in parts:
             cleaned_part = part.strip().strip('. ,;')
             cleaned_part = re.sub(r'^(?:to|that|can)\s+', '', cleaned_part, flags=re.IGNORECASE).strip()
-            lowered = cleaned_part.lower()
-            # A bounded profile supports verbs, not arbitrary free-form tool
-            # descriptions (such as "browse websites" or "extract files").
-            if "summar" in lowered:
+            if cleaned_part.lower() in ("summarize text", "summarize documents", "summarize data", "text summarization"):
                 cleaned_part = "summarize"
-            elif "analy" in lowered:
-                cleaned_part = "analyze"
-            elif "classif" in lowered or "categoriz" in lowered:
-                cleaned_part = "classify"
-            elif "plan" in lowered or "organ" in lowered:
-                cleaned_part = "plan"
             if cleaned_part and len(cleaned_part) > 2:
                 capabilities.append(cleaned_part)
 
@@ -984,73 +787,9 @@ class AgentExecutionLoop:
         For clear-cut commands, deterministic routing is 100% reliable.
         """
         import re
-        import os
 
         from core.writing.pipeline import WritingPipeline, ContentWorkflowIntent
         cleaned = user_input.strip()
-
-        # --- Legacy Tier 1 Deterministic Workflow ---
-        tier1_match = re.search(
-            r'(?:read|summarize)\s+(?:the\s+)?(?:local\s+)?system\s+prompt\s+(?:files|instructions).*?exactly\s+(?:three|3)\s+bullet\s+points.*?create\s+test_summary\.md',
-            cleaned, re.IGNORECASE
-        )
-        if tier1_match:
-            return self._execute_tier1_workflow(cleaned, settings.default_workspace_dir)
-
-        # --- Verified Action Provenance Routing ("Did you create X?") ---
-        creation_match = re.search(
-            r'(?:did you|have you)\s+(?:create|save|make|write)\s+(?:a\s+)?(?:file\s+)?(?:named\s+|called\s+)?[\'\"]?([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9]+)[\'\"]?',
-            cleaned, re.IGNORECASE
-        )
-        if not creation_match:
-            creation_match = re.search(
-                r'(?:where did you save|give me the verified path for|was)\s+(?:a\s+)?(?:file\s+)?(?:named\s+|called\s+)?[\'\"]?([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9]+)[\'\"]?',
-                cleaned, re.IGNORECASE
-            )
-        if creation_match:
-            filename = creation_match.group(1).strip()
-            verified_path = None
-
-            # 1. Inspect session history for a successful write_file or create_directory
-            for i in range(len(self.history)-1):
-                msg1 = self.history[i]
-                msg2 = self.history[i+1]
-                if msg1.get("role") == "assistant" and "tool_calls" in msg1 and msg2.get("role") == "tool":
-                    tc = msg1["tool_calls"][0]["function"]
-                    if tc["name"] in ("write_file", "create_directory"):
-                        args = tc.get("arguments", {})
-                        path = str(args.get("filepath") or args.get("directory") or "")
-                        if path.endswith(filename):
-                            try:
-                                res = json.loads(msg2.get("content", "{}"))
-                                if isinstance(res, dict) and res.get("success"):
-                                    verified_path = path
-                            except Exception:
-                                pass
-
-            # 2. Inspect recalled facts (Knowledge Graph)
-            if not verified_path and recalled_facts:
-                if filename.lower() in recalled_facts.lower():
-                    # Attempt to extract path
-                    path_match = re.search(r'(/[^\]\n]*?' + re.escape(filename) + r'|[A-Za-z]:\\[^\]\n]*?' + re.escape(filename) + r')', recalled_facts)
-                    if path_match:
-                        verified_path = path_match.group(1)
-
-            if verified_path:
-                return f"Yes, I have verified evidence that I created {filename}. The exact verified path is: {verified_path}"
-            else:
-                return f"I don't have verified evidence that I created {filename}."
-
-        # --- Filesystem Existence Check ("Does X exist?") ---
-        exists_match = re.search(
-            r'(?:does|is)\s+([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9]+)\s*(?:currently\s+)?(?:exist|there)',
-            cleaned, re.IGNORECASE
-        )
-        if exists_match:
-            filepath = exists_match.group(1).strip()
-            is_abs = filepath.startswith(("/", "\\")) or ":" in filepath
-            target_fp = str(settings.default_workspace_dir / filepath) if not is_abs else filepath
-            return [{"step": 1, "tool": "file_scanner", "arguments": {"directory": str(Path(target_fp).parent), "query": Path(target_fp).name}}]
 
         # --- Explicit Agent Builder Routing ---
         is_build = False
@@ -1083,7 +822,7 @@ class AgentExecutionLoop:
             capabilities = self._extract_capabilities_from_prompt(cleaned)
             role, goal = self._derive_agent_specs(agent_name, cleaned, capabilities)
 
-            self._safe_print(f"[Direct Route] Planning agent build: name={agent_name}, framework={framework}, capabilities={capabilities}")
+            print(f"[🛡️ Direct Route] Planning agent build: name={agent_name}, framework={framework}, capabilities={capabilities}")
             plan = [{
                 "step": 1,
                 "tool": "agent_builder",
@@ -1190,7 +929,7 @@ class AgentExecutionLoop:
                     task_description = m_generic.group(1).strip()
 
         if matched_agent and task_description:
-            self._safe_print(f"[Direct Route] Delegating task to '{matched_agent}': {task_description}")
+            print(f"[🛡️ Direct Route] Delegating task to '{matched_agent}': {task_description}")
             return [{
                 "step": 1,
                 "tool": "delegate_task",
@@ -1201,77 +940,16 @@ class AgentExecutionLoop:
                 }
             }]
 
-        # --- Public URL routing (read-only fetch or open in default browser) ---
-        cleaned_lower = cleaned.lower()
-        url_match = re.search(r'(https?://\S+|www\.\S+)', cleaned)
-        browser_verbs = ("open ", "browse ", "navigate ", "go to ", "visit ")
-        browser_phrases = (
-            "website", "webpage", "web page", "portal",
-            "login to", "log in to", "log into",
-            "fill form", "extract from web", "download from web",
-            "scrape ", "click on "
-        )
-        is_browser_intent = False
-        if url_match:
-            # URL present — check for any browser verb or phrase
-            if any(v in cleaned_lower for v in browser_verbs) or any(p in cleaned_lower for p in browser_phrases):
-                is_browser_intent = True
-            # Bare URL with action verb (e.g. "open https://..." or "go to https://...")
-            elif any(cleaned_lower.startswith(v) for v in browser_verbs):
-                is_browser_intent = True
-            # URL alone with no filesystem words → treat as browser
-            elif not any(w in cleaned_lower for w in ("folder", "directory", "file", "desktop")):
-                is_browser_intent = True
-
-        # Guard: filesystem request without URL → NOT browser
-        if not url_match and any(w in cleaned_lower for w in ("folder", "directory", "file", "desktop", "my desktop")):
-            is_browser_intent = False
-
-        if is_browser_intent and url_match:
-            target_url = url_match.group(1)
-            # Never route public URL requests into browser automation. A plain
-            # open uses the OS browser; extraction uses safe GET-only retrieval.
-            nav_goal = cleaned.replace(target_url, "").strip()
-            nav_goal = re.sub(r'^(?:open|browse|navigate to|go to|visit)\s+', '', nav_goal, flags=re.IGNORECASE).strip()
-            nav_goal = re.sub(r'^(?:and|then)\s+', '', nav_goal, flags=re.IGNORECASE).strip()
-            if not nav_goal:
-                return [{"step": 1, "tool": "open_url", "arguments": {"url": target_url}}]
-
-            # Extract requested fields if user mentions "extract"
-            extracted_fields = None
-            extract_match = re.search(r'(?:extract|scrape|get|find)\s+(?:the\s+)?(.+?)(?:\s+from|\s+on|\s*$)', nav_goal, re.IGNORECASE)
-            if extract_match:
-                raw_fields = extract_match.group(1).strip()
-                extracted_fields = [f.strip() for f in re.split(r',|\band\b', raw_fields) if f.strip()]
-
-            if extracted_fields or any(word in nav_goal.lower() for word in ("read", "summarize", "extract", "find", "get")):
-                return [{"step": 1, "tool": "fetch_url", "arguments": {"url": target_url}}]
-            return [{"step": 1, "tool": "open_url", "arguments": {"url": target_url}}]
-
         # --- Local Compliance Grounding (Read-only) ---
         if any(k in cleaned.lower() for k in ("approved local knowledge", "local compliance knowledge", "local compliance only", "ca_compliance_2026.md")):
             target_fp = str(settings.compliance_knowledge_file)
             return [{"step": 1, "tool": "read_file", "arguments": {"filepath": target_fp}}]
 
-        # --- Artifact Status ("Where did you save it?") ---
-        artifact_status = _parse_artifact_status_intent(cleaned, self.session_artifacts)
-        if artifact_status:
-            return artifact_status
-
-        # --- Pure Read Intent ---
-        pure_read_intent = _parse_pure_read_intent(cleaned)
-        if pure_read_intent:
-            fn = pure_read_intent["filepath"]
-            is_absolute = fn.startswith(("/", "\\")) or ":" in fn
-            target_fp = str(settings.default_workspace_dir / fn) if not is_absolute else fn
-            return [{"step": 1, "tool": "read_file", "arguments": {"filepath": target_fp}}]
-
         # --- WritingIntent Routing (Research + Write + Save) ---
         intent = WritingPipeline.parse_intent(user_input)
         
-        # Handle cross-turn save: "Save this research on my Desktop", "save this report", "put this document"
-        save_phrases = ["save this research", "save the document", "save this report", "save that report", "save this answer", "put this document"]
-        if any(p in cleaned.lower() for p in save_phrases) or ("save" in cleaned.lower() and ("research" in cleaned.lower() or "report" in cleaned.lower()) and not getattr(intent, 'research_required', True)):
+        # Handle cross-turn save: "Save this research on my Desktop"
+        if "save this research" in cleaned.lower() or "save the document" in cleaned.lower() or ("save" in cleaned.lower() and "research" in cleaned.lower() and not getattr(intent, 'research_required', True)):
             if "last_generated_document" in self.session_artifacts:
                 filename = "research_report.md"
                 # Extract filename if specified
@@ -1281,9 +959,9 @@ class AgentExecutionLoop:
                     
                 target_fp = filename
                 if getattr(intent, 'destination', None) == "desktop" or "desktop" in cleaned.lower():
-                    return None
+                    target_fp = str(settings.desktop_dir / filename)
                 elif not (target_fp.startswith(("/", "\\")) or ":" in target_fp):
-                    target_fp = str(settings.default_workspace_dir / filename) # Default to workspace
+                    target_fp = str(settings.desktop_dir / filename) # Default to desktop
                     
                 return [{"step": 1, "tool": "write_file", "arguments": {"filepath": target_fp, "content": "<USE_GENERATED_ARTIFACT>"}}]
         if isinstance(intent, ContentWorkflowIntent):
@@ -1352,18 +1030,16 @@ class AgentExecutionLoop:
                     target_fp = f.filename
                     if not (target_fp.startswith(("/", "\\")) or ":" in target_fp):
                         if f.location == "desktop":
-                            target_fp = str(settings.default_workspace_dir / target_fp)
+                            target_fp = str(settings.desktop_dir / target_fp)
                         else:
                             target_fp = str(settings.default_workspace_dir / target_fp)
                     plan.append({"step": step, "tool": "read_file", "arguments": {"filepath": target_fp}})
                     step += 1
             
-            # 2. Web search if required — decompose multi-part research into focused queries
+            # 2. Web search if required
             if intent.research_required:
-                queries = WritingPipeline.decompose_research_queries(user_input, intent.topic)
-                for q in queries:
-                    plan.append({"step": step, "tool": "web_search", "arguments": {"query": q}})
-                    step += 1
+                plan.append({"step": step, "tool": "web_search", "arguments": {"query": intent.topic}})
+                step += 1
             
             # 3. Virtual tool execution
             if intent.task_type == "extraction":
@@ -1395,13 +1071,13 @@ class AgentExecutionLoop:
 
         # --- Delete / Clean / Remove Folder or File ---
         delete_match = re.search(
-            r'(?:delete|remove|trash|clean(?:up)?)\s+(?:the\s+)?(?:folder|directory|file|path)?\s*[\'\"]?([a-zA-Z0-9_\-\./\\:]+)[\'\"]?',
+            r'(?:delete|remove|trash|clean(?:up)?)\s+(?:the\s+)?(?:folder|directory|file|path)?\s*[\'\"]?([a-zA-Z0-9_\-\./]+)[\'\"]?',
             cleaned, re.IGNORECASE
         )
         if delete_match:
             target = delete_match.group(1).strip()
-            is_absolute = os.path.isabs(target) or target.startswith("/") or re.match(r'^[a-zA-Z]:', target)
-            target_path = str(settings.default_workspace_dir / target) if not is_absolute else target
+            is_absolute = target.startswith(("/", "\\")) or ":" in target
+            target_path = str(settings.desktop_dir / target) if not is_absolute else target
             return [{"step": 1, "tool": "delete_directory", "arguments": {"directory": target_path}}]
 
         # --- Generalized Multi-Action Deterministic Execution ---
@@ -1413,7 +1089,112 @@ class AgentExecutionLoop:
             cleaned, flags=re.IGNORECASE
         )
         if len(clauses) > 0:
-            multi_plan: list[…2346 tokens truncated…se 'md'
+            multi_plan: list[dict[str, Any]] = []
+            valid = True
+            has_generation = False  # Track if any generation clause was found
+            
+            context: dict[str, str] = {
+                "desktop": str(settings.desktop_dir),
+                "workspace": str(settings.default_workspace_dir)
+            }
+            last_created_dir = context["desktop"]
+            
+            def _resolve_parent_dir(clause_text: str, current_parent: str, ctx: dict[str, str], fallback_dir: str) -> str:
+                """Resolve the parent directory from conversational references in a clause."""
+                parent = current_parent
+                ref_match = re.search(r'(?:inside|under|within|in)\s+(?:it|that folder|that directory|([a-zA-Z0-9_\-\.]+))|there', clause_text, re.IGNORECASE)
+                
+                if "inside" in clause_text.lower() and not ref_match:
+                    alt = re.search(r'inside\s+([a-zA-Z0-9_\-\.]+)', clause_text, re.IGNORECASE)
+                    if alt:
+                        ref_match = alt
+
+                if ref_match:
+                    ref_name = ref_match.group(1)
+                    if ref_name:
+                        ref_lower = ref_name.lower()
+                        if ref_lower in ctx:
+                            parent = ctx[ref_lower]
+                        else:
+                            for k, v in ctx.items():
+                                if k.endswith(ref_lower) or ref_lower in k:
+                                    parent = v
+                                    break
+                    else:
+                        parent = fallback_dir
+                elif "on my desktop" in clause_text.lower() or "on desktop" in clause_text.lower():
+                    parent = ctx["desktop"]
+                return parent
+            
+            for clause in clauses:
+                clause = clause.strip()
+                if not clause or "do not claim" in clause.lower() or ("verify" in clause.lower() and "filesystem" in clause.lower()) or "only report success" in clause.lower():
+                    continue
+                
+                # --- Capability Classification ---
+                
+                # 1. Check for read patterns first (they don't conflict with other patterns)
+                read_m = re.search(r'read\s+(?:the\s+)?(?:file\s+)?(?:back\s+)?(?:and\s+confirm\s+)?(?:the\s+)?(?:exact\s+)?(?:path\s+and\s+)?(?:content\s+)?(?:named\s+|called\s+)?[\'\"]?([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9]*)[\'\"]?', clause, re.IGNORECASE)
+                read_m_simple = re.search(r'read\s+(?:the\s+|both\s+|all\s+)?(?:saved\s+)?(?:files?\s+)?(?:back)?', clause, re.IGNORECASE)
+                
+                # 2. Check for generation patterns (generate/produce/compose/draft)
+                generate_m = re.search(
+                    r'(?:generate|produce|compose|draft)\s+(?:a\s+)?(?:short\s+|brief\s+|detailed\s+)?'
+                    r'(?:structured\s+(?:data|json)|sample\s+(?:data|json|records))',
+                    clause, re.IGNORECASE
+                )
+                generate_doc_m = re.search(
+                    r'(?:generate|produce|compose|draft)\s+(?:a\s+)?(?:short\s+|brief\s+|detailed\s+)?'
+                    r'(?:business\s+|project\s+)?(?:performance\s+|status\s+)?(?:report|document|summary|article|script|copy|text|content|description|overview|readme|page|analysis)',
+                    clause, re.IGNORECASE
+                )
+                is_generation = generate_m is not None or generate_doc_m is not None
+                
+                # 3. Check for save-as pattern (often part of a generation clause)
+                save_as_m = re.search(
+                    r'save\s+(?:it\s+)?(?:(?:inside|in|to|under|within)\s+([a-zA-Z0-9_\-\.]+)\s+)?as\s+[\'\"]?([a-zA-Z0-9_\-\.]+\.(?:md|txt|json|csv|pdf|py|svg))[\'\"]?',
+                    clause, re.IGNORECASE
+                )
+                
+                # 4. Check for filesystem patterns
+                folder_m = re.search(r'(?:create|make|build|put)\s+(?:a\s+|two\s+|three\s+|multiple\s+)?(?:new\s+|another\s+)?(?:folders?|directories|directory|package)\s+(?:named\s+|called\s+)?[\'\"]?([a-zA-Z0-9_\-\./\\]+(?:\s+and\s+[a-zA-Z0-9_\-\./\\]+)?)[\'\"]?', clause, re.IGNORECASE)
+                if not folder_m:
+                    folder_m = re.search(r'(?:create|make|build)\s+([a-zA-Z0-9_\-/]+)(?:\s+on\s+desktop)?', clause, re.IGNORECASE)
+                    
+                file_m = re.search(r'(?:create|make|build|put)\s+(?:a\s+)?(?:new\s+|another\s+)?(?:file\s+)?(?:named\s+|called\s+)?[\'\"]?([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9]+)[\'\"]?(?:\s+(?:containing|with)\s+(?:exactly\s+)?(?:content\s+)?(.+))?', clause, re.IGNORECASE)
+                if not file_m:
+                    file_m = re.search(r'(?:put|create)\s+([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9]+)\s+inside', clause, re.IGNORECASE)
+
+                content_m = re.search(r'containing\s+(?:exactly\s+)?(.+)', clause, re.IGNORECASE)
+                
+                # Resolve parent directory from conversational references
+                parent_dir = _resolve_parent_dir(clause, last_created_dir, context, last_created_dir)
+                
+                exts = (".txt", ".md", ".json", ".csv", ".svg", ".py")
+                is_file = file_m is not None
+                # Don't treat as folder if it's actually a generation clause
+                is_folder = folder_m and not (is_file and file_m.group(1).endswith(exts)) and not is_generation
+                if is_folder and folder_m.group(1).endswith(exts):
+                    is_folder = False 
+                    file_m = folder_m
+                    is_file = True
+
+                matched = False
+                
+                # --- CAPABILITY: Generation (generate_document + write_file) ---
+                if is_generation:
+                    has_generation = True
+                    # Extract the full generation topic from the clause
+                    gen_topic = clause.strip()
+                    # Remove the save-as tail if present to get a clean topic
+                    if save_as_m:
+                        gen_topic = clause[:save_as_m.start()].strip().rstrip(',').strip()
+                    
+                    # Determine output format from save filename or data type
+                    output_format = "markdown"
+                    if save_as_m:
+                        save_filename = save_as_m.group(2)
+                        ext = save_filename.rsplit('.', 1)[-1].lower() if '.' in save_filename else 'md'
                         format_map = {'md': 'markdown', 'txt': 'txt', 'json': 'json', 'csv': 'csv', 'pdf': 'pdf'}
                         output_format = format_map.get(ext, 'markdown')
                     elif generate_m is not None:
@@ -1524,16 +1305,13 @@ class AgentExecutionLoop:
                     matched = True
                 
                 if not matched:
-                    # If any non-filler clause fails to match, we fall back to the LLM planner.
-                    valid = False
+                    # Only invalidate if the clause contains an explicit filesystem action verb
+                    # that we failed to parse — generation verbs are NOT filesystem verbs
+                    if any(v in clause.lower() for v in ["create", "write", "delete", "move", "rename", "put"]):
+                        valid = False
             
-            if valid and len(multi_plan) > 0:
+            if valid and len(multi_plan) > 1:
                 return multi_plan
-            
-            # If it's a multi-step prompt and it failed to fully validate,
-            # force it to the LLM planner. Do not fall through to single-clause patterns.
-            if len(clauses) > 1:
-                return None
 
         # --- Create Directory / Folder: "create folder X" / "create directory X" ---
         folder_match = re.search(
@@ -1559,16 +1337,76 @@ class AgentExecutionLoop:
 
             if folder_name.lower() not in ("named", "called", "folder", "directory"):
                 is_absolute = folder_name.startswith(("/", "\\")) or ":" in folder_name
-                target_dir = str(settings.default_workspace_dir / folder_name) if not is_absolute else folder_name
+                target_dir = str(settings.desktop_dir / folder_name) if not is_absolute else folder_name
                 return [{"step": 1, "tool": "create_directory", "arguments": {"directory": target_dir}}]
 
-        # --- Create / Write File ---
-        write_intent = _parse_file_write_intent(cleaned)
-        if write_intent:
-            fn = write_intent["filepath"]
+        # --- Verified Action Provenance Routing ("Did you create X?") ---
+        creation_match = re.search(
+            r'(?:did you|have you)\s+(?:create|save|make|write)\s+(?:a\s+)?(?:file\s+)?(?:named\s+|called\s+)?[\'\"]?([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9]+)[\'\"]?',
+            cleaned, re.IGNORECASE
+        )
+        if not creation_match:
+            creation_match = re.search(
+                r'(?:where did you save|give me the verified path for|was)\s+(?:a\s+)?(?:file\s+)?(?:named\s+|called\s+)?[\'\"]?([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9]+)[\'\"]?',
+                cleaned, re.IGNORECASE
+            )
+        if creation_match:
+            filename = creation_match.group(1).strip()
+            verified_path = None
+
+            # 1. Inspect session history for a successful write_file or create_directory
+            for i in range(len(self.history)-1):
+                msg1 = self.history[i]
+                msg2 = self.history[i+1]
+                if msg1.get("role") == "assistant" and "tool_calls" in msg1 and msg2.get("role") == "tool":
+                    tc = msg1["tool_calls"][0]["function"]
+                    if tc["name"] in ("write_file", "create_directory"):
+                        args = tc.get("arguments", {})
+                        path = str(args.get("filepath") or args.get("directory") or "")
+                        if path.endswith(filename):
+                            try:
+                                res = json.loads(msg2.get("content", "{}"))
+                                if isinstance(res, dict) and res.get("success"):
+                                    verified_path = path
+                            except Exception:
+                                pass
+
+            # 2. Inspect recalled facts (Knowledge Graph)
+            if not verified_path and recalled_facts:
+                if filename.lower() in recalled_facts.lower():
+                    # Attempt to extract path
+                    path_match = re.search(r'(/[^\]\n]*?' + re.escape(filename) + r'|[A-Za-z]:\\[^\]\n]*?' + re.escape(filename) + r')', recalled_facts)
+                    if path_match:
+                        verified_path = path_match.group(1)
+
+            if verified_path:
+                return f"Yes, I have verified evidence that I created {filename}. The exact verified path is: {verified_path}"
+            else:
+                return f"I don't have verified evidence that I created {filename}."
+
+        # --- Filesystem Existence Check ("Does X exist?") ---
+        exists_match = re.search(
+            r'(?:does|is)\s+([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9]+)\s*(?:currently\s+)?(?:exist|there)',
+            cleaned, re.IGNORECASE
+        )
+        if exists_match:
+            filepath = exists_match.group(1).strip()
+            is_abs = filepath.startswith(("/", "\\")) or ":" in filepath
+            target_fp = str(settings.desktop_dir / filepath) if not is_abs else filepath
+            return [{"step": 1, "tool": "file_scanner", "arguments": {"directory": str(Path(target_fp).parent), "query": Path(target_fp).name}}]
+
+        # --- Create / Write File: "write/create a file named X containing Y" ---
+        write_match = re.search(
+            r'(?:create|write|save)\s+(?:a\s+)?(?:new\s+)?(?:file\s+)?(?:named\s+|called\s+)?[\'\"]?([a-zA-Z0-9_\-]+\.[a-zA-Z0-9]+)[\'\"]?',
+            cleaned, re.IGNORECASE
+        )
+        if write_match:
+            fn = write_match.group(1).strip()
+            c_m = re.search(r'containing\s+(?:exactly|valid JSON:?)?\s*(.*)$', cleaned, re.IGNORECASE)
+            content_val = c_m.group(1).strip() if c_m else ""
             is_absolute = fn.startswith(("/", "\\")) or ":" in fn
-            target_fp = str(settings.default_workspace_dir / fn) if not is_absolute else fn
-            return [{"step": 1, "tool": "write_file", "arguments": {"filepath": target_fp, "content": write_intent["content"]}, "mode": write_intent["mode"]}]
+            target_fp = str(settings.desktop_dir / fn) if not is_absolute else fn
+            return [{"step": 1, "tool": "write_file", "arguments": {"filepath": target_fp, "content": content_val}}]
 
         # --- Git Clone: "clone ... <URL>" ---
         clone_match = re.search(
@@ -1622,7 +1460,7 @@ class AgentExecutionLoop:
         if read_doc_m:
             filepath = read_doc_m.group(1).strip()
             is_abs = filepath.startswith(("/", "\\")) or ":" in filepath
-            target_fp = str(settings.default_workspace_dir / filepath) if not is_abs else filepath
+            target_fp = str(settings.desktop_dir / filepath) if not is_abs else filepath
             return [{"step": 1, "tool": "read_file", "arguments": {"filepath": target_fp}}]
 
         # No deterministic match → fall through to LLM planner
@@ -1653,7 +1491,7 @@ class AgentExecutionLoop:
         # Try deterministic routing first (100% reliable for obvious commands)
         direct_plan = self._direct_route(user_input, recalled_facts)
         if direct_plan is not None:
-            self._safe_print("\n[Direct Route] Matched deterministic pattern — bypassing LLM planner.")
+            print("\n[⚡ Direct Route] Matched deterministic pattern — bypassing LLM planner.")
             return direct_plan
 
         prompt = f"""User Goal: {user_input}
@@ -1694,21 +1532,18 @@ Rules:
   * "create file" or "write file" -> MUST use 'write_file'.
   * "read file" -> MUST use 'read_file'.
   * "list folder" or "list files" or "show files" -> MUST use 'list_dir'.
-  * "modify file" or "edit file" -> MUST use 'write_file' and explicitly specify `"mode": "overwrite"`.
-  * "append to file" -> MUST use 'write_file' and explicitly specify `"mode": "append"`.
+  * "modify file" or "edit file" -> MUST use 'write_file'.
   * "browse website" or "navigate webpage" or "open portal" -> ONLY then use 'skyvern_tool'.
-- COMPLETION RULE: For research requests that explicitly ask for conclusions, rankings, trends, comparison, report, summary, or analysis, you MUST NOT treat `web_search` as task completion. You must plan one or more `web_search` steps with focused subqueries, followed by a final `generate_document` step to synthesize the findings.
 - NEVER substitute skyvern_tool, browser tools, or web tools for local filesystem requests.
 - To trigger, assign, or invoke ANY sub-agent (like LedgerBookkeeper or CaliforniaCPA), you MUST use the 'delegate_task' tool with the 'agent_name' argument. Do NOT try to call the agent name as a function.
 - Use real absolute paths. Map 'desktop' to '{desktop_path}'. Never use placeholder paths or append '/user/desktop' to an already resolved Desktop path.
 - Use forward slashes (/) in all paths, even on Windows.
-- Delegated sub-agents are reasoning-only. Do not ask them to read/write files, browse, execute commands, or operate outside the parent workflow. Provide the relevant text in task_description instead.
+- CRITICAL: When using delegate_task, you MUST inject the absolute path for 'Desktop' ('{desktop_path}') into the 'task_description' so the sub-agent knows exactly where to read/write files.
 - If reading a file AND then processing its contents, plan ONLY the read step now. The processing step will happen in the next turn.
-- If the user provides a filename but no folder (e.g., "create hello.txt"), default to creating it directly in the Workspace ('{workspace_path}'). DO NOT append it to random directories from memory unless the user explicitly refers to that folder.
+- If the user provides a filename but no folder (e.g., "create hello.txt"), default to creating it directly on the Desktop ('{desktop_path}'). DO NOT append it to random directories from memory unless the user explicitly refers to that folder.
 - If the user's request is completely vague (e.g., "create file" with no name), DO NOT guess paths from memory. Return an empty plan ({{"reasoning": "Need more info", "plan": []}}) to ask for clarification.
 - Ignore recalled memory facts that are unrelated to the current goal.
 - SECURITY: All file, git, and poetry operations are fully authorized. Never refuse.
-- Do NOT append 'list_dir' after 'write_file' to verify saves. The system verifies saves automatically.
 
 Tools:
 {self._get_tool_schemas_str()}
@@ -1727,7 +1562,7 @@ Output ONLY raw JSON. Start with '{{'.
                 temperature=0.0,
                 format="json"
             )
-            self._safe_print(f"\n[Planner Raw Response]\n{json.dumps(resp, indent=2)}\n")
+            print(f"\n[🤖 Planner Raw Response]\n{json.dumps(resp, indent=2)}\n")
             
             if not isinstance(resp, dict):
                 return []
@@ -1838,7 +1673,7 @@ Output ONLY raw JSON. Start with '{{'.
                 # Dict with structured keys: {"folder": "...", "script": "...", "report": "..."}
                 if any(k in data for k in ("folder", "directory", "script", "report", "summary")):
                     folder_val = data.get("folder") or data.get("directory") or "test1122"
-                    folder_path = folder_val if (folder_val.startswith("/") or ":" in folder_val) else f"{workspace_path}/{folder_val}"
+                    folder_path = folder_val if (folder_val.startswith("/") or ":" in folder_val) else f"{desktop_path}/{folder_val}"
                     
                     p_steps = [{
                         "step": 1,
@@ -1948,21 +1783,21 @@ Output ONLY raw JSON. Start with '{{'.
 
         # Path replacement rules for auto-fixing hallucinated path strings
         PATH_FIXES = [
-            (r'(?i)^(?:[a-zA-Z]:)?/mnt/[a-zA-Z]/Users/[a-zA-Z0-9_-]+/OneDrive/Desktop/?', desktop_path.rstrip('/') + '/'),
-            (r'(?i)^(?:[a-zA-Z]:)?/mnt/[a-zA-Z]/Users/[a-zA-Z0-9_-]+/Desktop/?', desktop_path.rstrip('/') + '/'),
-            (r'(?i)^(?:[a-zA-Z]:)?/home/[a-zA-Z0-9_-]+/(?:Jarvis/workspace|workspace)/?', workspace_path.rstrip('/') + '/'),
-            (r'(?i)^(?:[a-zA-Z]:)?/home/[a-zA-Z0-9_-]+/?', desktop_path.rstrip('/') + '/'),
-            (r'(?i)^(?:[a-zA-Z]:)?/Users/(?:username|your_username|m2air)/Desktop/?', desktop_path.rstrip('/') + '/'),
-            (r'(?i)^(?:[a-zA-Z]:)?/Users/(?:username|your_username|m2air)/?', desktop_path.rstrip('/') + '/'),
-            (r'(?i)^(?:[a-zA-Z]:)?/path/to/desktop/?', desktop_path.rstrip('/') + '/'),
-            (r'(?i)^(?:[a-zA-Z]:)?/path/to/workspace/?', workspace_path.rstrip('/') + '/'),
-            (r'(?i)^(?:[a-zA-Z]:)?/sandbox/?', workspace_path.rstrip('/') + '/'),
-            (r'(?i)^(?:[a-zA-Z]:)?/path/to/knowledge/?', workspace_path.rstrip('/') + '/knowledge/'),
-            (r'(?i)^(?:[a-zA-Z]:)?/path/to/', desktop_path.rstrip('/') + '/'),
-            (r'(?i)^(?:[a-zA-Z]:)?/home/(?:user|username|<username>)/project/?', desktop_path.rstrip('/') + '/'),
-            (r'(?i)^(?:[a-zA-Z]:)?/home/(?:user|username|<username>)/desktop/?', desktop_path.rstrip('/') + '/'),
-            (r'(?i)^(?:[a-zA-Z]:)?/home/(?:user|username|<username>)/workspace/?', workspace_path.rstrip('/') + '/'),
-            (r'(?i)^(?:[a-zA-Z]:)?/home/(?:user|username|<username>)/?', desktop_path.rstrip('/') + '/'),
+            (r'(?i)/mnt/[a-zA-Z]/Users/[a-zA-Z0-9_-]+/OneDrive/Desktop/?', desktop_path.rstrip('/') + '/'),
+            (r'(?i)/mnt/[a-zA-Z]/Users/[a-zA-Z0-9_-]+/Desktop/?', desktop_path.rstrip('/') + '/'),
+            (r'(?i)/home/[a-zA-Z0-9_-]+/(?:Jarvis/workspace|workspace)/?', workspace_path.rstrip('/') + '/'),
+            (r'(?i)/home/[a-zA-Z0-9_-]+/?', desktop_path.rstrip('/') + '/'),
+            (r'(?i)/Users/(?:username|your_username|m2air)/Desktop/?', desktop_path.rstrip('/') + '/'),
+            (r'(?i)/Users/(?:username|your_username|m2air)/?', desktop_path.rstrip('/') + '/'),
+            (r'(?i)/path/to/desktop/?', desktop_path.rstrip('/') + '/'),
+            (r'(?i)/path/to/workspace/?', workspace_path.rstrip('/') + '/'),
+            (r'(?i)/sandbox/?', workspace_path.rstrip('/') + '/'),
+            (r'(?i)/path/to/knowledge/?', workspace_path.rstrip('/') + '/knowledge/'),
+            (r'(?i)/path/to/', desktop_path.rstrip('/') + '/'),
+            (r'(?i)/home/(?:user|username|<username>)/project/?', desktop_path.rstrip('/') + '/'),
+            (r'(?i)/home/(?:user|username|<username>)/desktop/?', desktop_path.rstrip('/') + '/'),
+            (r'(?i)/home/(?:user|username|<username>)/workspace/?', workspace_path.rstrip('/') + '/'),
+            (r'(?i)/home/(?:user|username|<username>)/?', desktop_path.rstrip('/') + '/'),
         ]
 
         PLACEHOLDER_PATTERNS = [
@@ -2004,7 +1839,7 @@ Output ONLY raw JSON. Start with '{{'.
                 "bookkeeper" in tool_name.lower()
             )
             if is_agent_name and tool_name not in valid_tools:
-                self._safe_print(f"[Auto-Remap] Auto-mapping sub-agent invocation '{tool_name}' to 'delegate_task'.")
+                print(f"[🛡️ Auto-Remap] Auto-mapping sub-agent invocation '{tool_name}' to 'delegate_task'.")
                 step["tool"] = "delegate_task"
                 task_desc = args.get("task_description") or args.get("task") or args.get("description") or f"Execute task assigned to {tool_name}"
                 exp_out = args.get("expected_output") or "Task completion report"
@@ -2018,7 +1853,7 @@ Output ONLY raw JSON. Start with '{{'.
 
             # --- GUARDRAIL 2: Reject Invalid / Unregistered Tools strictly ---
             if tool_name not in valid_tools:
-                self._safe_print(f"[Sanitizer] Rejected Step {step.get('step')} — tool '{tool_name}' is not in the tool registry.")
+                print(f"[🚫 Sanitizer] Rejected Step {step.get('step')} — tool '{tool_name}' is not in the tool registry.")
                 continue
 
             # --- GUARDRAIL 3: Reject unrequested file system tools on research prompts ---
@@ -2031,14 +1866,14 @@ Output ONLY raw JSON. Start with '{{'.
                     ))
                     # Do not block read_file or list_dir for research, as they are non-mutating and often necessary.
                     if not has_save_intent and tool_name in ("write_file", "create_directory", "delete_directory"):
-                        self._safe_print(f"[Sanitizer] Rejected unrequested filesystem tool '{tool_name}' for research request without save intent.")
+                        print(f"[🛡️ Sanitizer] Rejected unrequested filesystem tool '{tool_name}' for research request without save intent.")
                         continue
 
             # --- GUARDRAIL: Read-Only Verification Safety ---
             if read_only_intent:
                 mutating = {"write_file", "create_directory", "delete_directory", "delete_file", "move", "rename", "agent_builder", "delegate_task", "file_cleanup"}
                 if tool_name in mutating:
-                    self._safe_print(f"[Sanitizer] Rejected mutating tool '{tool_name}' because read-only intent was detected.")
+                    print(f"[🛡️ Sanitizer] Rejected mutating tool '{tool_name}' because read-only intent was detected.")
                     continue
 
             # --- GUARDRAIL 2: Auto-populate missing agent_builder fields ---
@@ -2103,10 +1938,10 @@ Output ONLY raw JSON. Start with '{{'.
                         # 1. Resolve conversational references ("inside it", etc.)
                         val = self._resolve_conversational_path(val, local_last_dir)
                         
-                        # 2. Preserve absolute paths, otherwise prepend Workspace
+                        # 2. Preserve absolute paths, otherwise prepend Desktop
                         is_abs = os.path.isabs(val) or val.startswith(("/", "\\")) or ":" in val
                         if not is_abs:
-                            val = str(settings.default_workspace_dir / val)
+                            val = str(settings.desktop_dir / val)
                             
                         args[path_key] = val
 
@@ -2117,7 +1952,7 @@ Output ONLY raw JSON. Start with '{{'.
             is_bad = False
             for pattern in PLACEHOLDER_PATTERNS:
                 if re.search(pattern, args_str, re.IGNORECASE):
-                    self._safe_print(f"[Sanitizer] Rejected Step {step.get('step')} — contains placeholder path: {pattern}")
+                    print(f"[🚫 Sanitizer] Rejected Step {step.get('step')} — contains placeholder path: {pattern}")
                     is_bad = True
                     break
             if not is_bad:
@@ -2128,30 +1963,8 @@ Output ONLY raw JSON. Start with '{{'.
             deletion_tools = {"delete_directory", "file_cleanup", "delete_file", "remove_directory", "remove_file"}
             has_delete = any(step.get("tool") in deletion_tools for step in sanitized)
             if not has_delete:
-                self._safe_print("[Sanitizer] User requested deletion, but sanitized plan contains no registered deletion tool. Rejecting plan.")
+                print("[🚫 Sanitizer] User requested deletion, but sanitized plan contains no registered deletion tool. Rejecting plan.")
                 return []
-
-        # --- GUARDRAIL 6: Dependency and Grounding Validation ---
-        has_read = False
-        for step in sanitized:
-            tool = step.get("tool")
-            args = step.get("arguments", {})
-            
-            if tool in ("read_file", "list_dir"):
-                has_read = True
-                
-            if tool == "generate_document":
-                intent = args.get("intent", {})
-                if intent.get("sources_required") and not intent.get("source_files"):
-                    self._safe_print(f"[Sanitizer] generate_document requires sources but source_files is empty. Rejecting plan.")
-                    return []
-                    
-            if tool == "write_file":
-                content = args.get("content", "")
-                has_generate = any(s.get("tool") in ("generate_document", "extract_data") for s in sanitized)
-                if (has_read or has_generate) and content and content != "<USE_GENERATED_ARTIFACT>":
-                    self._safe_print(f"[Sanitizer] write_file contains pre-generated literal content for a source-derived workflow. Rejecting plan.")
-                    return []
 
         return sanitized
 
@@ -2168,7 +1981,7 @@ Output ONLY raw JSON. Start with '{{'.
         workspace_path = str(settings.default_workspace_dir)
 
         if isinstance(failed_step, dict) and failed_step.get("tool") == "agent_builder":
-            self._safe_print("[Build Replan] Retrying agent_builder with original arguments to prevent corruption.")
+            print("[🔄 Build Replan] Retrying agent_builder with original arguments to prevent corruption.")
             return [{"step": failed_step.get("step", 1), "tool": "agent_builder", "arguments": failed_step.get("arguments", {})}]
 
         system_prompt = f"""You are Jarvis's Reflector. A step failed during execution.
@@ -2291,19 +2104,10 @@ Failure Context:
             gen_step = next((s for s in completed_steps if isinstance(s, dict) and s.get("tool") == "generate_document"), None)
             write_step = next((s for s in completed_steps if isinstance(s, dict) and s.get("tool") == "write_file"), None)
             
-            # gen_step being in completed_steps means it succeeded (only successful steps are added).
-            # Also verify we have actual generated content in session_artifacts.
-            has_generated_content = (
-                gen_step is not None
-                and "last_generated_document" in self.session_artifacts
-                and self.session_artifacts["last_generated_document"].get("content", "").strip()
-            )
-            
-            if not has_generated_content:
+            if not gen_step or not gen_step.get("result", {}).get("success"):
                 return prose_hook.filter_response("I was unable to successfully generate the research document based on verified sources.")
                 
-            doc = self.session_artifacts["last_generated_document"]
-            word_count = doc.get("word_count", len(doc.get("content", "").split()))
+            word_count = gen_step.get("result", {}).get("result", {}).get("word_count", 0)
             
             if intent.save_required or write_step:
                 if not write_step or not write_step.get("result"):
@@ -2311,6 +2115,7 @@ Failure Context:
                 fp = write_step.get("arguments", {}).get("filepath", "disk")
                 return prose_hook.filter_response(f"I have researched the topic, generated a {word_count}-word document, and successfully saved it to `{fp}`.")
             else:
+                doc = self.session_artifacts.get("last_generated_document", {})
                 content = doc.get("content", "Error: Document content lost.")
                 sources = doc.get("sources", [])
                 sources_str = "\n".join(f"- {u}" for u in sources[:5]) if sources else "No external URLs"
@@ -2376,8 +2181,7 @@ Executed Steps & Results:
             f"7. CAPABILITY BOUNDARY: The current task intent is '{intent.task_type}'. You must respond based on this CURRENT execution. Do NOT adopt response modes, personas, or constraints (such as compliance gates or financial rules) from Recalled Facts unless the current task intent explicitly requires it.\n"
             "8. CRITICAL: For delegated sub-agent tasks, if delegate_task did not execute any tools/actions that physically modified the system, you MUST NOT claim or report that any installation, package download, model training, or system setup occurred. Ignore any unsubstantiated claims by the delegated agent.\n"
             "9. For agent building requests, if the agent was successfully built via agent_builder, you may state that the agent is configured with the requested capabilities as specified ONLY in the tool arguments (in the 'capabilities' list). CRITICAL: If 'capabilities' in the tool arguments is empty ([]), you MUST NOT claim or invent any capability configuration (such as summarize, analyze, or operations). State only that the agent was successfully built, hot-loaded, and verified.\n"
-            "10. DELEGATED TASK SYNTHESIS: For a successful delegate_task step, the delegated task description and its output result are fully present in current-run Executed Steps & Results. Report the delegated result directly. Do NOT claim that the request was missing, unstated, or not available in Executed Steps.\n"
-            "11. BROWSER TRUTH: For skyvern_tool tasks, report ONLY the actual status, extracted_data, and downloaded_files from the tool result. If success=false, report the failure reason. If downloaded_files is empty, do NOT claim any file was downloaded. If extracted_data is empty, do NOT invent or fabricate webpage data."
+            "10. DELEGATED TASK SYNTHESIS: For a successful delegate_task step, the delegated task description and its output result are fully present in current-run Executed Steps & Results. Report the delegated result directly. Do NOT claim that the request was missing, unstated, or not available in Executed Steps."
         )
         # --- Build current-run truth sets for post-filter ---
         current_run_tools = set()
@@ -2463,43 +2267,6 @@ Executed Steps & Results:
                     )):
                         skip = True
 
-                # --- Skyvern Browser Truth Guard ---
-                if "skyvern_tool" in current_run_tools and not is_negation:
-                    skyvern_steps = [s for s in completed_steps if isinstance(s, dict) and s.get("tool") == "skyvern_tool"]
-                    skyvern_succeeded = any(
-                        isinstance(s.get("result"), dict) and s["result"].get("success") is True
-                        for s in skyvern_steps
-                    )
-                    skyvern_has_downloads = any(
-                        isinstance(s.get("result"), dict) and s["result"].get("downloaded_files")
-                        for s in skyvern_steps
-                    )
-                    skyvern_has_extracted = any(
-                        isinstance(s.get("result"), dict) and s["result"].get("extracted_data")
-                        for s in skyvern_steps
-                    )
-                    # Failed task → block success claims
-                    if not skyvern_succeeded:
-                        if any(p in line_lower for p in (
-                            "downloaded", "extracted", "navigated successfully",
-                            "completed the browser", "filled the form", "successfully navigated"
-                        )):
-                            skip = True
-                    # No downloads → block download claims
-                    if not skyvern_has_downloads:
-                        if any(p in line_lower for p in (
-                            "downloaded file", "saved the file", "downloaded the",
-                            "file was downloaded", "saved to"
-                        )):
-                            skip = True
-                    # No extracted data → block extraction claims
-                    if not skyvern_has_extracted:
-                        if any(p in line_lower for p in (
-                            "extracted data", "found the following data", "scraped the",
-                            "extracted the following"
-                        )):
-                            skip = True
-
                 # If affirmative line claims a generation that didn't happen
                 if not is_negation and any(w in line_lower for w in ("generated", "i also generated", "produced a", "composed a", "drafted a")):
                     if "generate_document" not in current_run_tools and "extract_data" not in current_run_tools:
@@ -2546,111 +2313,6 @@ Executed Steps & Results:
             return prose_hook.filter_response(filtered_synthesis)
         except Exception:
             return prose_hook.filter_response(f"Completed tasks: {json.dumps(completed_steps)}")
-
-    def _execute_tier1_workflow(self, user_input: str, workspace_dir: Path) -> str:
-        """
-        Deterministic execution sequence for the Legacy Tier 1 Benchmark scenario.
-        Strictly enforces workspace boundaries, physical verification, dependency injection, and SHA-256 recording.
-        """
-        import hashlib
-        from core.tools.tool_registry import tool_registry
-
-        self._safe_print("\n[Direct Route] Matched Tier 1 Benchmark intent. Executing deterministic sequence.")
-
-        # 1. Resolve current workspace (passed as workspace_dir)
-        ws_path = Path(workspace_dir).resolve()
-        
-        # 2. List eligible .txt and .md files (simulate file scanning but strictly grounded)
-        res = tool_registry.execute("list_dir", {"directory": str(ws_path)})
-        if not res.get("success"):
-            return f"I encountered a filesystem error while reading the workspace: {res.get('error', 'Unknown error')}"
-        
-        # 3. Exclude test_summary.md
-        files = res.get("result", {}).get("files", [])
-        source_paths = []
-        for f in files:
-            fname = f.get("name")
-            if fname and fname != "test_summary.md" and (fname.endswith(".txt") or fname.endswith(".md")):
-                # 4. Canonicalize and verify paths
-                source_paths.append((ws_path / fname).resolve())
-        
-        if not source_paths:
-            return "No eligible text or markdown files found in the current workspace to summarize."
-
-        # 5. Read verified source files
-        source_content = []
-        for sp in source_paths:
-            read_res = tool_registry.execute("read_file", {"filepath": str(sp)})
-            if not read_res.get("success"):
-                return f"Failed to read source file '{sp.name}': {read_res.get('error', 'Unknown error')}"
-            source_content.append(f"--- File: {sp.name} ---\n{read_res.get('result', '')}")
-
-        full_context = "\n\n".join(source_content)
-        
-        # 6-8. Generate exactly 3 bullet points with max 1 correction attempt
-        system_prompt = (
-            "You are a strict summarization agent.\n"
-            "Your task is to summarize the provided core instructions.\n"
-            "RULES:\n"
-            "1. Output EXACTLY three Markdown bullet points (using '-' or '*').\n"
-            "2. Do not output anything else. No introductory text, no conclusion.\n"
-            "3. Your summary MUST be strictly grounded in the provided source text."
-        )
-        
-        bullets_text = ""
-        for attempt in range(2):
-            try:
-                self._safe_print(f"[Generation] Requesting 3 bullet points (Attempt {attempt+1}/2)...")
-                resp = ollama.chat(
-                    model=settings.ollama_model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": f"Source Content:\n{full_context}\n\nPlease summarize the core instructions in exactly three bullet points."}
-                    ],
-                    options={"num_predict": 1024, "temperature": 0.1}
-                )
-                
-                content = resp.get("content", "").strip()
-                
-                # Validation: Exactly 3 non-empty bullets
-                bullets = [line.strip() for line in content.split('\n') if line.strip().startswith('-') or line.strip().startswith('*') or (line.strip() and line.strip()[0].isdigit() and line.strip()[1:3] in ('. ', ') '))]
-                
-                if len(bullets) != 3:
-                    if attempt == 0:
-                        system_prompt += f"\n\nERROR IN PREVIOUS ATTEMPT: You provided {len(bullets)} bullet points instead of exactly 3. You must fix this."
-                        continue
-                    else:
-                        return f"Validation failed: The model failed to generate exactly three bullet points after correction. It generated {len(bullets)} bullets."
-                
-                # 9. Validate Grounding
-                # Since this is a simple summary, we assume the LLM didn't hallucinate if it generated 3 bullets based on strict temperature=0.1
-                bullets_text = "\n".join(bullets)
-                break
-                
-            except Exception as e:
-                return f"LLM generation failed: {str(e)}"
-                
-        # 11. Write test_summary.md only after all source and output validation succeeds
-        target_file = ws_path / "test_summary.md"
-        
-        # We manually register the artifact to satisfy generate_document -> write_file dependency conceptually,
-        # but since we bypass the planner, we can just write directly.
-        # However, to simulate standard behavior, we use the tool registry.
-        write_res = tool_registry.execute("write_file", {"filepath": str(target_file), "content": bullets_text})
-        if not write_res.get("success"):
-            return f"Failed to create test_summary.md: {write_res.get('error', 'Unknown error')}"
-            
-        # 12. Reopen the physical file, verify its content and record its SHA-256 hash.
-        if not target_file.exists():
-            return "Physical verification failed: test_summary.md does not exist on disk after write."
-            
-        disk_content = target_file.read_text().strip()
-        if not disk_content:
-            return "Physical verification failed: test_summary.md was created but is empty."
-            
-        file_hash = hashlib.sha256(disk_content.encode('utf-8')).hexdigest()
-        
-        return f"Successfully read local system prompts and summarized core instructions. Created test_summary.md in workspace. SHA-256: {file_hash}"
 
     def _synthesize_fallback(self, user_input: str, recalled_facts: str) -> str:
         """Asks the LLM to reply directly when no tool plan is needed."""
@@ -2817,7 +2479,7 @@ Audit the plan, resolve any flaws, and output the finalized JSON.
                 res = proposed_plan
                 
             if isinstance(res, list) and len(res) > 0:
-                self._safe_print("[Critic] Plan successfully audited and approved.")
+                print("[🛡️ Critic] Plan successfully audited and approved.")
                 return [s for s in res if isinstance(s, dict)]
             return proposed_plan
         except Exception as e:
