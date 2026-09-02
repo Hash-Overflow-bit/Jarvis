@@ -36,7 +36,11 @@ _legacy.record_action = _record_action_proxy
 
 
 def _public_url(text: str) -> str | None:
-    match = re.search(r"(?:https?://|www\.)[^\s<>()\[\]{}]+", text or "", re.IGNORECASE)
+    match = re.search(
+        r"(?:https?://|www\.|(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,})[^\s<>()\[\]{}]*",
+        text or "",
+        re.IGNORECASE,
+    )
     if not match:
         return None
     from core.tools.public_web import normalize_public_url
@@ -46,11 +50,32 @@ def _public_url(text: str) -> str | None:
     return url if parsed.scheme in {"http", "https"} and parsed.netloc else None
 
 
+_SITE_ALIASES = {
+    "google": "https://www.google.com",
+    "youtube": "https://www.youtube.com",
+    "github": "https://github.com",
+    "wikipedia": "https://www.wikipedia.org",
+    "linkedin": "https://www.linkedin.com",
+    "reddit": "https://www.reddit.com",
+}
+
+
+def _site_alias_url(text: str) -> str | None:
+    """Return a URL only for a clearly requested, known public site."""
+    match = re.search(
+        r"\b(?:open|browse|navigate(?:\s+to)?|go\s+to|visit)\s+(?:the\s+)?"
+        r"([A-Za-z]+)\b",
+        text or "",
+        re.IGNORECASE,
+    )
+    return _SITE_ALIASES.get(match.group(1).lower()) if match else None
+
+
 class AgentExecutionLoop(_legacy.AgentExecutionLoop):
     """Verified execution loop with small, explicit current-policy adapters."""
 
     def _direct_route(self, user_input: str, recalled_facts: str = ""):
-        url = _public_url(user_input)
+        url = _public_url(user_input) or _site_alias_url(user_input)
         lowered = (user_input or "").lower()
         read_only_verbs = ("read", "fetch", "summarize", "summarise", "extract", "find", "get")
         browser_verbs = ("open", "browse", "navigate", "go to", "visit")

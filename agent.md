@@ -397,3 +397,10 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 - Normalized common pasted `www.` links and trailing punctuation, and rejected
   login, form, click, upload/download, payment, and booking requests rather
   than treating them as browser automation.
+
+## Session 22 — Known Site Alias Routing
+
+- Added deterministic aliases for explicit requests to open Google, YouTube,
+  GitHub, Wikipedia, LinkedIn, and Reddit in the system default browser.
+- Added support for explicit bare hostnames such as `open google.com`; DNS and
+  public-address validation still occur before the browser is launched.

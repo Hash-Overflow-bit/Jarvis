@@ -45,6 +45,8 @@ def test_router_sends_explicit_external_actions_to_agent(prompt):
     "prompt",
     [
         "Open https://example.com",
+        "Open google",
+        "Open youtube",
         "Please visit www.example.com/docs.",
         "Read https://example.com and summarize it.",
     ],
@@ -69,6 +71,21 @@ def test_session_open_url_executes_the_browser_tool_not_the_chat_model():
         "Opened https://example.com/docs in your default browser. "
         "I did not interact with the website."
     )
+
+
+def test_session_open_site_alias_executes_the_browser_tool_not_the_chat_model():
+    session = SessionManager(use_tools=True, system_prompt="Be concise.")
+
+    with patch(
+        "core.tools.public_web.socket.getaddrinfo", side_effect=_public_dns
+    ), patch(
+        "core.tools.public_web.webbrowser.open", return_value=True
+    ) as open_browser, patch("core.orchestrator.agent_loop.ollama.chat") as llm:
+        result = session.chat("Open YouTube")
+
+    open_browser.assert_called_once_with("https://www.youtube.com", new=2)
+    llm.assert_not_called()
+    assert result.startswith("Opened https://www.youtube.com in your default browser.")
 
 
 def test_tool_enabled_session_uses_one_direct_call_for_normal_chat():

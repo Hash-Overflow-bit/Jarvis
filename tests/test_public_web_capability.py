@@ -17,6 +17,7 @@ def test_open_url_uses_default_browser_only_for_public_https_url():
 
 def test_open_url_normalizes_common_pasted_url_punctuation():
     assert normalize_public_url("www.example.com/docs).") == "https://www.example.com/docs"
+    assert normalize_public_url("google.com/search?q=jarvis") == "https://google.com/search?q=jarvis"
 
 
 def test_public_web_blocks_local_urls_before_fetch_or_open():
@@ -46,6 +47,8 @@ def test_direct_route_uses_open_for_open_and_fetch_for_reading():
     loop = AgentExecutionLoop()
     assert loop._direct_route("Open https://example.com") == [{"step": 1, "tool": "open_url", "arguments": {"url": "https://example.com"}}]
     assert loop._direct_route("Read https://example.com and summarize it") == [{"step": 1, "tool": "fetch_url", "arguments": {"url": "https://example.com"}}]
+    assert loop._direct_route("Open google") == [{"step": 1, "tool": "open_url", "arguments": {"url": "https://www.google.com"}}]
+    assert loop._direct_route("Open youtube") == [{"step": 1, "tool": "open_url", "arguments": {"url": "https://www.youtube.com"}}]
 
 
 def test_direct_route_normalizes_explicit_www_open_and_ignores_a_bare_link():

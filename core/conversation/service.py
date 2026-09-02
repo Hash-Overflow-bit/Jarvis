@@ -22,12 +22,17 @@ class ConversationRouter:
     # an explicit action verb must reach the tool loop rather than the chat
     # model, which would otherwise reply with text instead of performing it.
     _PUBLIC_URL = re.compile(
-        r"(?:https?://|www\.)[^\s<>()\[\]{}]+",
+        r"(?:https?://|www\.|(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,})[^\s<>()\[\]{}]*",
         re.IGNORECASE,
     )
     _URL_ACTION = re.compile(
         r"\b(?:open|browse|navigate(?:\s+to)?|go\s+to|visit|read|fetch|"
         r"summari[sz]e|extract|find|get)\b",
+        re.IGNORECASE,
+    )
+    _SITE_ALIAS_ACTION = re.compile(
+        r"\b(?:open|browse|navigate(?:\s+to)?|go\s+to|visit)\s+(?:the\s+)?"
+        r"(?:google|youtube|github|wikipedia|linkedin|reddit)\b",
         re.IGNORECASE,
     )
 
@@ -54,6 +59,8 @@ class ConversationRouter:
         text = (user_input or "").strip()
         if not text:
             return False
+        if self._SITE_ALIAS_ACTION.search(text):
+            return True
         if self._PUBLIC_URL.search(text) and self._URL_ACTION.search(text):
             return True
         if self._EXTERNAL_ACTION.search(text):

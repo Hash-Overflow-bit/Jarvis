@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 import socket
 import webbrowser
 from datetime import datetime, timezone
@@ -22,7 +23,11 @@ class PublicWebError(ValueError):
 def normalize_public_url(raw_url: str) -> str:
     """Normalize a user-pasted public URL without changing its destination."""
     url = (raw_url or "").strip().strip("<>").rstrip(".,;:!?)]}")
-    if url.lower().startswith("www."):
+    is_bare_public_host = re.fullmatch(
+        r"(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?::\d{1,5})?(?:[/?#][^\s]*)?",
+        url,
+    )
+    if url.lower().startswith("www.") or is_bare_public_host:
         url = f"https://{url}"
     return url
 
