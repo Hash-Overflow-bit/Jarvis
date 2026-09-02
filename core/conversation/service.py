@@ -18,6 +18,19 @@ from core.llm.prose_hook import prose_hook
 class ConversationRouter:
     """Deterministically separate tool-free text from actionable requests."""
 
+    # A URL by itself may only be text the user is sharing. A URL paired with
+    # an explicit action verb must reach the tool loop rather than the chat
+    # model, which would otherwise reply with text instead of performing it.
+    _PUBLIC_URL = re.compile(
+        r"(?:https?://|www\.)[^\s<>()\[\]{}]+",
+        re.IGNORECASE,
+    )
+    _URL_ACTION = re.compile(
+        r"\b(?:open|browse|navigate(?:\s+to)?|go\s+to|visit|read|fetch|"
+        r"summari[sz]e|extract|find|get)\b",
+        re.IGNORECASE,
+    )
+
     _FILE_TARGET = re.compile(
         r"(?:\b(?:file|files|document|documents|folder|directory|workspace|desktop|path)\b|"
         r"(?:^|\s)[A-Za-z0-9_.-]+\.(?:txt|md|csv|json|pdf|docx|xlsx|py)\b)",
@@ -41,6 +54,8 @@ class ConversationRouter:
         text = (user_input or "").strip()
         if not text:
             return False
+        if self._PUBLIC_URL.search(text) and self._URL_ACTION.search(text):
+            return True
         if self._EXTERNAL_ACTION.search(text):
             return True
         return bool(self._FILE_ACTION.search(text) and self._FILE_TARGET.search(text))

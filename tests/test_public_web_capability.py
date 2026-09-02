@@ -1,7 +1,7 @@
 from unittest.mock import Mock, patch
 
 from core.orchestrator.agent_loop import AgentExecutionLoop
-from core.tools.public_web import FetchURL, FetchURLInput, OpenURL, OpenURLInput
+from core.tools.public_web import FetchURL, FetchURLInput, OpenURL, OpenURLInput, normalize_public_url
 
 
 def _public_dns(*_args, **_kwargs):
@@ -13,6 +13,10 @@ def test_open_url_uses_default_browser_only_for_public_https_url():
         result = OpenURL().run(OpenURLInput(url="https://example.com/docs"))
     assert result.success
     open_browser.assert_called_once_with("https://example.com/docs", new=2)
+
+
+def test_open_url_normalizes_common_pasted_url_punctuation():
+    assert normalize_public_url("www.example.com/docs).") == "https://www.example.com/docs"
 
 
 def test_public_web_blocks_local_urls_before_fetch_or_open():
@@ -42,3 +46,25 @@ def test_direct_route_uses_open_for_open_and_fetch_for_reading():
     loop = AgentExecutionLoop()
     assert loop._direct_route("Open https://example.com") == [{"step": 1, "tool": "open_url", "arguments": {"url": "https://example.com"}}]
     assert loop._direct_route("Read https://example.com and summarize it") == [{"step": 1, "tool": "fetch_url", "arguments": {"url": "https://example.com"}}]
+
+
+def test_direct_route_normalizes_explicit_www_open_and_ignores_a_bare_link():
+    loop = AgentExecutionLoop()
+    assert loop._direct_route("Open www.example.com/docs.") == [
+        {"step": 1, "tool": "open_url", "arguments": {"url": "https://www.example.com/docs"}}
+    ]
+    assert loop._direct_route("https://example.com") is None
+
+
+def test_direct_route_does_not_turn_website_interaction_into_browser_automation():
+    result = AgentExecutionLoop()._direct_route(
+        "Open https://example.com, log in, and fill the form."
+    )
+    assert isinstance(result, str)
+    assert "cannot log in" in result
+
+
+def test_direct_route_does_not_false_block_a_safe_domain_name():
+    assert AgentExecutionLoop()._direct_route("Open https://facebook.com") == [
+        {"step": 1, "tool": "open_url", "arguments": {"url": "https://facebook.com"}}
+    ]

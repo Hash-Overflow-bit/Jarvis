@@ -19,8 +19,16 @@ class PublicWebError(ValueError):
     pass
 
 
+def normalize_public_url(raw_url: str) -> str:
+    """Normalize a user-pasted public URL without changing its destination."""
+    url = (raw_url or "").strip().strip("<>").rstrip(".,;:!?)]}")
+    if url.lower().startswith("www."):
+        url = f"https://{url}"
+    return url
+
+
 def validate_public_url(raw_url: str) -> str:
-    url = raw_url.strip()
+    url = normalize_public_url(raw_url)
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise PublicWebError("Only complete public http:// or https:// URLs are allowed.")

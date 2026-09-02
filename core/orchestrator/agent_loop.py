@@ -36,10 +36,12 @@ _legacy.record_action = _record_action_proxy
 
 
 def _public_url(text: str) -> str | None:
-    match = re.search(r"https?://[^\s<>()\[\]]+", text or "", re.IGNORECASE)
+    match = re.search(r"(?:https?://|www\.)[^\s<>()\[\]{}]+", text or "", re.IGNORECASE)
     if not match:
         return None
-    url = match.group(0).rstrip(".,;:!?")
+    from core.tools.public_web import normalize_public_url
+
+    url = normalize_public_url(match.group(0))
     parsed = urlparse(url)
     return url if parsed.scheme in {"http", "https"} and parsed.netloc else None
 
@@ -50,11 +52,35 @@ class AgentExecutionLoop(_legacy.AgentExecutionLoop):
     def _direct_route(self, user_input: str, recalled_facts: str = ""):
         url = _public_url(user_input)
         lowered = (user_input or "").lower()
-        read_only_web = any(word in lowered for word in ("read", "summarize", "extract", "find", "get"))
-        open_web = bool(re.search(r"\b(open|browse|navigate|go to|visit)\b", lowered))
-        if url and (read_only_web or open_web):
-            tool = "fetch_url" if read_only_web else "open_url"
-            return [{"step": 1, "tool": tool, "arguments": {"url": url}}]
+        read_only_verbs = ("read", "fetch", "summarize", "summarise", "extract", "find", "get")
+        browser_verbs = ("open", "browse", "navigate", "go to", "visit")
+        blocked_web_action_patterns = (
+            r"\blog\s+in\b", r"\blogin\b", r"\bsign\s+in\b", r"\bfill\b",
+            r"\bsubmit\b", r"\bclick\b", r"\bupload\b", r"\bdownload\b",
+            r"\bpurchase\b", r"\bbuy\b", r"\bpay\b", r"\bcheckout\b", r"\bbook\b",
+        )
+        if url:
+            if any(re.search(pattern, lowered) for pattern in blocked_web_action_patterns):
+                return (
+                    "I can open a public URL in your default browser or read its public text, "
+                    "but I cannot log in, fill forms, click through a site, download files, "
+                    "or submit anything."
+                )
+            read_only_web = any(
+                re.search(rf"\b{re.escape(verb)}\b", lowered)
+                for verb in read_only_verbs
+            )
+            open_web = any(
+                re.search(rf"\b{re.escape(verb)}\b", lowered)
+                for verb in browser_verbs
+            )
+            if read_only_web or open_web:
+                tool = "fetch_url" if read_only_web else "open_url"
+                return [{"step": 1, "tool": tool, "arguments": {"url": url}}]
+
+            # Do not let the legacy router interpret a bare pasted URL as a
+            # request for browser automation. The user must use an action verb.
+            return None
 
         plan = super()._direct_route(user_input, recalled_facts)
         if not isinstance(plan, list):
@@ -82,3 +108,18 @@ class AgentExecutionLoop(_legacy.AgentExecutionLoop):
             if normalized:
                 args["capabilities"] = normalized
         return plan
+
+    def _synthesize_final_response(self, user_input, completed_steps, recalled_facts):
+        """Report an OS browser handoff directly from the verified tool result."""
+        if len(completed_steps) == 1 and completed_steps[0].get("tool") == "open_url":
+            result = completed_steps[0].get("result", {})
+            if isinstance(result, dict) and result.get("success"):
+                url = result.get("url") or completed_steps[0].get("arguments", {}).get("url", "the URL")
+                return prose_hook.filter_response(
+                    f"Opened {url} in your default browser. I did not interact with the website."
+                )
+            message = result.get("message") if isinstance(result, dict) else None
+            return prose_hook.filter_response(
+                f"I could not open the public URL{f': {message}' if message else '.'}"
+            )
+        return super()._synthesize_final_response(user_input, completed_steps, recalled_facts)

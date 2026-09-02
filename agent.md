@@ -382,3 +382,18 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 - Added `test_source_compilation.py` so malformed/truncated Python source fails before runtime or deployment.
 
 *Last Updated: 2026-09-02 | Session 20 | Controlled Sub-Agent Delegation Rebuilt and Verified*
+
+## Session 21 — Public URL Execution Routing
+
+- Fixed the chat entry-point routing gap where commands such as
+  `Open https://example.com` were incorrectly treated as normal conversation
+  and merely answered by the local model.
+- Explicit public URL commands now deterministically invoke `open_url`; URL
+  read/summarize requests invoke GET-only `fetch_url`. Bare links remain text,
+  so Jarvis does not open pages without an explicit user instruction.
+- Added a deterministic browser-result response so Jarvis reports an open only
+  after the default-browser tool succeeds; it does not rely on an LLM to claim
+  that action.
+- Normalized common pasted `www.` links and trailing punctuation, and rejected
+  login, form, click, upload/download, payment, and booking requests rather
+  than treating them as browser automation.
