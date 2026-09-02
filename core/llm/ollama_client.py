@@ -108,7 +108,7 @@ class OllamaClient:
                 settings.ollama_generate_url,
                 json=payload,
                 stream=stream,
-                timeout=120,
+                timeout=settings.ollama_request_timeout,
             )
             resp.raise_for_status()
         except requests.exceptions.ConnectionError:
@@ -116,6 +116,10 @@ class OllamaClient:
                 f"Cannot connect to Ollama at {self.base_url}. "
                 "Is Ollama running? Try: ollama serve"
             )
+        except requests.exceptions.Timeout as e:
+            raise OllamaError(
+                f"Ollama request timed out after {settings.ollama_request_timeout:g} seconds."
+            ) from e
         except requests.exceptions.HTTPError as e:
             raise OllamaError(f"Ollama HTTP error: {e}") from e
 
@@ -215,7 +219,7 @@ class OllamaClient:
                     settings.ollama_chat_url,   # http://localhost:11434/api/chat
                     json=payload,
                     stream=stream,
-                    timeout=120,
+                    timeout=settings.ollama_request_timeout,
                 )
                 resp.raise_for_status()
                 span.set_attribute("llm.status_code", resp.status_code)
@@ -224,16 +228,22 @@ class OllamaClient:
                 f"Cannot connect to Ollama at {self.base_url}. "
                 "Is Ollama running? Try: ollama serve"
             )
-        except requests.exceptions.Timeout:
-            raise OllamaError("Ollama request timed out after 120 seconds.")
+        except requests.exceptions.Timeout as e:
+            raise OllamaError(
+                f"Ollama request timed out after {settings.ollama_request_timeout:g} seconds."
+            ) from e
         except requests.exceptions.HTTPError as e:
             raise OllamaError(f"Ollama HTTP error: {e}") from e
 
         if stream:
             return self._stream_chat(resp)
         else:
-            data = resp.json()
-            return data["message"]
+            try:
+                data = resp.json()
+                message = data["message"]
+            except (ValueError, KeyError, TypeError) as e:
+                raise OllamaError("Ollama returned an invalid chat response.") from e
+            return message
 
     def _stream_chat(self, response: requests.Response) -> "Generator[str, None, None]":
         """Generator that yields text chunks from a streaming /api/chat response."""
@@ -281,7 +291,7 @@ class OllamaClient:
             resp = requests.post(
                 settings.ollama_generate_url,   # http://localhost:11434/api/generate
                 json=payload,
-                timeout=120,
+                timeout=settings.ollama_request_timeout,
             )
             resp.raise_for_status()
         except requests.exceptions.ConnectionError:
@@ -289,6 +299,10 @@ class OllamaClient:
                 f"Cannot connect to Ollama at {self.base_url}. "
                 "Is Ollama running? Try: ollama serve"
             )
+        except requests.exceptions.Timeout as e:
+            raise OllamaError(
+                f"Ollama request timed out after {settings.ollama_request_timeout:g} seconds."
+            ) from e
         except requests.exceptions.HTTPError as e:
             raise OllamaError(f"Ollama HTTP error: {e}") from e
 

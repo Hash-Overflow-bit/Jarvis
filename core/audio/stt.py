@@ -170,8 +170,16 @@ class WhisperSTT:
             buf = io.BytesIO(audio)
             with wave.open(buf) as wf:
                 frames = wf.readframes(wf.getnframes())
+                channels = wf.getnchannels()
+                sample_width = wf.getsampwidth()
+                if sample_width != 2:
+                    raise STTError(
+                        f"Unsupported WAV sample width: {sample_width * 8}-bit; expected 16-bit PCM."
+                    )
                 audio_array = np.frombuffer(frames, dtype=np.int16).astype(np.float32)
                 audio_array /= 32767.0  # Normalize to [-1, 1]
+                if channels > 1:
+                    audio_array = audio_array.reshape(-1, channels).mean(axis=1)
             return audio_array
 
         if isinstance(audio, np.ndarray):
@@ -197,7 +205,11 @@ class WhisperSTT:
         Quick check if audio array contains detectable speech.
         Uses RMS amplitude as a fast pre-filter before sending to Whisper.
         """
+        if not isinstance(audio, np.ndarray) or audio.size == 0:
+            return False
         rms = float(np.sqrt(np.mean(audio.astype(np.float32) ** 2)))
+        if not np.isfinite(rms):
+            return False
         return rms > threshold
 
 

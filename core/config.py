@@ -215,6 +215,11 @@ class _Settings:
     def ollama_keep_alive(self) -> int:
         return int(os.getenv("OLLAMA_KEEP_ALIVE", "3600"))
 
+    @property
+    def ollama_request_timeout(self) -> float:
+        """Maximum seconds for one Ollama HTTP request."""
+        return float(os.getenv("OLLAMA_REQUEST_TIMEOUT", "300"))
+
     # --- Whisper STT ---
     @property
     def whisper_model(self) -> str:
@@ -378,9 +383,9 @@ class _Settings:
         SANDBOX_MODE=true  → Jarvis can only operate inside SANDBOX_ROOTS (locked down).
         SANDBOX_MODE=false → Jarvis can read/write/delete anywhere on the filesystem
                              that the OS user has permission to access (unrestricted).
-        Defaults to false (unrestricted) for maximum usefulness.
+        Defaults to true. Individual capabilities may apply stricter boundaries.
         """
-        return os.getenv("SANDBOX_MODE", "false").lower().strip() == "true"
+        return os.getenv("SANDBOX_MODE", "true").lower().strip() == "true"
 
     # --- GitHub & Poetry (used in M3+) ---
     @property
@@ -392,6 +397,18 @@ class _Settings:
         val = os.getenv("DEFAULT_WORKSPACE_DIR")
         path = normalize_path(val) if val else (self._project_root / "workspace").resolve()
         return self._check_onedrive_and_redirect(path, "workspace")
+
+    @property
+    def workspace_max_document_bytes(self) -> int:
+        return int(os.getenv("WORKSPACE_MAX_DOCUMENT_BYTES", str(10 * 1024 * 1024)))
+
+    @property
+    def workspace_document_extensions(self) -> set[str]:
+        raw = os.getenv(
+            "WORKSPACE_DOCUMENT_EXTENSIONS",
+            ".txt,.md,.csv,.json,.yaml,.yml,.log",
+        )
+        return {item.strip().lower() for item in raw.split(",") if item.strip()}
 
     @property
     def compliance_knowledge_file(self) -> Path:
@@ -454,6 +471,16 @@ class _Settings:
         val = os.getenv("KNOWLEDGE_GRAPH_PATH")
         path = normalize_path(val) if val else (self._project_root / "core" / "memory" / "graph.db").resolve()
         return self._check_onedrive_and_redirect(path, "memory")
+
+    @property
+    def local_memory_path(self) -> Path:
+        val = os.getenv("LOCAL_MEMORY_PATH")
+        path = normalize_path(val) if val else (self._project_root / "core" / "memory" / "local_memory.db").resolve()
+        return self._check_onedrive_and_redirect(path, "memory")
+
+    @property
+    def local_memory_enabled(self) -> bool:
+        return os.getenv("LOCAL_MEMORY_ENABLED", "true").lower().strip() == "true"
 
     @property
     def knowledge_corpus_dirs(self) -> list[str]:

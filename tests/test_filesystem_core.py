@@ -53,7 +53,8 @@ def test_read_file_directory_error(tmp_path):
     test_dir.mkdir()
     
     tool = ReadFile()
-    with patch("core.tools.read_file.enforcer.validate", return_value=test_dir):
+    from core.config import settings
+    with patch.object(settings.__class__, "default_workspace_dir", property(lambda self: tmp_path)):
         result = tool.run(ReadFileInput(filepath=str(test_dir)))
         assert result.success is False
         assert "is a directory" in result.error
@@ -62,7 +63,8 @@ def test_read_file_missing_error(tmp_path):
     """ReadFile should return a clear error if file does not exist."""
     missing = tmp_path / "missing.txt"
     tool = ReadFile()
-    with patch("core.tools.read_file.enforcer.validate", return_value=missing):
+    from core.config import settings
+    with patch.object(settings.__class__, "default_workspace_dir", property(lambda self: tmp_path)):
         result = tool.run(ReadFileInput(filepath=str(missing)))
         assert result.success is False
         assert "does not exist" in result.error
@@ -77,8 +79,7 @@ def test_write_file_create_prevents_overwrite(tmp_path):
     
     tool = WriteFile()
     from core.config import settings
-    with patch("core.tools.write_file.enforcer.validate", return_value=test_file), \
-         patch.object(settings.__class__, "default_workspace_dir", property(lambda self: tmp_path)):
+    with patch.object(settings.__class__, "default_workspace_dir", property(lambda self: tmp_path)):
         result = tool.run(WriteFileInput(filepath=str(test_file), content="new", mode="create"))
         assert result.success is False
         assert "File already exists" in result.message
@@ -90,8 +91,7 @@ def test_write_file_overwrite_succeeds(tmp_path):
     
     tool = WriteFile()
     from core.config import settings
-    with patch("core.tools.write_file.enforcer.validate", return_value=test_file), \
-         patch.object(settings.__class__, "default_workspace_dir", property(lambda self: tmp_path)):
+    with patch.object(settings.__class__, "default_workspace_dir", property(lambda self: tmp_path)):
         result = tool.run(WriteFileInput(filepath=str(test_file), content="new", mode="overwrite"))
         assert result.success is True
         assert test_file.read_text() == "new"
@@ -103,8 +103,7 @@ def test_write_file_append(tmp_path):
     
     tool = WriteFile()
     from core.config import settings
-    with patch("core.tools.write_file.enforcer.validate", return_value=test_file), \
-         patch.object(settings.__class__, "default_workspace_dir", property(lambda self: tmp_path)):
+    with patch.object(settings.__class__, "default_workspace_dir", property(lambda self: tmp_path)):
         result = tool.run(WriteFileInput(filepath=str(test_file), content="world", mode="append"))
         assert result.success is True
         assert test_file.read_text() == "hello world"
@@ -176,5 +175,4 @@ def test_failed_mutation_halts_execution(mock_exec):
     # web_search should NOT be executed
     assert mock_exec.call_count == 1
     assert "filesystem error" in result.lower()
-
 

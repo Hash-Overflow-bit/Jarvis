@@ -7,7 +7,7 @@ Jarvis tool to read the contents of files from the local filesystem.
 from typing import Type, Optional
 from pydantic import BaseModel, Field
 from core.tools.base_tool import BaseTool
-from core.tools.sandbox_enforcer import enforcer
+from core.workspace.documents import WorkspaceDocuments, WorkspaceDocumentError
 
 
 class ReadFileInput(BaseModel):
@@ -18,6 +18,9 @@ class ReadFileOutput(BaseModel):
     success: bool
     content: str
     error: Optional[str] = None
+    path: Optional[str] = None
+    byte_count: int = 0
+    sha256: Optional[str] = None
 
 
 class ReadFile(BaseTool[ReadFileInput, ReadFileOutput]):
@@ -32,7 +35,7 @@ class ReadFile(BaseTool[ReadFileInput, ReadFileOutput]):
     @property
     def description(self) -> str:
         return (
-            "Read the text content of a file from the local filesystem. Use this when "
+            "Read UTF-8 text from a document inside the configured workspace. Use this when "
             "you need to read, view, parse, check, or load a file's content (such as "
             "a CSV, MD, TXT, or JSON file)."
         )
@@ -46,44 +49,18 @@ class ReadFile(BaseTool[ReadFileInput, ReadFileOutput]):
         return ReadFileOutput
 
     def run(self, input_data: ReadFileInput) -> ReadFileOutput:
-        from core.tools.path_resolver import PathResolver
         try:
-            # Enforce sandbox and get absolute path
-            # SandboxEnforcer now uses PathResolver internally
-            resolved_path = enforcer.validate(input_data.filepath)
-
-            if not resolved_path.exists():
-                return ReadFileOutput(
-                    success=False,
-                    content="",
-                    error=f"File '{resolved_path}' does not exist."
-                )
-
-            if not resolved_path.is_file():
-                return ReadFileOutput(
-                    success=False,
-                    content="",
-                    error=f"Path '{resolved_path}' is a directory, not a file."
-                )
-
-            # Read content with UTF-8 encoding
-            with open(resolved_path, "r", encoding="utf-8", errors="replace") as f:
-                content = f.read()
-
+            content, receipt = WorkspaceDocuments().read_text(input_data.filepath)
             return ReadFileOutput(
                 success=True,
-                content=content
+                content=content,
+                path=str(receipt.path),
+                byte_count=receipt.byte_count,
+                sha256=receipt.sha256,
             )
-
-        except PermissionError as pe:
+        except (WorkspaceDocumentError, OSError) as e:
             return ReadFileOutput(
                 success=False,
                 content="",
-                error=f"Access denied to file: {pe}"
-            )
-        except Exception as e:
-            return ReadFileOutput(
-                success=False,
-                content="",
-                error=f"Failed to read file: {e}"
+                error=f"Failed to read workspace document: {e}"
             )

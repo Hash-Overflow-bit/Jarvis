@@ -5,7 +5,9 @@ Unit tests for the KokoroTTS engine.
 """
 
 import pytest
+import sys
 from pathlib import Path
+from types import ModuleType
 from unittest.mock import MagicMock, patch
 from core.audio.tts import KokoroTTS, get_tts, ConsoleTTS
 
@@ -45,8 +47,11 @@ def test_kokoro_tts_speak(tmp_path):
         mock_kokoro_inst = MagicMock()
         mock_kokoro_inst.create.return_value = (np.zeros(24000), 24000)
 
+        sounddevice = ModuleType("sounddevice")
+        sounddevice.play = MagicMock()
+        sounddevice.wait = MagicMock()
         with patch("kokoro_onnx.Kokoro", return_value=mock_kokoro_inst):
-            with patch("sounddevice.play") as mock_play, patch("sounddevice.wait") as mock_wait:
+            with patch.dict(sys.modules, {"sounddevice": sounddevice}):
                 tts.speak("Hello British Emma")
 
                 # Check that Kokoro was loaded and called with create()
@@ -57,8 +62,8 @@ def test_kokoro_tts_speak(tmp_path):
                     lang="en-us"
                 )
                 # Check sd.play and sd.wait were called once (single create call)
-                assert mock_play.call_count == 1
-                assert mock_wait.call_count == 1
+                assert sounddevice.play.call_count == 1
+                assert sounddevice.wait.call_count == 1
 
 
 def test_kokoro_tts_synthesize(tmp_path):

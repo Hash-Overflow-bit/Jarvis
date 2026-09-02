@@ -1,11 +1,7 @@
-"""
-core/audio/__init__.py
-======================
-Audio subsystem package exports.
+"""Audio subsystem.
+
+Backends are intentionally not imported here: Whisper, CUDA, PortAudio and TTS
+assets are optional runtime dependencies and must be loaded only when selected.
 """
 
-from core.audio import audio_device
-from core.audio import stt
-from core.audio import tts
-
-__all__ = ["audio_device", "stt", "tts"]
+__all__ = ["audio_device", "stt", "tts", "voice_io"]

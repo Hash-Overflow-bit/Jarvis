@@ -120,6 +120,108 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
   - Created `tests/test_writing_workflow.py` with 14 comprehensive unit, regression, and acceptance tests.
   - Full test suite status: **100 passed, 1 skipped (100% green)**.
 
+### Session 13 — 2026-09-01 (Capability 1 — Conversation & Drafting Rebuild)
+- Added a deterministic `ConversationRouter` that keeps normal conversation,
+  planning, rewriting, summarization of pasted text, and drafting out of the
+  tool planner.
+- Added a one-call `ConversationService` with clean role filtering, no tool
+  schemas, non-empty response validation, and history rollback on failure.
+- Separated the clean conversational system prompt from filesystem/tool
+  instructions so ordinary answers are not polluted by action guidance.
+- Made the Ollama request timeout configurable with
+  `OLLAMA_REQUEST_TIMEOUT` (default 300 seconds) and normalized timeout/invalid
+  response errors.
+- Added `tests/test_conversation_capability.py` with 14 deterministic acceptance
+  tests. Local result: **14 passed**; legacy text smoke result: **1 passed,
+  5 skipped** because Ollama is not available in the Codex runner.
+
+### Session 14 — 2026-09-01 (Capability 2 — Voice I/O Rebuild)
+- Added an injected, testable `VoiceIO` boundary for microphone capture, STT,
+  command recognition, and verified TTS playback.
+- Voice exit/emergency commands now require a complete utterance, preventing
+  phrases such as "create an exit plan" from shutting down Jarvis.
+- Audio mode now reports missing or failed TTS explicitly instead of silently
+  treating console text as voice output.
+- Made audio backends lazy so a missing PortAudio or faster-whisper runtime does
+  not break unrelated imports or text mode.
+- Hardened empty/non-finite speech detection, stereo WAV conversion, sample
+  clipping, and Piper binary/model availability checks.
+- Added `tests/test_voice_capability.py`; local result: **15 passed**.
+
+### Session 15 — 2026-09-01 (Capability 3 — Controlled Workspace Documents)
+- Added one always-on `WorkspaceDocuments` boundary shared by `read_file` and
+  `write_file`; `SANDBOX_MODE=false` can no longer expand document access.
+- Relative and `workspace/...` paths resolve inside the configured workspace;
+  traversal, absolute outside paths, and symlink escapes are rejected.
+- Added UTF-8/binary checks, configurable document extensions and 10 MB limit,
+  exclusive create semantics, atomic overwrite/append, exact byte verification,
+  SHA-256 receipts, and clear failure results.
+- Replaced the conflicting Desktop-default tool prompt with an explicit
+  workspace-only contract and changed the default sandbox setting to enabled.
+- Added `tests/test_workspace_documents_capability.py`; local result: **11
+  passed**. Combined Capabilities 1–3 result: **41 passed, 5 live-Ollama skips**.
+
+### Session 16 — 2026-09-01 (Capability 4 — Deterministic Filesystem)
+- Added a non-destructive `WorkspaceFilesystem` for bounded directory creation
+  and file listing with symlink checks and a 500-file safety ceiling.
+- Added a deterministic one-action router for daily create-folder, list, read,
+  create/overwrite/append document commands. Compound or ambiguous prompts are
+  not partially executed.
+- Routed supported filesystem commands before the LLM planner, eliminating
+  hallucinated paths and model latency for these actions.
+- Reduced the default generic tool registry to four workspace tools. Deletion,
+  Git/package mutation, dynamic sub-agents, weight changes, and Skyvern are not
+  registered; web research is handled separately in Capability 5.
+- Fixed physical verification that previously skipped all real Linux paths
+  beginning with `/workspace`.
+- Added `tests/test_deterministic_filesystem_capability.py`; result: **7 passed**.
+  Related regressions: **8 file-tool + 10 filesystem-core + 19 agent-loop passed**.
+
+### Session 17 — 2026-09-01 (Capability 5 — Grounded Web Research)
+- Added a dedicated `ResearchService` and deterministic research router so web
+  requests bypass the generic multi-step planner.
+- Search evidence is normalized to unique HTTP(S) URLs with non-empty snippets;
+  the model is not called if connectivity fails or no usable sources exist.
+- Research generation uses a single low-temperature call with enumerated
+  evidence. Hallucinated URLs and out-of-range citation numbers are removed,
+  and the exact retrieved source list plus an honest verification note is added.
+- Combined research-and-save requests return research in chat and explicitly do
+  not create a file before user review.
+- Added `tests/test_web_research_capability.py`: **13 passed**. Existing research
+  pipeline/dependency/planner regressions: **15 passed**.
+
+### Session 18 — 2026-09-01 (Capability 6 — Local Memory Recall)
+- Added a separate deterministic SQLite `LocalMemoryService` for typed daily
+  facts: the user's name, one current preference, one project deadline, and
+  explicit `remember that ...` notes. Whole conversations are never copied into
+  this store and no LLM is used to extract facts.
+- Added strict storage filters for questions, secrets, local/transient paths,
+  filesystem actions, and prompt-injection text. Repeated typed facts update the
+  same key instead of accumulating contradictory records.
+- Recall is query-scoped: normal unrelated chat receives no long-term memory,
+  while name, preference, deadline, and explicit memory questions receive only
+  the relevant typed facts as non-instructional data.
+- Added deterministic forget-one and clear-all commands. Session reset clears
+  short-term chat history while intentionally preserving opted-in local memory.
+- Memory database failures are fail-open for conversation: they never prevent a
+  normal response from being generated.
+- Added `tests/test_local_memory_capability.py`: **9 passed**. Existing chat
+  memory, memory-isolation, and knowledge-graph regressions: **14 passed**.
+
+### Session 19 — 2026-09-02 (Cross-Capability Regression and Handoff)
+- Removed the Tier-1 workflow's undeclared direct dependency on the external
+  `ollama` Python SDK; it now uses the project's configured `OllamaClient`.
+- Kept destructive directory deletion outside the daily tool registry and
+  aligned legacy safety tests with that restricted capability contract.
+- Made legacy audio confirmation and Kokoro tests independent of unavailable
+  CI microphone/PortAudio/Whisper hardware while preserving behavioral checks.
+- Verified all six capability suites plus affected memory, filesystem,
+  research, agent, audio, and Tier-1 regressions: **192 passed, 1 live-Ollama
+  skip**. `poetry check --lock`, Python compilation, and `git diff --check`
+  passed.
+- Added `docs/milestones/CORE_CAPABILITIES_REBUILD_REPORT.md` with Windows
+  acceptance commands, safety boundaries, and honest runtime limitations.
+
 ---
 
 ## Current File Structure
@@ -266,4 +368,4 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 
 ---
 
-*Last Updated: 2026-08-26 | Session 12 | Milestone 5.5 Completed (Grounded Writing, Web Research & Data Extraction Workflow)*
+*Last Updated: 2026-09-02 | Session 19 | Six Core Capabilities Rebuilt and Verified*

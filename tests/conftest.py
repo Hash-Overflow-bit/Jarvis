@@ -1,3 +1,4 @@
+import os
 import pytest
 from pathlib import Path
 from core.config import settings
@@ -15,5 +16,7 @@ def isolate_test_memory(tmp_path):
     from core.memory.build_graph import init_db
     init_db(temp_db)
     
-    with patch.object(settings.__class__, 'knowledge_graph_path', property(lambda self: str(temp_db))):
+    local_memory_db = tmp_path / "local_memory.db"
+    with patch.object(settings.__class__, 'knowledge_graph_path', property(lambda self: str(temp_db))), \
+         patch.dict(os.environ, {"LOCAL_MEMORY_PATH": str(local_memory_db)}):
         yield

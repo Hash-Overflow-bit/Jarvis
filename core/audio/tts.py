@@ -88,26 +88,28 @@ class PiperTTS:
 
     def _check_availability(self) -> bool:
         """Check if Piper binary and voice model exist."""
-        if self.binary_path is None:
-            return False
-        if not Path(self.binary_path).exists():
+        if self.binary_path is None or not Path(self.binary_path).exists():
             # Try finding piper in PATH
             found = shutil.which("piper")
             if found:
                 self.binary_path = Path(found)
-                return True
-            return False
-        if self.voice_model and not Path(self.voice_model).exists():
+            else:
+                return False
+        if self.voice_model is None or not Path(self.voice_model).exists():
             print(f"[TTS] Warning: Voice model not found at {self.voice_model}")
             print(f"[TTS] Download from: https://huggingface.co/rhasspy/piper-voices")
             return False
         return True
 
+    @property
+    def is_available(self) -> bool:
+        return self._available
+
     # ------------------------------------------------------------------
     # Core speak method
     # ------------------------------------------------------------------
 
-    def speak(self, text: str) -> None:
+    def speak(self, text: str) -> bool:
         """
         Convert text to speech and play it through the speaker.
 
@@ -117,26 +119,28 @@ class PiperTTS:
         If Piper is not available, prints to console as fallback.
         """
         if not text or not text.strip():
-            return
+            return True
 
         cleaned_text = clean_text_for_speech(text)
         if not cleaned_text:
-            return
+            return True
 
         if not self._available:
             # Graceful fallback: print to console
             if settings.log_level == "DEBUG":
                 print(f"[JARVIS]: {text}")
-            return
+            return False
 
         try:
             wav_bytes = self.synthesize(cleaned_text)
             audio_device.play_wav_bytes(wav_bytes)
+            return True
         except (TTSError, AudioDeviceError) as e:
             # Log but don't crash — fallback to print
             if settings.log_level == "DEBUG":
                 print(f"[TTS] Error during speech: {e}")
                 print(f"[JARVIS]: {text}")
+            return False
 
     def synthesize(self, text: str) -> bytes:
         """
@@ -255,18 +259,18 @@ class KokoroTTS:
             from kokoro_onnx import Kokoro
             self.kokoro = Kokoro(str(self.model_path), str(self.voices_path))
 
-    def speak(self, text: str) -> None:
+    def speak(self, text: str) -> bool:
         if not text or not text.strip():
-            return
+            return True
 
         cleaned_text = clean_text_for_speech(text)
         if not cleaned_text:
-            return
+            return True
 
         if not self._available:
             if settings.log_level == "DEBUG":
                 print(f"[JARVIS]: {text}")
-            return
+            return False
 
         try:
             self._ensure_loaded()
@@ -281,9 +285,11 @@ class KokoroTTS:
             )
             sd.play(samples, sr)
             sd.wait()
+            return True
         except Exception as e:
             print(f"[TTS] Kokoro speak failed: {e}")
             print(f"[JARVIS]: {text}")
+            return False
 
     def synthesize(self, text: str) -> bytes:
         """Synthesizes text and returns WAV bytes (required for API compatibility)."""
@@ -318,16 +324,18 @@ class ConsoleTTS:
     Always available.
     """
 
-    def speak(self, text: str) -> None:
+    def speak(self, text: str) -> bool:
         if text and text.strip():
             print(f"\n🤖 JARVIS: {text}\n")
+        return False
 
     def synthesize(self, text: str) -> bytes:
         raise TTSError("ConsoleTTS cannot synthesize audio.")
 
     @property
     def is_available(self) -> bool:
-        return True
+        # It is a useful text fallback, but it is not voice output.
+        return False
 
 
 def get_tts():

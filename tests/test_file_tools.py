@@ -55,8 +55,8 @@ def temp_sandbox_env():
 def test_file_scanner_listing_and_filtering(temp_sandbox_env):
     sandbox_path, f1, f2, f3, f4 = temp_sandbox_env
     
-    # Configure enforcer to allow our temp sandbox
-    with patch("core.tools.file_scanner.enforcer", SandboxEnforcer([sandbox_path])):
+    from core.config import settings
+    with patch.object(settings.__class__, "default_workspace_dir", property(lambda self: sandbox_path)):
         scanner = FileScanner()
         
         # 1. Scan everything (no filters)
@@ -208,56 +208,16 @@ def test_session_manager_tool_execution(temp_sandbox_env):
     # 1. Instantiate SessionManager with use_tools=True
     session = SessionManager(use_tools=True)
     
-    # We mock ollama.chat
-    # First call: returns tool_calls
-    # Second call: returns natural language text
-    mock_responses = [
-        # First call return message with tool call
-        {
-            "role": "assistant",
-            "content": "",
-            "tool_calls": [
-                {
-                    "function": {
-                        "name": "file_scanner",
-                        "arguments": {
-                            "directory": str(sandbox_path),
-                            "extension_filter": ".log"
-                        }
-                    }
-                }
-            ]
-        },
-        # Second call response
-        {
-            "role": "assistant",
-            "content": "I scanned the directory and found two log files: info.log and error.log."
-        }
-    ]
-    
-    with patch("core.tools.file_scanner.enforcer", SandboxEnforcer([sandbox_path])):
-        with patch("core.llm.ollama_client.ollama.chat", side_effect=mock_responses) as mock_chat:
+    from core.config import settings
+    with patch.object(settings.__class__, "default_workspace_dir", property(lambda self: sandbox_path)):
+        with patch("core.llm.ollama_client.ollama.chat") as mock_chat:
             response = session.chat("Show me the log files.")
-            
-            # Verify response matches
-            assert response == "I scanned the directory and found two log files: info.log and error.log."
-            
-            # Check mock chat calls
-            assert mock_chat.call_count == 2
-            
-            # Check history:
-            # - System prompt
-            # - User message
-            # - Assistant tool call message
-            # - Tool response message
-            # - Assistant final response
-            assert len(session.history) == 5
+            assert "info.log" in response
+            assert "error.log" in response
+            mock_chat.assert_not_called()
+            assert len(session.history) == 3
             assert session.history[1]["role"] == "user"
             assert session.history[2]["role"] == "assistant"
-            assert "tool_calls" in session.history[2]
-            assert session.history[3]["role"] == "tool"
-            assert "info.log" in session.history[3]["content"]
-            assert session.history[4]["role"] == "assistant"
 
 
 def test_create_directory_and_write_file(temp_sandbox_env):
@@ -273,7 +233,8 @@ def test_create_directory_and_write_file(temp_sandbox_env):
     new_dir = sandbox_path / "subfolder"
     inp_create = CreateDirectoryInput(directory=str(new_dir))
     
-    with patch("core.tools.create_directory.enforcer", SandboxEnforcer([sandbox_path])):
+    from core.config import settings
+    with patch.object(settings.__class__, "default_workspace_dir", property(lambda self: sandbox_path)):
         res_create = creator.run(inp_create)
         assert res_create.success is True
         assert new_dir.is_dir()
@@ -289,9 +250,7 @@ def test_create_directory_and_write_file(temp_sandbox_env):
     target_file = new_dir / "notes.txt"
     inp_write = WriteFileInput(filepath=str(target_file), content="Hello Sandbox!")
 
-    from core.config import settings
-    with patch("core.tools.write_file.enforcer", SandboxEnforcer([sandbox_path])), \
-         patch.object(settings.__class__, "default_workspace_dir", property(lambda self: sandbox_path)):
+    with patch.object(settings.__class__, "default_workspace_dir", property(lambda self: sandbox_path)):
         res_write = writer.run(inp_write)
         assert res_write.success is True
         assert target_file.is_file()
@@ -301,4 +260,3 @@ def test_create_directory_and_write_file(temp_sandbox_env):
         inp_bad_write = WriteFileInput(filepath="/tmp/notes.txt", content="hack")
         res_bad_write = writer.run(inp_bad_write)
         assert res_bad_write.success is False
-

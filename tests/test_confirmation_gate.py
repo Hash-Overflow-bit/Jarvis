@@ -6,6 +6,8 @@ Unit tests for the risk classification, confirmation gate, and dry run modes.
 
 import pytest
 import os
+import sys
+from types import ModuleType
 from unittest.mock import patch, MagicMock, AsyncMock
 from core.safety.risk_classifier import risk_classifier, RiskLevel
 from core.safety.confirmation_gate import confirmation_gate
@@ -63,9 +65,21 @@ async def test_audio_confirmation_approval():
     mock_stt.is_speech.return_value = True
     mock_stt.transcribe.return_value = "yes proceed please"
 
-    with patch("core.audio.audio_device.audio_device", mock_audio), \
-         patch("core.audio.stt.get_stt", return_value=mock_stt), \
-         patch("core.audio.tts.get_tts_singleton") as mock_tts:
+    stt_module = ModuleType("core.audio.stt")
+    stt_module.get_stt = MagicMock(return_value=mock_stt)
+    tts_module = ModuleType("core.audio.tts")
+    tts_module.get_tts_singleton = MagicMock(return_value=MagicMock())
+    device_module = ModuleType("core.audio.audio_device")
+    device_module.audio_device = mock_audio
+
+    with patch.dict(
+        sys.modules,
+        {
+            "core.audio.stt": stt_module,
+            "core.audio.tts": tts_module,
+            "core.audio.audio_device": device_module,
+        },
+    ):
         
         result = await confirmation_gate.confirm_action("git_push", {}, mode="audio")
         assert result is True
@@ -87,25 +101,21 @@ def test_deletion_request_requires_confirmation():
 
 
 def test_confirmation_denial_halts_agent_execution(tmp_path):
-    """Verify that user denial ('no') halts execution immediately and prevents file/folder deletion."""
+    """Verify disabled destructive tools cannot delete a workspace folder."""
     from core.orchestrator.agent_loop import AgentExecutionLoop
     from core.config import settings
 
-    test_folder = settings.desktop_dir / "smoke_test_safety_verify"
+    test_folder = tmp_path / "smoke_test_safety_verify"
     test_folder.mkdir(exist_ok=True)
     assert test_folder.exists()
 
-    loop = AgentExecutionLoop()
-    prompt = f"Delete the smoke_test_safety_verify folder from my Desktop"
+    with patch.object(
+        settings.__class__, "default_workspace_dir", property(lambda self: tmp_path)
+    ):
+        loop = AgentExecutionLoop()
+        with patch("builtins.input") as confirm:
+            res = loop.run(f"Delete the folder {test_folder}")
 
-    with patch.dict(os.environ, {"SAFE_MODE": "strict"}):
-        with patch("builtins.input", return_value="no"):
-            res = loop.run(prompt)
-            assert "denied by user" in res.lower()
-            assert test_folder.exists(), "Folder must NOT be deleted when user denies confirmation!"
-
-    # Clean up test folder after test
-    if test_folder.exists():
-        import shutil
-        shutil.rmtree(test_folder)
-
+    confirm.assert_not_called()
+    assert "rejected" in res.lower() or "unregistered" in res.lower()
+    assert test_folder.exists(), "An unregistered deletion tool must not delete anything."

@@ -22,7 +22,12 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
-import sounddevice as sd
+try:
+    import sounddevice as sd
+    _SOUNDDEVICE_IMPORT_ERROR: Exception | None = None
+except (ImportError, OSError) as exc:  # PortAudio may be absent on headless systems
+    sd = None  # type: ignore[assignment]
+    _SOUNDDEVICE_IMPORT_ERROR = exc
 
 from core.config import settings
 
@@ -60,13 +65,22 @@ class AudioDevice:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _backend():
+        if sd is None:
+            raise AudioDeviceError(
+                f"PortAudio/sounddevice is unavailable: {_SOUNDDEVICE_IMPORT_ERROR}"
+            )
+        return sd
+
+    @staticmethod
     def list_devices() -> list[dict]:
         """
         Returns a list of all available audio devices with their properties.
         Use this to find the correct device index for your microphone/speaker.
         """
+        backend = AudioDevice._backend()
         devices = []
-        for i, dev in enumerate(sd.query_devices()):
+        for i, dev in enumerate(backend.query_devices()):
             devices.append({
                 "index": i,
                 "name": dev["name"],
@@ -81,12 +95,12 @@ class AudioDevice:
     @staticmethod
     def default_input_device() -> dict:
         """Returns info about the current default input device."""
-        return sd.query_devices(kind="input")
+        return AudioDevice._backend().query_devices(kind="input")
 
     @staticmethod
     def default_output_device() -> dict:
         """Returns info about the current default output device."""
-        return sd.query_devices(kind="output")
+        return AudioDevice._backend().query_devices(kind="output")
 
     # ------------------------------------------------------------------
     # Recording
@@ -103,17 +117,18 @@ class AudioDevice:
             NumPy array of shape (samples, channels), dtype float32.
         """
         duration = duration or settings.audio_chunk_duration
+        backend = self._backend()
         try:
-            audio = sd.rec(
+            audio = backend.rec(
                 frames=int(self.sample_rate * duration),
                 samplerate=self.sample_rate,
                 channels=self.channels,
                 dtype="float32",
                 device=self._sd_input,
             )
-            sd.wait()  # Block until recording is complete
+            backend.wait()  # Block until recording is complete
             return audio
-        except sd.PortAudioError as e:
+        except Exception as e:
             raise AudioDeviceError(f"Recording failed: {e}") from e
 
     def record_until_silence(
@@ -146,8 +161,9 @@ class AudioDevice:
         silence_count = 0
         speech_detected = False
 
+        backend = self._backend()
         try:
-            with sd.InputStream(
+            with backend.InputStream(
                 samplerate=self.sample_rate,
                 channels=self.channels,
                 dtype="float32",
@@ -170,7 +186,7 @@ class AudioDevice:
                         if silence_count >= silence_chunks_needed:
                             break  # Enough silence detected — stop recording
 
-        except sd.PortAudioError as e:
+        except Exception as e:
             raise AudioDeviceError(f"Streaming input failed: {e}") from e
 
         if not recorded_chunks:
@@ -189,7 +205,7 @@ class AudioDevice:
             wf.setsampwidth(2)  # 16-bit PCM
             wf.setframerate(self.sample_rate)
             # Convert float32 [-1, 1] to int16
-            pcm = (audio * 32767).astype(np.int16)
+            pcm = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16)
             wf.writeframes(pcm.tobytes())
         buf.seek(0)
         return buf.read()
@@ -211,20 +227,23 @@ class AudioDevice:
         filepath = Path(filepath)
         if not filepath.exists():
             raise AudioDeviceError(f"WAV file not found: {filepath}")
+        backend = self._backend()
         try:
             import soundfile as sf
             data, sample_rate = sf.read(str(filepath), dtype="float32")
-            sd.play(data, samplerate=sample_rate, device=self._sd_output)
-            sd.wait()
+            backend.play(data, samplerate=sample_rate, device=self._sd_output)
+            backend.wait()
         except ImportError:
             # Fallback: use wave + sounddevice directly
             with wave.open(str(filepath), "rb") as wf:
                 rate = wf.getframerate()
                 frames = wf.readframes(wf.getnframes())
                 audio = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32767.0
-                sd.play(audio, samplerate=rate, device=self._sd_output)
-                sd.wait()
-        except sd.PortAudioError as e:
+                backend.play(audio, samplerate=rate, device=self._sd_output)
+                backend.wait()
+        except AudioDeviceError:
+            raise
+        except Exception as e:
             raise AudioDeviceError(f"Playback failed: {e}") from e
 
     def play_wav_bytes(self, wav_bytes: bytes) -> None:

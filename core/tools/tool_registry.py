@@ -35,7 +35,8 @@ class ToolRegistry:
 
     def get_all_schemas(self) -> List[dict]:
         """Generates Ollama function schemas for all registered tools."""
-        return [tool.to_ollama_schema() for tool in self._tools.values()]
+        unique_tools = {id(tool): tool for tool in self._tools.values()}
+        return [tool.to_ollama_schema() for tool in unique_tools.values()]
 
     def execute(self, name: str, raw_args: Dict[str, Any], mode: str = "text") -> Dict[str, Any]:
         """
@@ -209,68 +210,22 @@ class ToolRegistry:
 # Global tool registry singleton
 tool_registry = ToolRegistry()
 
-# Register standard tools
+# Default capability profile: non-destructive, daily workspace operations only.
+# Destructive deletion, Git/package mutation, dynamic sub-agents, model-weight
+# changes, and browser automation are intentionally not registered.
 from core.tools.file_scanner import FileScanner
-from core.tools.file_cleanup import FileCleanup
-from core.tools.directory_audit import DirectoryAudit
+from core.tools.create_directory import CreateDirectory
+from core.tools.write_file import WriteFile
+from core.tools.read_file import ReadFile
 
 file_scanner_tool = FileScanner()
 tool_registry.register(file_scanner_tool)
 tool_registry.register_alias("list_dir", file_scanner_tool)
-from core.tools.delete_directory import DeleteDirectory
-delete_dir_tool = DeleteDirectory()
-tool_registry.register(delete_dir_tool)
-tool_registry.register_alias("delete_file", delete_dir_tool)
-tool_registry.register_alias("remove_directory", delete_dir_tool)
-tool_registry.register_alias("remove_file", delete_dir_tool)
-file_cleanup_tool = FileCleanup()
-tool_registry.register(file_cleanup_tool)
-tool_registry.register(DirectoryAudit())
-
-# Register Git and Poetry tools (M3+)
-from core.tools.git_tool import GitClone, GitPull, GitStatus, GitAdd, GitCommit, GitPush
-from core.tools.poetry_tool import PoetryInstall, PoetryAdd, PoetryShow
-
-tool_registry.register(GitClone())
-tool_registry.register(GitPull())
-tool_registry.register(GitStatus())
-tool_registry.register(GitAdd())
-tool_registry.register(GitCommit())
-tool_registry.register(GitPush())
-
-tool_registry.register(PoetryInstall())
-tool_registry.register(PoetryAdd())
-tool_registry.register(PoetryShow())
-
-# Register Memory Knowledge Graph tools (M4.5+)
-from core.memory.graph_manager import GraphStatus, RebuildKnowledgeGraph, ForgetDocument
-tool_registry.register(GraphStatus())
-tool_registry.register(RebuildKnowledgeGraph())
-tool_registry.register(ForgetDocument())
-
-# Register File Manipulation Tools (M4.5+)
-from core.tools.create_directory import CreateDirectory
-from core.tools.write_file import WriteFile
-from core.tools.read_file import ReadFile
 tool_registry.register(CreateDirectory())
 tool_registry.register(WriteFile())
 tool_registry.register(ReadFile())
 
-# Register Dynamic Sub-Agents (M5+)
-from core.tools.agent_builder import AgentBuilder
-from core.tools.delegate_task import DelegateTask
-tool_registry.register(AgentBuilder())
-tool_registry.register(DelegateTask())
-
-# Register Model Weight Manager Tool (M6)
-from core.tools.weight_tool import WeightManagerTool
-tool_registry.register(WeightManagerTool())
-
-# Register Skyvern Browser Automation Tool (M6)
-from core.tools.skyvern_tool import SkyvernTool
-tool_registry.register(SkyvernTool())
-
-# Register Web Search Tool (Writing & Research Workflow)
+# Kept for backward-compatible internal writing workflows. User research is
+# routed through ResearchService before the generic planner.
 from core.tools.web_search import WebSearch
 tool_registry.register(WebSearch())
-

@@ -5,12 +5,9 @@ FileScanner tool implementation.
 Scans folders and lists files with metadata inside sandbox roots.
 """
 
-import os
-from pathlib import Path
-from datetime import datetime
 from typing import Type
 from core.tools.base_tool import BaseTool
-from core.tools.sandbox_enforcer import enforcer
+from core.workspace.filesystem import WorkspaceFilesystem
 from schemas.file_scanner_schema import FileScannerInput, FileScannerOutput
 
 
@@ -41,57 +38,12 @@ class FileScanner(BaseTool[FileScannerInput, FileScannerOutput]):
         return FileScannerOutput
 
     def run(self, input_data: FileScannerInput) -> FileScannerOutput:
-        # Validate the target directory path using sandbox enforcer
-        target_dir = enforcer.validate(input_data.directory)
-
-        if not target_dir.is_dir():
-            raise FileNotFoundError(f"Target directory '{target_dir}' does not exist or is not a folder.")
-
-        files_list = []
-        total_size_mb = 0.0
-
-        # Normalise extension filter to start with a dot if provided
-        ext_filter = None
-        if input_data.extension_filter:
-            ext = input_data.extension_filter.strip().lower()
-            ext_filter = ext if ext.startswith(".") else f".{ext}"
-
-        # os.walk by default does not follow symlinks, avoiding escaping and loops
-        for root, _, files in os.walk(target_dir):
-            for file_name in files:
-                file_path = Path(root) / file_name
-                try:
-                    # Enforce sandbox rules on each individual file path
-                    resolved_file_path = enforcer.validate(file_path)
-                except PermissionError:
-                    # Ignore and skip files escaping the sandbox boundary (e.g. symlinks pointing outside)
-                    continue
-
-                # Apply extension filter
-                if ext_filter and resolved_file_path.suffix.lower() != ext_filter:
-                    continue
-
-                try:
-                    stat_info = resolved_file_path.stat()
-                except FileNotFoundError:
-                    # File might have been deleted during scan, skip it
-                    continue
-
-                size_mb = stat_info.st_size / (1024 * 1024)
-
-                # Apply size filter
-                if input_data.min_size_mb is not None and size_mb < input_data.min_size_mb:
-                    continue
-
-                mod_date = datetime.fromtimestamp(stat_info.st_mtime).isoformat()
-
-                files_list.append({
-                    "name": file_name,
-                    "path": str(resolved_file_path),
-                    "size_mb": round(size_mb, 4),
-                    "modified_date": mod_date,
-                })
-                total_size_mb += size_mb
+        files_list = WorkspaceFilesystem().scan_files(
+            input_data.directory,
+            extension_filter=input_data.extension_filter,
+            min_size_mb=input_data.min_size_mb,
+        )
+        total_size_mb = sum(item["size_mb"] for item in files_list)
 
         return FileScannerOutput(
             files=files_list,

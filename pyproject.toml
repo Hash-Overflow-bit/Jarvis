@@ -23,6 +23,7 @@ onnxruntime = "^1.29.0"
 soundfile = "^0.14.0"
 torch = "^2.13.0"
 pyyaml = "^6.0.3"
+beautifulsoup4 = ">=4.13.4,<4.14.0"
 crewai = "^1.15.17"
 crewai-tools = "^1.15.17"
 langchain-community = "^0.4.2"
@@ -45,4 +46,3 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.pyright]
 pythonVersion = "3.11"
-

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 class CreateDirectoryInput(BaseModel):
     directory: str = Field(
         ...,
-        description="Absolute path to the directory to create. Must reside inside an approved sandbox root.",
+        description="Workspace-relative or absolute workspace path of the directory to create.",
     )
 
 

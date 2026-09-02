@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from core.tools.delete_directory import DeleteDirectory
+from core.tools.sandbox_enforcer import SandboxEnforcer
 from schemas.delete_directory_schema import DeleteDirectoryInput
 from core.tools.tool_registry import tool_registry
 from core.orchestrator.agent_loop import AgentExecutionLoop
@@ -28,7 +29,8 @@ def test_delete_directory_success(tmp_path):
 
     tool = DeleteDirectory()
     inp = DeleteDirectoryInput(directory=str(target_dir))
-    out = tool.run(inp)
+    with patch("core.tools.delete_directory.enforcer", SandboxEnforcer([tmp_path])):
+        out = tool.run(inp)
 
     assert out.success is True
     assert "Successfully deleted directory" in out.message
@@ -40,23 +42,22 @@ def test_delete_directory_nonexistent_failure(tmp_path):
     target_dir = tmp_path / "non_existent_folder_12345"
     tool = DeleteDirectory()
     inp = DeleteDirectoryInput(directory=str(target_dir))
-    out = tool.run(inp)
+    with patch("core.tools.delete_directory.enforcer", SandboxEnforcer([tmp_path])):
+        out = tool.run(inp)
 
     assert out.success is False
     assert "does not exist" in out.message
 
 
-def test_sanitizer_and_registry_handles_delete_tool():
-    """Requirement 8C: sanitizer and tool registry correctly register and handle delete_directory."""
-    assert "delete_directory" in tool_registry._tools
-    tool_instance = tool_registry.get("delete_directory")
-    assert tool_instance is not None
+def test_sanitizer_and_registry_reject_delete_tool():
+    """Destructive directory deletion is intentionally outside the daily tool registry."""
+    assert "delete_directory" not in tool_registry._tools
+    assert tool_registry.get("delete_directory") is None
 
     loop = AgentExecutionLoop()
     raw_plan = [{"step": 1, "tool": "delete_directory", "arguments": {"directory": "/tmp/test"}}]
     sanitized = loop._sanitize_plan(raw_plan, "Delete the test folder")
-    assert len(sanitized) == 1
-    assert sanitized[0]["tool"] == "delete_directory"
+    assert sanitized == []
 
 
 def test_final_response_no_false_deletion_claim_on_rejection():
@@ -93,7 +94,7 @@ def test_prevent_unrelated_steps_on_deletion_goal():
     assert len(sanitized) == 0, "Sanitizer MUST reject unrelated steps for a deletion request!"
 
 
-def test_delete_directory_false_success_physical_verification_failure(tmp_path):
+def test_unregistered_delete_cannot_report_false_success(tmp_path):
     """
     Regression Test:
     1. loop.run() calls planner/direct_route to get delete_directory plan
@@ -153,8 +154,8 @@ def test_delete_directory_false_success_physical_verification_failure(tmp_path):
 
             # 1. Verify target directory still physically exists on disk
             assert target_dir.exists()
-            # 2. Verify tool execution was invoked at least once
-            assert mock_exec.call_count >= 1
+            # 2. Unregistered deletion must never reach tool execution.
+            assert mock_exec.call_count == 0
             # 3. Verify Jarvis response does NOT claim successful deletion
             assert "successfully deleted" not in res.lower()
             # 4. Verify failure/verification condition is present in res

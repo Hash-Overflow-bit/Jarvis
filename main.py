@@ -101,6 +101,7 @@ def run_audio_mode():
     from core.audio.audio_device import audio_device, AudioDeviceError
     from core.audio.stt import get_stt, STTError
     from core.audio.tts import get_tts_singleton
+    from core.audio.voice_io import VoiceIO, VoiceInputError, VoiceOutputError
 
     # Load STT model
     if settings.log_level == "DEBUG":
@@ -113,66 +114,71 @@ def run_audio_mode():
 
     # Load TTS
     tts = get_tts_singleton()
+    if not getattr(tts, "is_available", False):
+        console.print(
+            "[red]Voice output is unavailable.[/red] Configure valid Kokoro assets "
+            "or a Piper binary and voice model before using audio mode."
+        )
+        return
     if settings.log_level == "DEBUG":
         console.print(f"[dim]TTS: {'Piper' if hasattr(tts, 'binary_path') else 'Console fallback'}[/dim]")
 
     session = SessionManager()
+    voice = VoiceIO(audio_device, stt, tts, settings.emergency_stop_keyword)
     console.print("\n[cyan]Jarvis online.[/cyan]\n")
-    tts.speak("Jarvis online. How can I help you?")
+    try:
+        voice.speak("Jarvis online. How can I help you?")
+    except VoiceOutputError as e:
+        console.print(f"[red]Voice Error:[/red] {e}")
+        return
 
     while True:
         try:
             # Record audio until silence
-            audio = audio_device.record_until_silence()
-
-            # Check for empty audio
-            import numpy as np
-            if audio.size == 0 or not stt.is_speech(audio):
+            voice_input = voice.listen()
+            if voice_input is None:
                 continue
-
-            # Transcribe
-            text = stt.transcribe(audio)
-
-            if not text.strip():
-                continue
+            text = voice_input.text
 
             console.print(f"You: {text}")
 
             # Check emergency stop keyword
-            if text.upper().strip() == settings.emergency_stop_keyword:
+            if voice_input.command == "emergency":
                 from core.safety.emergency_stop import emergency_stop
                 killed_count = emergency_stop.halt_all()
                 console.print(f"[bold red]🛑 EMERGENCY STOP TRIGGERED! Terminated {killed_count} active background tasks.[/bold red]\n")
-                tts.speak("Emergency stop. Terminated all active tasks.")
+                voice.speak("Emergency stop. Terminated all active tasks.")
                 continue
 
             # Check for exit command
-            if any(cmd in text.lower() for cmd in ["goodbye", "shut down", "stop jarvis", "exit"]):
-                tts.speak("Goodbye!")
+            if voice_input.command == "exit":
+                voice.speak("Goodbye!")
                 break
 
             # Get LLM response
             try:
                 response = session.chat(text, mode="audio")
                 console.print(f"Jarvis: {response}\n")
-                tts.speak(response)
+                voice.speak(response)
             except OllamaError as e:
                 if settings.log_level == "DEBUG":
                     console.print(f"[red]Error:[/red] {e}")
-                tts.speak("I encountered an error connecting to Ollama.")
+                voice.speak("I encountered an error connecting to Ollama.")
 
         except KeyboardInterrupt:
             from core.safety.emergency_stop import emergency_stop
             killed_count = emergency_stop.halt_all()
             console.print(f"[bold red]🛑 EMERGENCY STOP TRIGGERED! Terminated {killed_count} active background tasks.[/bold red]\n")
             try:
-                tts.speak("Shutting down.")
+                voice.speak("Shutting down.")
             except (KeyboardInterrupt, Exception):
                 console.print("[JARVIS]: Shutting down.")
             break
         except AudioDeviceError as e:
             if settings.log_level == "DEBUG":
                 console.print(f"[red]Audio Error:[/red] {e}")
+        except (VoiceInputError, VoiceOutputError) as e:
+            console.print(f"[red]Voice Error:[/red] {e}")
 
 
 def main():

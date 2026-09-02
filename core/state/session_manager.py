@@ -19,8 +19,8 @@ import datetime
 from typing import Optional
 
 from core.config import settings
+from core.conversation.service import ConversationRouter, ConversationService
 from core.llm.ollama_client import ollama, OllamaError
-from core.llm.prose_hook import prose_hook
 
 
 class SessionManager:
@@ -39,61 +39,22 @@ class SessionManager:
     ):
         self.model = model or settings.ollama_model
         self.system_prompt = system_prompt or settings.jarvis_system_prompt
+        self.conversation_system_prompt = self.system_prompt
         self.max_turns = max_turns or settings.session_max_turns
         self.use_tools = use_tools
+        self.conversation_router = ConversationRouter()
+        self.conversation_service = ConversationService()
         self._started_at = datetime.datetime.now(datetime.timezone.utc)
 
         # Inform the LLM of the authorized sandbox & workspace directories so it does not use placeholders
         if self.use_tools:
-            allowed_dirs = list(settings.sandbox_roots)
-            try:
-                workspace = settings.default_workspace_dir
-                if workspace not in allowed_dirs:
-                    allowed_dirs.append(workspace)
-            except Exception:
-                pass
-
-            # Dynamically resolve and add Desktop to whitelisted directories
-            # (Only if not running in strict sandbox mode, or if Desktop is already nested under a sandbox root)
-            desktop_path = ""
-            try:
-                desktop = settings.desktop_dir
-                if not settings.sandbox_mode or any(desktop.relative_to(r) for r in settings.sandbox_roots if r.exists()):
-                    if desktop not in allowed_dirs:
-                        allowed_dirs.append(desktop)
-                    desktop_path = str(desktop)
-            except Exception:
-                pass
-
-            # Extract fallback desktop path from config roots if dynamic check failed
-            if not desktop_path:
-                for r in allowed_dirs:
-                    r_str = str(r)
-                    if "desktop" in r_str.lower() and not r_str.lower().endswith("sandbox"):
-                        desktop_path = r_str
-                        break
-                if not desktop_path:
-                    for r in allowed_dirs:
-                        if "desktop" in str(r).lower():
-                            desktop_path = str(r)
-                            break
-
-            roots_str = ", ".join(f"'{r}'" for r in allowed_dirs)
-            example_sandbox = settings.sandbox_roots[0] if settings.sandbox_roots else ""
-
+            workspace = settings.default_workspace_dir
             self.system_prompt += (
-                f"\n\nSecurity Sandbox & Workspace Configuration:\n"
-                f"- You only have access to these authorized local directories: {roots_str}.\n"
-                f"- When the user references 'sandbox', map it to '{example_sandbox}'.\n"
-                f"- When the user references 'workspace', map it to '{settings.default_workspace_dir}'.\n"
-            )
-            if desktop_path:
-                self.system_prompt += f"- When the user references 'desktop', map it to '{desktop_path}'.\n"
-                
-            self.system_prompt += (
-                f"- You are fully authorized to clone Git repositories and manage Poetry/pip packages inside the workspace directory.\n"
-                f"- When creating general files, folders, or scripts (e.g. at user request), place them in the 'desktop' directory by default so the user can see them instantly. Do NOT place general user creations in the workspace unless they are part of a Git repository or Poetry project.\n"
-                f"- Never use placeholder paths like '/path/to/sandbox' or './sandbox' or '/path/to/desktop'."
+                "\n\nControlled Workspace Configuration:\n"
+                f"- The only authorized location for document and filesystem actions is '{workspace}'.\n"
+                f"- Map both 'workspace' and relative file paths to '{workspace}'.\n"
+                "- Do not target Desktop, Documents, home, or any path outside the workspace.\n"
+                "- Never invent placeholder paths. If the requested path is ambiguous, ask the user."
             )
 
 
@@ -127,62 +88,93 @@ class SessionManager:
         # Append user message
         self.history.append({"role": "user", "content": user_input})
 
-        # Extract and save conversational facts to the knowledge graph
-        try:
-            from core.memory.chat_memory import learn_from_message, record_conversation_turn
-            learn_from_message(user_input)
-        except Exception:
-            pass
+        use_agent = self.use_tools and self.conversation_router.requires_agent(user_input)
 
-        if self.use_tools:
+        if use_agent:
+            from core.orchestrator.deterministic_filesystem import DeterministicFilesystemRouter
+            deterministic = DeterministicFilesystemRouter().try_handle(user_input)
+            if deterministic is not None:
+                response = deterministic.response
+                self.history.append({"role": "assistant", "content": response})
+                self._trim_history()
+                return response
+
+            from core.research.service import ResearchRouter, ResearchService, ResearchUnavailable
+            if ResearchRouter().matches(user_input):
+                try:
+                    response = ResearchService().research(user_input, model=self.model).report
+                except ResearchUnavailable as exc:
+                    response = (
+                        "I could not complete grounded web research because online sources "
+                        f"were unavailable: {exc}"
+                    )
+                self.history.append({"role": "assistant", "content": response})
+                self._trim_history()
+                return response
+
+            # Memory integration for tool workflows is retained here.  Normal
+            # conversation remains one deterministic model call; persistent
+            # memory is integrated separately by the memory capability gate.
+            record_conversation_turn = None
+            try:
+                from core.memory.chat_memory import learn_from_message, record_conversation_turn
+                learn_from_message(user_input)
+            except Exception:
+                record_conversation_turn = None
 
             from core.orchestrator.agent_loop import AgentExecutionLoop
             loop = AgentExecutionLoop(use_tools=True, history=self.history)
-            response = loop.run(user_input, mode=mode)
+            try:
+                response = loop.run(user_input, mode=mode)
+            except Exception:
+                self.history.pop()
+                raise
             # Add final response as assistant role to history for next turns
             self.history.append({"role": "assistant", "content": response})
             self._trim_history()
-            try:
-                record_conversation_turn(user_input, response)
-            except Exception:
-                pass
+            if record_conversation_turn is not None:
+                try:
+                    record_conversation_turn(user_input, response)
+                except Exception:
+                    pass
             return response
         else:
-            # Direct conversational response without tools
-            chat_messages = list(self.history)
-            injected_context = ""
-            if settings.graph_enabled:
+            conversation_history = list(self.history)
+            conversation_history[0] = {
+                "role": "system",
+                "content": self.conversation_system_prompt,
+            }
+            if settings.local_memory_enabled:
                 try:
-                    from core.memory.recall import recall
-                    recall_result = recall(user_input, hops=settings.max_graph_hops, top_k=settings.graph_top_k)
-                    if recall_result.facts or recall_result.entities:
-                        injected_context = recall_result.as_text()
-                        chat_messages.insert(1, {"role": "system", "content": injected_context})
+                    from core.memory.local_memory import LocalMemoryService
 
-                except Exception as e:
-                    print(f"\n[Memory Error] Failed recall: {e}")
-
-            response_msg = ollama.chat(
-                messages=chat_messages,
-                model=self.model,
-                temperature=temperature,
-            )
-
-            if isinstance(response_msg, str):
-                response_msg = {"role": "assistant", "content": response_msg}
-
-            if not isinstance(response_msg, dict):
-                raise OllamaError("Expected dictionary response from Ollama")
-
-            self.history.append(response_msg)
-            self._trim_history()
-            ans = response_msg.get("content", "") or ""
-            filtered_ans = prose_hook.filter_response(ans)
+                    local_memory = LocalMemoryService()
+                    forget_response = local_memory.handle_forget_command(user_input)
+                    if forget_response is not None:
+                        self.history.append({"role": "assistant", "content": forget_response})
+                        self._trim_history()
+                        return forget_response
+                    local_memory.capture(user_input)
+                    memory_context = local_memory.format_context(local_memory.recall(user_input))
+                    if memory_context:
+                        conversation_history.insert(
+                            1, {"role": "system", "content": memory_context}
+                        )
+                except Exception:
+                    # Memory must never block the primary conversation path.
+                    pass
             try:
-                record_conversation_turn(user_input, filtered_ans)
+                answer = self.conversation_service.respond(
+                    conversation_history,
+                    model=self.model,
+                    temperature=temperature,
+                )
             except Exception:
-                pass
-            return filtered_ans
+                self.history.pop()
+                raise
+            self.history.append({"role": "assistant", "content": answer})
+            self._trim_history()
+            return answer
 
 
     def chat_stream(self, user_input: str, temperature: float = 0.7):

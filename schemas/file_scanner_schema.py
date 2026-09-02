@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 class FileScannerInput(BaseModel):
     directory: str = Field(
         ...,
-        description="Absolute path to the directory to scan. Must reside inside an approved sandbox root.",
+        description="Workspace-relative or absolute workspace path of the directory to scan.",
     )
     extension_filter: Optional[str] = Field(
         None,
