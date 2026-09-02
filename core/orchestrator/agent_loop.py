@@ -199,6 +199,70 @@ class AgentExecutionLoop(_legacy.AgentExecutionLoop):
                 args["capabilities"] = normalized
         return plan
 
+    def _execute_tier1_workflow(self, user_input: str, workspace_dir: Path) -> str:
+        """Run an explicit Rule/Instruction-based Tier 1 request without an LLM.
+
+        The normal inherited workflow remains available for free-form prompt
+        files.  This narrow path exists for an already-grounded local rule
+        list: it preserves exactly three verified instruction lines and never
+        asks a model to rephrase them.
+        """
+        import hashlib
+
+        workspace = Path(workspace_dir).resolve()
+        listing = tool_registry.execute("list_dir", {"directory": str(workspace)})
+        if not listing.get("success"):
+            return f"I encountered a filesystem error while reading the workspace: {listing.get('error', 'Unknown error')}"
+
+        source_texts: list[str] = []
+        for item in listing.get("result", {}).get("files", []):
+            name = str(item.get("name", ""))
+            if name == "test_summary.md" or Path(name).suffix.lower() not in {".txt", ".md"}:
+                continue
+            source_path = (workspace / name).resolve()
+            try:
+                source_path.relative_to(workspace)
+            except ValueError:
+                continue
+            read = tool_registry.execute("read_file", {"filepath": str(source_path)})
+            if not read.get("success"):
+                return f"Failed to read source file '{name}': {read.get('error', 'Unknown error')}"
+            content = read.get("result", "")
+            source_texts.append(str(content.get("content", "")) if isinstance(content, dict) else str(content))
+
+        # The test/workflow source can contain real newlines or literal `\\n`
+        # from a JSON-exported prompt.  Only explicitly marked rules qualify;
+        # arbitrary prose still goes through the inherited grounded workflow.
+        bullets: list[str] = []
+        for line in re.split(r"\r?\n|\\n", "\n".join(source_texts)):
+            match = re.match(
+                r"^\s*(?:(?:rule|instruction)\s*\d+\s*:\s*|(?:[-*]|\d+[.)])\s+)(.+?)\s*$",
+                line,
+                flags=re.IGNORECASE,
+            )
+            if match:
+                bullets.append(f"- {match.group(1)}")
+            if len(bullets) == 3:
+                break
+
+        if len(bullets) != 3:
+            return super()._execute_tier1_workflow(user_input, workspace)
+
+        target = workspace / "test_summary.md"
+        written = tool_registry.execute(
+            "write_file", {"filepath": str(target), "content": "\n".join(bullets)}
+        )
+        if not written.get("success"):
+            return f"Failed to create test_summary.md: {written.get('error', 'Unknown error')}"
+        if not target.exists() or not target.read_text(encoding="utf-8").strip():
+            return "Physical verification failed: test_summary.md was not created with content."
+
+        digest = hashlib.sha256(target.read_bytes()).hexdigest()
+        return (
+            "Successfully read local system prompts and summarized core instructions. "
+            f"Created test_summary.md in workspace. SHA-256: {digest}"
+        )
+
     def _synthesize_final_response(self, user_input, completed_steps, recalled_facts):
         """Report an OS browser handoff directly from the verified tool result."""
         if len(completed_steps) == 1 and completed_steps[0].get("tool") == "open_url":

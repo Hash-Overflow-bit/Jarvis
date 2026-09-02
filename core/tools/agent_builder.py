@@ -85,7 +85,7 @@ class AgentBuilder(BaseTool[AgentBuilderInput, AgentBuilderOutput]):
         if not input_data.name.replace("_", "").replace("-", "").replace(" ", "").isalnum():
             return AgentBuilderOutput(success=False, agent=input_data.name, details="Agent name may contain letters, numbers, spaces, hyphens, and underscores only.")
         if input_data.tools:
-            return AgentBuilderOutput(success=False, agent=input_data.name, details="Sub-agents cannot be given arbitrary tools, filesystem access, shell access, browser automation, or nested delegation. The open_public_urls capability is parent-mediated and only opens reviewed public URLs from one workspace instruction file.")
+            return AgentBuilderOutput(success=False, agent=input_data.name, details="Sub-agents cannot be given tools, filesystem access, shell access, browser automation, or nested delegation. The open_public_urls capability is parent-mediated and only opens reviewed public URLs from one workspace instruction file.")
         try:
             capabilities = validate_capabilities(input_data.capabilities)
         except SubagentPolicyError as exc:

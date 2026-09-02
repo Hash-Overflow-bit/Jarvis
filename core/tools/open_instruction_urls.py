@@ -28,7 +28,7 @@ class OpenInstructionURLsOutput(BaseModel):
 class OpenInstructionURLs(BaseTool[OpenInstructionURLsInput, OpenInstructionURLsOutput]):
     """Open a reviewed, bounded list of public URLs in the default browser."""
 
-    _LINE = re.compile(r"^\s*OPEN\s+(https?://\S+)\s*$", re.IGNORECASE)
+    _LINE = re.compile(r"^OPEN\s+(https?://[^\s]+)$", re.IGNORECASE)
 
     @property
     def name(self) -> str:
@@ -57,6 +57,15 @@ class OpenInstructionURLs(BaseTool[OpenInstructionURLsInput, OpenInstructionURLs
             stripped = line.strip()
             if not stripped or stripped.startswith("#"):
                 continue
+            # Token-count validation happens before URL handling.  This is
+            # deliberately stricter than merely extracting the first URL:
+            # `OPEN https://example.com/login and submit` must reject the
+            # whole file instead of opening the first part of that line.
+            tokens = stripped.split()
+            if len(tokens) != 2 or tokens[0].upper() != "OPEN":
+                raise WorkspaceDocumentError(
+                    f"Invalid instruction on line {number}. Use exactly: OPEN https://public.example/path"
+                )
             match = self._LINE.fullmatch(stripped)
             if not match:
                 raise WorkspaceDocumentError(
