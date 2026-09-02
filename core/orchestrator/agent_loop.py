@@ -18,19 +18,25 @@ ollama = _legacy.ollama
 tool_registry = _legacy.tool_registry
 settings = _legacy.settings
 logger = _legacy.logger
+prose_hook = _legacy.prose_hook
 recall = _legacy.recall
+record_action = _legacy.record_action
 
 
 def _recall_proxy(*args, **kwargs):
-    # Tests and callers may replace this module's recall function.
     return recall(*args, **kwargs)
 
 
+def _record_action_proxy(*args, **kwargs):
+    return record_action(*args, **kwargs)
+
+
 _legacy.recall = _recall_proxy
+_legacy.record_action = _record_action_proxy
 
 
 def _public_url(text: str) -> str | None:
-    match = re.search(r"https?://[^\s<>()]+", text or "", re.IGNORECASE)
+    match = re.search(r"https?://[^\s<>()\[\]]+", text or "", re.IGNORECASE)
     if not match:
         return None
     url = match.group(0).rstrip(".,;:!?")
@@ -44,10 +50,11 @@ class AgentExecutionLoop(_legacy.AgentExecutionLoop):
     def _direct_route(self, user_input: str, recalled_facts: str = ""):
         url = _public_url(user_input)
         lowered = (user_input or "").lower()
-        if url and re.search(r"\b(open|browse|navigate|go to|visit)\b", lowered):
-            if any(word in lowered for word in ("read", "summarize", "extract", "find", "get")):
-                return [{"step": 1, "tool": "fetch_url", "arguments": {"url": url}}]
-            return [{"step": 1, "tool": "open_url", "arguments": {"url": url}}]
+        read_only_web = any(word in lowered for word in ("read", "summarize", "extract", "find", "get"))
+        open_web = bool(re.search(r"\b(open|browse|navigate|go to|visit)\b", lowered))
+        if url and (read_only_web or open_web):
+            tool = "fetch_url" if read_only_web else "open_url"
+            return [{"step": 1, "tool": tool, "arguments": {"url": url}}]
 
         plan = super()._direct_route(user_input, recalled_facts)
         if not isinstance(plan, list):
