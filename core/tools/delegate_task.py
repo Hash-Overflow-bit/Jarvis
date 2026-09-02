@@ -68,16 +68,31 @@ class DelegateTask(BaseTool[DelegateTaskInput, DelegateTaskOutput]):
                 execution = tool_registry.execute(
                     "open_instruction_urls", {"instruction_file": instruction_file}
                 )
-                if execution.get("success"):
-                    result = execution.get("result", {})
+                result = execution.get("result", {})
+                # ToolRegistry reports whether the call itself completed;
+                # this bounded tool also reports whether its validation/action
+                # succeeded.  A rejected instruction file must remain a
+                # failed delegation, never become a false success merely
+                # because the tool returned a well-formed response.
+                tool_succeeded = (
+                    execution.get("success")
+                    and isinstance(result, dict)
+                    and result.get("success") is True
+                )
+                if tool_succeeded:
                     return DelegateTaskOutput(
                         success=True,
                         result=str(result.get("message", "Opened reviewed public URLs.")),
                     )
+                message = (
+                    result.get("message")
+                    if isinstance(result, dict)
+                    else execution.get("error")
+                )
                 return DelegateTaskOutput(
                     success=False,
                     result="",
-                    error=str(execution.get("error", "Could not open instruction-file URLs.")),
+                    error=str(message or execution.get("error", "Could not open instruction-file URLs.")),
                 )
 
 
