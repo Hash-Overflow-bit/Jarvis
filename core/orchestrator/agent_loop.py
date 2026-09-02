@@ -189,6 +189,8 @@ class AgentExecutionLoop(_legacy.AgentExecutionLoop):
                     mapped = "classify"
                 elif "plan" in value or "organ" in value:
                     mapped = "plan"
+                elif "open" in value or "browser" in value or "website" in value:
+                    mapped = "open_public_urls"
                 else:
                     continue
                 if mapped not in normalized:

@@ -221,6 +221,7 @@ from core.tools.read_file import ReadFile
 from core.tools.agent_builder import AgentBuilder
 from core.tools.delegate_task import DelegateTask
 from core.tools.public_web import FetchURL, OpenURL
+from core.tools.open_instruction_urls import OpenInstructionURLs
 
 file_scanner_tool = FileScanner()
 tool_registry.register(file_scanner_tool)
@@ -232,6 +233,7 @@ tool_registry.register(AgentBuilder())
 tool_registry.register(DelegateTask())
 tool_registry.register(FetchURL())
 tool_registry.register(OpenURL())
+tool_registry.register(OpenInstructionURLs())
 
 # Kept for backward-compatible internal writing workflows. User research is
 # routed through ResearchService before the generic planner.

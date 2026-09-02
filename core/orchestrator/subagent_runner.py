@@ -13,7 +13,7 @@ from typing import Iterable
 from core.config import settings
 from core.llm.ollama_client import OllamaClient
 
-ALLOWED_CAPABILITIES = frozenset({"summarize", "analyze", "classify", "plan"})
+ALLOWED_CAPABILITIES = frozenset({"summarize", "analyze", "classify", "plan", "open_public_urls"})
 _ACTION_PATTERN = re.compile(r"\b(write|create|delete|remove|rename|move|open|browse|click|download|install|run|execute|shell|terminal|command|send|submit|pay|purchase|login)\b", re.I)
 _INJECTION_PATTERN = re.compile(r"ignore (?:all |any |the )?(?:previous|system)|reveal (?:the )?system|act as (?:an )?admin|bypass (?:the )?(?:rules|guardrails)", re.I)
 
@@ -38,7 +38,7 @@ class LocalSubagent:
         if len(task_description) > 12_000:
             raise SubagentPolicyError("Delegated task is too long (maximum 12,000 characters).")
         if _ACTION_PATTERN.search(task_description):
-            raise SubagentPolicyError("This sub-agent is reasoning-only and cannot perform filesystem, browser, shell, account, download, or other external actions. Ask parent Jarvis to perform an approved action separately.")
+            raise SubagentPolicyError("This sub-agent is reasoning-only and cannot perform filesystem, browser, shell, account, download, or other external actions. Public URLs may only be opened by Jarvis's separately mediated instruction-file flow.")
         if _INJECTION_PATTERN.search(task_description):
             raise SubagentPolicyError("Delegated task contains instructions that attempt to bypass safety rules.")
 

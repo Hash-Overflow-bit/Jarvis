@@ -97,9 +97,13 @@ def test_legacy_tier1_end_to_end(tmp_path):
         prompt = "Read the local system prompt files in the configured workspace, summarize the core instructions in exactly three bullet points, and create test_summary.md in that workspace."
         import pytest
         
-        result = loop.run(prompt, mode="text")
-        if isinstance(result, str) and ("LLM generation failed" in result or "ConnectionRefused" in result or "Max retries exceeded" in result):
-            pytest.skip("Ollama is not running locally. Skipping end-to-end test.")
+        # Explicit Rule lines are a deterministic, grounded Tier 1 input.
+        # The workflow must not need a model call just to copy those verified
+        # instructions into exactly three bullets.
+        with patch("ollama.chat") as model:
+            result = loop.run(prompt, mode="text")
+        model.assert_not_called()
+        assert "Successfully read local system prompts" in result
             
         expected_file = tmp_path / "test_summary.md"
         assert expected_file.exists(), "test_summary.md was not created in the workspace!"
@@ -111,6 +115,4 @@ def test_legacy_tier1_end_to_end(tmp_path):
         lines = [line.strip() for line in content.split('\n') if line.strip()]
         bullet_lines = [line for line in lines if line.startswith('-') or line.startswith('*') or line[0].isdigit()]
         assert len(bullet_lines) == 3, f"Expected exactly 3 bullets, found {len(bullet_lines)}: {content}"
-
-
 

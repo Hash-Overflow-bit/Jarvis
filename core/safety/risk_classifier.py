@@ -44,6 +44,7 @@ TOOL_RISK_MAP = {
     "delegate_task": RiskLevel.LOW,
     "fetch_url": RiskLevel.LOW,
     "open_url": RiskLevel.LOW,
+    "open_instruction_urls": RiskLevel.LOW,
 
     # Browser Automation (M6)
     "skyvern_tool": RiskLevel.MEDIUM,

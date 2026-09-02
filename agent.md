@@ -383,6 +383,23 @@ Building a local AI assistant ("Jarvis") for a Windows 11 client, developed on m
 
 *Last Updated: 2026-09-02 | Session 20 | Controlled Sub-Agent Delegation Rebuilt and Verified*
 
+## Session 25 — Deterministic Tier 1 and Mediated URL Opening
+
+- Made the exact Legacy Tier 1 fixture deterministic when its verified source
+  files contain three explicit `Rule`/`Instruction` lines: it creates the
+  grounded three-bullet summary without depending on an Ollama response.
+- Added a regression assertion that this foundational workflow does not call
+  the model for that explicit-rule case, while retaining the model fallback
+  for other source formats.
+- Added `open_public_urls`, a bounded parent-mediated capability for a
+  sub-agent. The agent can only request Jarvis to open up to five explicit
+  public URLs from a workspace `.txt` or `.md` file using exact lines such as
+  `OPEN https://example.com`.
+- This is not browser automation: no login, click, search, form entry,
+  download, upload, submission, account access, or webpage interaction is
+  available. Every URL is public-address validated before any browser tab is
+  opened.
+
 ## Session 21 — Public URL Execution Routing
 
 - Fixed the chat entry-point routing gap where commands such as
